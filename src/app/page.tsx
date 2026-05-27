@@ -20,7 +20,9 @@ import {
   X,
   Plus,
   Camera,
-  Eraser
+  Eraser,
+  Film,
+  Scissors
 } from 'lucide-react';
 
 interface GenerationStep {
@@ -29,10 +31,11 @@ interface GenerationStep {
   status: 'pending' | 'in_progress' | 'completed';
 }
 
-interface ScriptResult {
-  productInfo: string;
+interface ScriptSegment {
+  id: number;
   script: string;
-  videoPrompt: string;
+  prompt: string;
+  duration: number;
 }
 
 interface Subtitle {
@@ -59,6 +62,7 @@ export default function Home() {
   const [productName, setProductName] = useState('');
   const [productImage, setProductImage] = useState<File | null>(null);
   const [productImagePreview, setProductImagePreview] = useState<string>('');
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string>('');
   const [isIdentifyingImage, setIsIdentifyingImage] = useState(false);
   const [identifiedProduct, setIdentifiedProduct] = useState<string>('');
   const [showCropper, setShowCropper] = useState(false);
@@ -76,25 +80,29 @@ export default function Home() {
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
   const [scriptSteps, setScriptSteps] = useState<GenerationStep[]>([
     { id: 'identify', title: 'AI识别商品图片信息', status: 'pending' },
-    { id: 'script', title: '自动生成抖音带货口播文案', status: 'pending' },
-    { id: 'prompt', title: '生成火山引擎专用视频Prompt', status: 'pending' },
+    { id: 'script', title: '自动生成抖音带货口播文案（分段）', status: 'pending' },
+    { id: 'prompt', title: '生成火山引擎专用视频Prompt（每段3-6秒）', status: 'pending' },
   ]);
-  const [scriptResult, setScriptResult] = useState<ScriptResult | null>(null);
   
-  // 可编辑文案
-  const [editableScript, setEditableScript] = useState('');
-  const [editablePrompt, setEditablePrompt] = useState('');
+  // 分段文案数据
+  const [scriptSegments, setScriptSegments] = useState<ScriptSegment[]>([]);
+  const [totalSegments, setTotalSegments] = useState(0);
+  const [currentSegmentIndex, setCurrentSegmentIndex] = useState(-1);
   
   // 视频生成状态
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [videoSteps, setVideoSteps] = useState<GenerationStep[]>([
-    { id: 'generate', title: '调用火山引擎图生视频API', status: 'pending' },
-    { id: 'subtitle', title: '生成对应字幕同步播放', status: 'pending' },
+    { id: 'segments', title: '调用火山引擎图生视频API（分段生成）', status: 'pending' },
+    { id: 'concat', title: '拼接视频片段并添加转场', status: 'pending' },
+    { id: 'subtitle', title: '生成字幕并同步播放', status: 'pending' },
   ]);
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
   const [currentSubtitle, setCurrentSubtitle] = useState<string>('');
   const [showSubtitleEditor, setShowSubtitleEditor] = useState(false);
+  
+  // 视频分段进度
+  const [segmentProgress, setSegmentProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -221,6 +229,13 @@ export default function Home() {
     );
   };
 
+  // 更新分段文案
+  const updateSegment = (index: number, field: 'script' | 'prompt', value: string) => {
+    setScriptSegments(prev => prev.map((seg, i) => 
+      i === index ? { ...seg, [field]: value } : seg
+    ));
+  };
+
   // 生成带货文案
   const handleGenerateScript = async () => {
     if (!productName.trim()) {
@@ -235,15 +250,17 @@ export default function Home() {
     }
 
     setIsGeneratingScript(true);
-    setScriptResult(null);
+    setScriptSegments([]);
     setVideoUrl('');
     setSubtitles([]);
+    setTotalSegments(0);
+    setCurrentSegmentIndex(-1);
     
     // Reset steps
     setScriptSteps([
       { id: 'identify', title: 'AI识别商品图片信息', status: 'pending' },
-      { id: 'script', title: '自动生成抖音带货口播文案', status: 'pending' },
-      { id: 'prompt', title: '生成火山引擎专用视频Prompt', status: 'pending' },
+      { id: 'script', title: '自动生成抖音带货口播文案（分段）', status: 'pending' },
+      { id: 'prompt', title: '生成火山引擎专用视频Prompt（每段3-6秒）', status: 'pending' },
     ]);
 
     try {
@@ -271,11 +288,7 @@ export default function Home() {
       }
 
       let buffer = '';
-      let result: ScriptResult = {
-        productInfo: '',
-        script: '',
-        videoPrompt: '',
-      };
+      const tempSegments: ScriptSegment[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -293,19 +306,32 @@ export default function Home() {
               
               if (parsed.type === 'identify') {
                 setScriptSteps(prev => updateStepStatus(prev, 'identify', 'completed'));
-                result.productInfo = parsed.content;
                 setScriptSteps(prev => updateStepStatus(prev, 'script', 'in_progress'));
-              } else if (parsed.type === 'script') {
-                setScriptSteps(prev => updateStepStatus(prev, 'script', 'completed'));
-                result.script = parsed.content;
-                setScriptSteps(prev => updateStepStatus(prev, 'prompt', 'in_progress'));
-              } else if (parsed.type === 'prompt') {
-                setScriptSteps(prev => updateStepStatus(prev, 'prompt', 'completed'));
-                result.videoPrompt = parsed.content;
+              } else if (parsed.type === 'script_start') {
+                setTotalSegments(parsed.segmentIndex);
+              } else if (parsed.type === 'script_segment') {
+                const seg = parsed.content as ScriptSegment;
+                tempSegments.push(seg);
+                setScriptSegments([...tempSegments]);
+                setCurrentSegmentIndex(parsed.segmentIndex);
+              } else if (parsed.type === 'prompt_segment') {
+                const seg = parsed.content as ScriptSegment;
+                const index = tempSegments.findIndex(s => s.id === seg.id);
+                if (index >= 0) {
+                  tempSegments[index] = seg;
+                  setScriptSegments([...tempSegments]);
+                }
+                setCurrentSegmentIndex(parsed.segmentIndex);
+                if (parsed.segmentIndex === totalSegments - 1) {
+                  setScriptSteps(prev => updateStepStatus(prev, 'script', 'completed'));
+                  setScriptSteps(prev => updateStepStatus(prev, 'prompt', 'in_progress'));
+                }
               } else if (parsed.type === 'done') {
-                setScriptResult(result);
-                setEditableScript(result.script);
-                setEditablePrompt(result.videoPrompt);
+                setScriptSteps(prev => updateStepStatus(prev, 'prompt', 'completed'));
+                const doneData = JSON.parse(parsed.content);
+                if (doneData.imageUrl) {
+                  setUploadedImageUrl(doneData.imageUrl);
+                }
               } else if (parsed.type === 'error') {
                 throw new Error(parsed.content);
               }
@@ -320,12 +346,13 @@ export default function Home() {
       alert(error instanceof Error ? error.message : '生成失败，请重试');
     } finally {
       setIsGeneratingScript(false);
+      setCurrentSegmentIndex(-1);
     }
   };
 
   // 生成带货视频
   const handleGenerateVideo = async () => {
-    if (!editableScript.trim() || !editablePrompt.trim()) {
+    if (scriptSegments.length === 0) {
       alert('请先生成文案');
       return;
     }
@@ -333,19 +360,22 @@ export default function Home() {
     setIsGeneratingVideo(true);
     setVideoUrl('');
     setSubtitles([]);
+    setSegmentProgress({ current: 0, total: 0 });
     
     // Reset steps
     setVideoSteps([
-      { id: 'generate', title: '调用火山引擎图生视频API', status: 'pending' },
-      { id: 'subtitle', title: '生成对应字幕同步播放', status: 'pending' },
+      { id: 'segments', title: '调用火山引擎图生视频API（分段生成）', status: 'pending' },
+      { id: 'concat', title: '拼接视频片段并添加转场', status: 'pending' },
+      { id: 'subtitle', title: '生成字幕并同步播放', status: 'pending' },
     ]);
 
     try {
       const formData = new FormData();
       formData.append('productName', productName);
-      formData.append('script', editableScript);
-      formData.append('videoPrompt', editablePrompt);
-      if (productImage) {
+      formData.append('segments', JSON.stringify(scriptSegments));
+      if (uploadedImageUrl) {
+        formData.append('imageUrl', uploadedImageUrl);
+      } else if (productImage) {
         formData.append('productImage', productImage);
       }
 
@@ -381,13 +411,21 @@ export default function Home() {
             try {
               const parsed = JSON.parse(data);
               
-              if (parsed.type === 'video_url') {
-                setVideoSteps(prev => updateStepStatus(prev, 'generate', 'completed'));
+              if (parsed.type === 'segment_start') {
+                setVideoSteps(prev => updateStepStatus(prev, 'segments', 'in_progress'));
+                setSegmentProgress({ current: (parsed.segmentId || 0) + 1, total: scriptSegments.length });
+              } else if (parsed.type === 'segment_video') {
+                // Segment video generated
+              } else if (parsed.type === 'concat_start') {
+                setVideoSteps(prev => updateStepStatus(prev, 'segments', 'completed'));
+                setVideoSteps(prev => updateStepStatus(prev, 'concat', 'in_progress'));
+              } else if (parsed.type === 'video_url') {
+                setVideoSteps(prev => updateStepStatus(prev, 'concat', 'completed'));
                 setVideoUrl(parsed.content);
                 setVideoSteps(prev => updateStepStatus(prev, 'subtitle', 'in_progress'));
               } else if (parsed.type === 'subtitles') {
                 setVideoSteps(prev => updateStepStatus(prev, 'subtitle', 'completed'));
-                setSubtitles(parsed.content);
+                setSubtitles(parsed.content.subtitles);
               } else if (parsed.type === 'done') {
                 // Done
               } else if (parsed.type === 'error') {
@@ -450,7 +488,7 @@ export default function Home() {
   const videoCompletedSteps = videoSteps.filter(s => s.status === 'completed').length;
   const videoProgress = (videoCompletedSteps / videoSteps.length) * 100;
 
-  const canGenerateVideo = scriptResult && !isGeneratingScript && !isGeneratingVideo;
+  const canGenerateVideo = scriptSegments.length > 0 && !isGeneratingScript && !isGeneratingVideo;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
@@ -542,6 +580,7 @@ export default function Home() {
                         onClick={() => {
                           setProductImage(null);
                           setProductImagePreview('');
+                          setUploadedImageUrl('');
                           setIdentifiedProduct('');
                           setAiSuggestedPoints([]);
                         }}
@@ -734,59 +773,74 @@ export default function Home() {
                   </div>
                 ))}
               </div>
+              
+              {/* 分段进度 */}
+              {currentSegmentIndex >= 0 && (
+                <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+                    <Film className="w-4 h-4" />
+                    <span>
+                      正在生成第 {currentSegmentIndex + 1} 段 / 共 {totalSegments} 段
+                    </span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
 
-        {/* Editable Script Section */}
-        {scriptResult && !isGeneratingScript && (
+        {/* Segmented Script Editor */}
+        {scriptSegments.length > 0 && !isGeneratingScript && (
           <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Edit3 className="w-5 h-5 text-blue-600" />
-                文案编辑
+                分段文案编辑
+                <Badge variant="secondary" className="ml-2">
+                  {scriptSegments.length} 段 · 总时长约 {scriptSegments.reduce((sum, s) => sum + s.duration, 0)} 秒
+                </Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Product Info */}
-              {scriptResult.productInfo && (
-                <div>
-                  <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                    📋 AI识别的商品信息
-                  </label>
-                  <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg text-sm text-gray-600 dark:text-gray-400">
-                    {scriptResult.productInfo}
+              {scriptSegments.map((segment, index) => (
+                <div key={segment.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg space-y-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/20">
+                      <Film className="w-3 h-3 mr-1" />
+                      第 {index + 1} 段
+                    </Badge>
+                    <span className="text-xs text-gray-500">约 {segment.duration} 秒</span>
+                  </div>
+                  
+                  {/* 口播文案 */}
+                  <div>
+                    <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
+                      🎤 口播文案
+                    </label>
+                    <Textarea
+                      value={segment.script}
+                      onChange={(e) => updateSegment(index, 'script', e.target.value)}
+                      rows={2}
+                      className="text-sm border-gray-300 dark:border-gray-600"
+                      disabled={isGeneratingVideo}
+                    />
+                  </div>
+                  
+                  {/* 视频Prompt */}
+                  <div>
+                    <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
+                      🎥 视频镜头描述
+                    </label>
+                    <Textarea
+                      value={segment.prompt}
+                      onChange={(e) => updateSegment(index, 'prompt', e.target.value)}
+                      rows={2}
+                      className="text-sm border-gray-300 dark:border-gray-600"
+                      disabled={isGeneratingVideo}
+                    />
                   </div>
                 </div>
-              )}
-
-              {/* Editable Script */}
-              <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  🎤 抖音带货口播文案（可编辑）
-                </label>
-                <Textarea
-                  value={editableScript}
-                  onChange={(e) => setEditableScript(e.target.value)}
-                  rows={6}
-                  className="border-gray-300 dark:border-gray-600"
-                  disabled={isGeneratingVideo}
-                />
-              </div>
-
-              {/* Editable Video Prompt */}
-              <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  🎥 视频镜头描述（可编辑）
-                </label>
-                <Textarea
-                  value={editablePrompt}
-                  onChange={(e) => setEditablePrompt(e.target.value)}
-                  rows={4}
-                  className="border-gray-300 dark:border-gray-600"
-                  disabled={isGeneratingVideo}
-                />
-              </div>
+              ))}
 
               {/* Generate Video Button */}
               <Button
@@ -838,6 +892,18 @@ export default function Home() {
                   </div>
                 ))}
               </div>
+              
+              {/* 分段生成进度 */}
+              {segmentProgress.total > 0 && (
+                <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+                    <Scissors className="w-4 h-4" />
+                    <span>
+                      正在生成第 {segmentProgress.current} 段视频 / 共 {segmentProgress.total} 段
+                    </span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -897,8 +963,8 @@ export default function Home() {
                   <div className="space-y-2">
                     {subtitles.map((sub, index) => (
                       <div key={index} className="flex items-center gap-2 text-sm">
-                        <span className="text-gray-500 w-20">
-                          {Math.floor(sub.start)}s-{Math.floor(sub.end)}s
+                        <span className="text-gray-500 dark:text-gray-400 w-20">
+                          {sub.start.toFixed(1)}s - {sub.end.toFixed(1)}s
                         </span>
                         <span className="text-gray-700 dark:text-gray-300">{sub.text}</span>
                       </div>

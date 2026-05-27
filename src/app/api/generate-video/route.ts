@@ -1,12 +1,28 @@
 import { NextRequest } from 'next/server';
-import { LLMClient, VideoGenerationClient, S3Storage, Config, HeaderUtils } from 'coze-coding-dev-sdk';
+import { 
+  VideoGenerationClient, 
+  VideoEditClient,
+  S3Storage, 
+  Config, 
+  HeaderUtils,
+  SubtitleConfig,
+  TextItem
+} from 'coze-coding-dev-sdk';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+interface ScriptSegment {
+  id: number;
+  script: string;
+  prompt: string;
+  duration: number;
+}
+
 interface StreamData {
-  type: 'video_url' | 'subtitles' | 'done' | 'error';
-  content: string | Subtitle[];
+  type: 'segment_start' | 'segment_video' | 'concat_start' | 'video_url' | 'subtitles' | 'done' | 'error';
+  content: string | { segmentId: number; videoUrl: string } | { subtitles: Subtitle[] };
+  segmentId?: number;
 }
 
 interface Subtitle {
@@ -21,43 +37,22 @@ async function sendEvent(controller: ReadableStreamDefaultController, data: Stre
   controller.enqueue(encoder.encode(message));
 }
 
-// Generate subtitles from script text
-function generateSubtitles(script: string, videoDuration: number): Subtitle[] {
-  // Clean the script and split by punctuation
-  const cleanScript = script.replace(/[^\u4e00-\u9fa5a-zA-Z0-9，。！？、；：""''！？~\s]/g, '');
-  
-  // Split by Chinese and English punctuation
-  const segments = cleanScript.split(/(?<=[，。！？、；：！？])\s*|(?<=[。！？])/g).filter(s => s.trim());
-  
-  if (segments.length === 0) {
-    return [];
-  }
-
+// Generate subtitles from segmented script
+function generateSubtitlesFromSegments(segments: ScriptSegment[]): Subtitle[] {
   const subtitles: Subtitle[] = [];
-  const avgDuration = videoDuration / segments.length;
   let currentTime = 0;
 
   for (const segment of segments) {
-    const text = segment.trim();
-    if (text) {
-      // Calculate duration based on text length (longer text = more time)
-      const textLength = text.length;
-      const baseDuration = Math.max(avgDuration, 1.5);
-      const duration = Math.min(textLength * 0.15, 4); // Max 4 seconds per segment
-      
-      subtitles.push({
-        start: currentTime,
-        end: currentTime + duration,
-        text: text,
-      });
-      
-      currentTime += duration;
-    }
-  }
-
-  // Adjust the last subtitle to match video duration
-  if (subtitles.length > 0) {
-    subtitles[subtitles.length - 1].end = videoDuration;
+    const text = segment.script.trim();
+    const duration = segment.duration || 4;
+    
+    subtitles.push({
+      start: currentTime,
+      end: currentTime + duration,
+      text: text,
+    });
+    
+    currentTime += duration;
   }
 
   return subtitles;
@@ -69,12 +64,28 @@ export async function POST(request: NextRequest) {
   // Parse form data
   const formData = await request.formData();
   const productName = formData.get('productName') as string;
-  const script = formData.get('script') as string;
-  const videoPrompt = formData.get('videoPrompt') as string;
-  const productImageFile = formData.get('productImage') as File | null;
+  const segmentsJson = formData.get('segments') as string;
+  const imageUrl = formData.get('imageUrl') as string | null;
 
-  if (!script || !videoPrompt) {
-    return new Response(JSON.stringify({ error: '缺少必要参数' }), {
+  if (!segmentsJson) {
+    return new Response(JSON.stringify({ error: '缺少分段数据' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  let segments: ScriptSegment[];
+  try {
+    segments = JSON.parse(segmentsJson);
+  } catch {
+    return new Response(JSON.stringify({ error: '分段数据格式错误' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  if (!segments || segments.length === 0) {
+    return new Response(JSON.stringify({ error: '分段数据为空' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
     });
@@ -87,63 +98,158 @@ export async function POST(request: NextRequest) {
         // Initialize clients
         const config = new Config();
         const videoClient = new VideoGenerationClient(config, customHeaders);
+        const videoEditClient = new VideoEditClient(config, customHeaders);
         const storage = new S3Storage();
 
-        let imageUrl: string | undefined;
+        const segmentVideoUrls: string[] = [];
 
-        // Upload image if provided
-        if (productImageFile && productImageFile.size > 0) {
-          const imageBuffer = await productImageFile.arrayBuffer();
-          const imageKey = await storage.uploadFile({
-            fileContent: Buffer.from(imageBuffer),
-            fileName: `products/${productName}_${Date.now()}.jpg`,
-            contentType: productImageFile.type || 'image/jpeg',
+        // Step 1: Generate video for each segment
+        for (let i = 0; i < segments.length; i++) {
+          const segment = segments[i];
+          
+          sendEvent(controller, {
+            type: 'segment_start',
+            content: `正在生成第 ${i + 1}/${segments.length} 段视频...`,
+            segmentId: segment.id,
           });
-          imageUrl = await storage.generatePresignedUrl({
-            key: imageKey,
-            expireTime: 86400,
-          });
-        }
 
-        // Generate video
-        const content: any[] = [];
-        
-        if (imageUrl) {
-          // Image-to-video: use uploaded product image as first frame
+          const content: Array<
+            | { type: 'text'; text: string }
+            | { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' }
+          > = [];
+          
+          // Use product image as first frame for the first segment or if available
+          if (imageUrl && (i === 0 || Math.random() > 0.5)) {
+            content.push({
+              type: 'image_url' as const,
+              image_url: { url: imageUrl },
+              role: 'first_frame' as const,
+            });
+          }
+          
           content.push({
-            type: 'image_url' as const,
-            image_url: { url: imageUrl },
-            role: 'first_frame' as const,
+            type: 'text' as const,
+            text: segment.prompt,
+          });
+
+          const videoResponse = await videoClient.videoGeneration(content, {
+            model: 'doubao-seedance-1-5-pro-251215',
+            duration: segment.duration || 4,
+            ratio: '16:9',
+            resolution: '720p',
+            generateAudio: false, // Don't generate audio for segments
+          });
+
+          if (!videoResponse.videoUrl) {
+            throw new Error(`第 ${i + 1} 段视频生成失败`);
+          }
+
+          segmentVideoUrls.push(videoResponse.videoUrl);
+
+          sendEvent(controller, {
+            type: 'segment_video',
+            content: { segmentId: segment.id, videoUrl: videoResponse.videoUrl },
+            segmentId: i,
           });
         }
-        
-        content.push({
-          type: 'text' as const,
-          text: videoPrompt.trim(),
+
+        // Step 2: Concatenate all segment videos
+        sendEvent(controller, {
+          type: 'concat_start',
+          content: `正在拼接 ${segments.length} 个视频片段...`,
         });
 
-        const videoResponse = await videoClient.videoGeneration(content, {
-          model: 'doubao-seedance-1-5-pro-251215',
-          duration: 6,
-          ratio: '16:9',
-          resolution: '720p',
-          generateAudio: true,
-        });
+        // Use smooth transitions between segments
+        const transitions = [
+          '1182376', // 圆形打开
+          '1182356', // 百叶窗
+          '1182371', // 对角擦除
+          '1182374', // 透镜变换
+        ];
 
-        if (!videoResponse.videoUrl) {
-          throw new Error('视频生成失败：未返回视频URL');
+        // Select transitions (one less than number of segments)
+        const selectedTransitions = segments.slice(0, -1).map((_, i) => 
+          transitions[i % transitions.length]
+        );
+
+        const concatResponse = await videoEditClient.concatVideos(
+          segmentVideoUrls,
+          selectedTransitions.length > 0 ? { transitions: selectedTransitions } : undefined
+        );
+
+        if (!concatResponse.url) {
+          throw new Error('视频拼接失败');
         }
 
-        sendEvent(controller, { type: 'video_url', content: videoResponse.videoUrl });
+        const finalVideoUrl = concatResponse.url;
+        const totalDuration = concatResponse.video_meta?.duration || segments.reduce((sum, s) => sum + (s.duration || 4), 0);
 
-        // Generate subtitles
-        const videoDuration = videoResponse.response.duration || 6;
-        const subtitles = generateSubtitles(script, videoDuration);
+        // Step 3: Generate subtitles
+        const subtitles = generateSubtitlesFromSegments(segments);
 
-        sendEvent(controller, { type: 'subtitles', content: subtitles });
+        // Step 4: Add subtitles to video
+        if (subtitles.length > 0) {
+          const subtitleConfig: SubtitleConfig = {
+            font_pos_config: {
+              pos_x: '0',
+              pos_y: '85%',
+              width: '100%',
+              height: '15%',
+            },
+            font_size: 42,
+            font_color: '#FFFFFFFF',
+            font_type: '1525745',
+            background_color: '#000000AA',
+            background_border_width: 8,
+            border_width: 2,
+            border_color: '#000000FF',
+          };
+
+          const textList: TextItem[] = subtitles.map(sub => ({
+            start_time: sub.start,
+            end_time: sub.end,
+            text: sub.text,
+          }));
+
+          const subtitleResponse = await videoEditClient.addSubtitles(
+            finalVideoUrl,
+            subtitleConfig,
+            { textList }
+          );
+
+          if (subtitleResponse.url) {
+            sendEvent(controller, {
+              type: 'video_url',
+              content: subtitleResponse.url,
+            });
+          } else {
+            // Fallback to video without subtitles
+            sendEvent(controller, {
+              type: 'video_url',
+              content: finalVideoUrl,
+            });
+          }
+        } else {
+          sendEvent(controller, {
+            type: 'video_url',
+            content: finalVideoUrl,
+          });
+        }
+
+        sendEvent(controller, {
+          type: 'subtitles',
+          content: { subtitles },
+        });
 
         // Done
-        sendEvent(controller, { type: 'done', content: '生成完成' });
+        sendEvent(controller, {
+          type: 'done',
+          content: JSON.stringify({
+            videoUrl: finalVideoUrl,
+            duration: totalDuration,
+            segments: segments.length,
+          }),
+        });
         controller.close();
       } catch (error) {
         console.error('视频生成失败:', error);
