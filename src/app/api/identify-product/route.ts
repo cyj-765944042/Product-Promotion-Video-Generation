@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     ];
 
     const response = await llmClient.invoke(messages, {
-      model: 'doubao-seed-1-8-251228',
+      model: 'doubao-seed-2-0-pro-260215',
       temperature: 0.3,
     });
 

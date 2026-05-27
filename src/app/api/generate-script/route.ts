@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
           ];
 
           const identifyStream = await llmClient.stream(identifyMessages, {
-            model: 'doubao-seed-1-8-251228',
+            model: 'doubao-seed-2-0-pro-260215',
             temperature: 0.7,
           });
 
@@ -205,7 +205,7 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
 
           const videoPromptMessages = [{ role: 'user' as const, content: videoPromptText }];
           const videoPromptStream = await llmClient.stream(videoPromptMessages, {
-            model: 'doubao-seed-1-8-251228',
+            model: 'doubao-seed-2-0-pro-260215',
             temperature: 0.8,
           });
 
