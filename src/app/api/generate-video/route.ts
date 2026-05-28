@@ -187,12 +187,15 @@ export async function POST(request: NextRequest) {
           }
           
           // Add the visual prompt for video generation
+          // Include the script in quotes for automatic voiceover generation
+          const promptWithScript = `${segment.prompt}，同时旁白说："${segment.script}"`;
+          
           content.push({
             type: 'text' as const,
-            text: segment.prompt,
+            text: promptWithScript,
           });
           
-          // Generate video with the visual prompt only
+          // Generate video with visual prompt and voiceover script
           // Using default model 'doubao-seedance-1-0-pro-fast-251015' which is available
           let videoResponse;
           try {
