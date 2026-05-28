@@ -435,6 +435,12 @@ export default function Home() {
                 setVideoUrl(parsed.content);
               } else if (parsed.type === 'subtitles') {
                 setSubtitles(parsed.content.subtitles);
+              } else if (parsed.type === 'complete') {
+                // Mock mode complete - set video URL and subtitles
+                setVideoSteps(prev => updateStepStatus(prev, 'subtitle', 'completed'));
+                const data = parsed.content as { videoUrl: string; subtitles: Subtitle[]; duration: number };
+                setVideoUrl(data.videoUrl);
+                setSubtitles(data.subtitles);
               } else if (parsed.type === 'done') {
                 // Done
               } else if (parsed.type === 'error') {

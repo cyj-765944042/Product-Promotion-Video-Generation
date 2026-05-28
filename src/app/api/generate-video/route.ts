@@ -22,8 +22,8 @@ interface ScriptSegment {
 }
 
 interface StreamData {
-  type: 'segment_start' | 'segment_video' | 'concat_start' | 'download_start' | 'upload_start' | 'subtitle_start' | 'video_url' | 'subtitles' | 'done' | 'error';
-  content: string | { segmentId: number; videoUrl: string } | { subtitles: Subtitle[] };
+  type: 'segment_start' | 'segment_video' | 'concat_start' | 'download_start' | 'upload_start' | 'subtitle_start' | 'video_url' | 'subtitles' | 'complete' | 'done' | 'error';
+  content: string | { segmentId: number; videoUrl: string } | { subtitles: Subtitle[] } | { videoUrl: string; subtitles: Subtitle[]; duration: number };
   segmentId?: number;
 }
 
@@ -252,7 +252,25 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // Step 2: Concatenate all segment videos
+        // Step 2: Concatenate all segment videos (skip in mock mode)
+        if (useMockMode) {
+          // In mock mode, directly return the first mock video URL
+          const totalDuration = segments.reduce((sum, s) => sum + (s.duration || 4), 0);
+          const subtitles = generateSubtitlesFromSegments(segments);
+          
+          sendEvent(controller, {
+            type: 'complete',
+            content: {
+              videoUrl: segmentVideoUrls[0],
+              subtitles: subtitles,
+              duration: totalDuration,
+            },
+          });
+          
+          controller.close();
+          return;
+        }
+        
         sendEvent(controller, {
           type: 'concat_start',
           content: `正在拼接 ${segments.length} 个视频片段...`,
