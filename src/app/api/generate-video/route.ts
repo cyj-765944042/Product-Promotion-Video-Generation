@@ -96,6 +96,16 @@ async function downloadVideo(url: string, outputPath: string): Promise<void> {
 export async function POST(request: NextRequest) {
   const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
   
+  // Check if we should use mock mode (for development/testing)
+  // Mock mode is enabled when:
+  // 1. x-run-mode header is set to 'test_run'
+  // 2. Or environment variable COZE_PROJECT_ENV is 'DEV'
+  const useMockMode = customHeaders['x-run-mode'] === 'test_run' || process.env.COZE_PROJECT_ENV === 'DEV';
+  
+  if (useMockMode) {
+    console.log('🧪 Mock mode enabled for video generation');
+  }
+  
   // Parse form data
   const formData = await request.formData();
   const productName = formData.get('productName') as string;
@@ -140,8 +150,14 @@ export async function POST(request: NextRequest) {
         const config = new Config({ 
           timeout: 120000, // 120 seconds for video processing
         });
-        const videoClient = new VideoGenerationClient(config, customHeaders);
-        const videoEditClient = new VideoEditClient(config, customHeaders);
+        
+        // Add mock mode header for development environment
+        const finalHeaders = useMockMode 
+          ? { ...customHeaders, 'x-run-mode': 'test_run' }
+          : customHeaders;
+        
+        const videoClient = new VideoGenerationClient(config, finalHeaders);
+        const videoEditClient = new VideoEditClient(config, finalHeaders);
         const storage = new S3Storage();
 
         const segmentVideoUrls: string[] = [];
@@ -177,12 +193,12 @@ export async function POST(request: NextRequest) {
           });
           
           // Generate video with the visual prompt only
-          // Audio will be added in post-processing if needed
+          // Using default model 'doubao-seedance-1-0-pro-fast-251015' which is available
           let videoResponse;
           try {
             videoResponse = await videoClient.videoGeneration(content, {
-              model: 'doubao-seedance-1-5-pro-251215',
-              duration: Math.max(4, Math.min(12, segment.duration || 5)),
+              model: 'doubao-seedance-1-0-pro-fast-251015',
+              duration: Math.max(5, Math.min(10, segment.duration || 5)), // 5-10 seconds
               ratio: '16:9',
             });
           } catch (error) {
