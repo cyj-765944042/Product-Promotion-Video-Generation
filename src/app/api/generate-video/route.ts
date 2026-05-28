@@ -177,18 +177,21 @@ export async function POST(request: NextRequest) {
             | { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' }
           > = [];
           
-          // Use product image as first frame for the first segment only
-          if (imageUrl && i === 0) {
+          // Use product image as reference for video generation
+          // Include image for all segments to maintain product consistency
+          if (imageUrl) {
             content.push({
               type: 'image_url' as const,
               image_url: { url: imageUrl },
-              role: 'first_frame' as const,
+              role: i === 0 ? 'first_frame' as const : undefined, // Only first segment uses first_frame
             });
           }
           
           // Add the visual prompt for video generation
-          // Include the script in quotes for automatic voiceover generation
-          const promptWithScript = `${segment.prompt}，同时旁白说："${segment.script}"`;
+          // Include product name and script for better product relevance
+          const promptWithScript = productName 
+            ? `${productName}产品展示：${segment.prompt}，同时旁白说："${segment.script}"`
+            : `${segment.prompt}，同时旁白说："${segment.script}"`;
           
           content.push({
             type: 'text' as const,
