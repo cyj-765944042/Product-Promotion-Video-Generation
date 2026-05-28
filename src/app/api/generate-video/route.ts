@@ -162,21 +162,18 @@ export async function POST(request: NextRequest) {
             });
           }
           
-          // Combine visual prompt with voiceover script for automatic audio generation
-          // The model will generate synchronized audio based on the quoted text
-          const promptWithVoiceover = `${segment.prompt}，同时旁白说："${segment.script}"`;
-          
+          // Add the visual prompt for video generation
           content.push({
             type: 'text' as const,
-            text: promptWithVoiceover,
+            text: segment.prompt,
           });
-
-          // Generate video with automatic audio generation (generateAudio: true by default)
+          
+          // Generate video with the visual prompt only
+          // Audio will be added in post-processing if needed
           const videoResponse = await videoClient.videoGeneration(content, {
             model: 'doubao-seedance-1-5-pro-251215',
             duration: Math.max(4, Math.min(12, segment.duration || 5)),
             ratio: '16:9',
-            generateAudio: true, // Explicitly enable audio generation for voiceover
           });
 
           if (!videoResponse.videoUrl) {
