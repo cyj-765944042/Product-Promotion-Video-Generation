@@ -131,7 +131,15 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       try {
         // Initialize clients with extended timeout for video processing
-        const config = new Config({ timeout: 120000 }); // 120 seconds timeout
+        // Note: API credentials are loaded from environment variables automatically
+        // If you encounter 403 errors, ensure the following env vars are set:
+        // - COZE_API_KEY or ARK_API_KEY
+        // - COZE_BASE_URL or ARK_BASE_URL (for specific EP)
+        
+        // Use default configuration - SDK will load credentials from environment variables
+        const config = new Config({ 
+          timeout: 120000, // 120 seconds for video processing
+        });
         const videoClient = new VideoGenerationClient(config, customHeaders);
         const videoEditClient = new VideoEditClient(config, customHeaders);
         const storage = new S3Storage();
@@ -170,14 +178,24 @@ export async function POST(request: NextRequest) {
           
           // Generate video with the visual prompt only
           // Audio will be added in post-processing if needed
-          const videoResponse = await videoClient.videoGeneration(content, {
-            model: 'doubao-seedance-1-5-pro-251215',
-            duration: Math.max(4, Math.min(12, segment.duration || 5)),
-            ratio: '16:9',
-          });
+          let videoResponse;
+          try {
+            videoResponse = await videoClient.videoGeneration(content, {
+              model: 'doubao-seedance-1-5-pro-251215',
+              duration: Math.max(4, Math.min(12, segment.duration || 5)),
+              ratio: '16:9',
+            });
+          } catch (error) {
+            console.error('视频生成API错误:', error);
+            // 返回更详细的错误信息
+            if (error instanceof Error) {
+              throw new Error(`第 ${i + 1} 段视频生成失败: ${error.message}`);
+            }
+            throw error;
+          }
 
           if (!videoResponse.videoUrl) {
-            throw new Error(`第 ${i + 1} 段视频生成失败`);
+            throw new Error(`第 ${i + 1} 段视频生成失败：未返回视频URL`);
           }
 
           segmentVideoUrls.push(videoResponse.videoUrl);
