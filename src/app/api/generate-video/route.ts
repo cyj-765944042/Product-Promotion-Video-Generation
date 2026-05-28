@@ -206,7 +206,9 @@ export async function POST(request: NextRequest) {
           : customHeaders;
         
         const videoClient = new VideoGenerationClient(config, finalHeaders);
-        const videoEditClient = new VideoEditClient(config, finalHeaders);
+        // Video edit client uses SDK default config (not ARK config)
+        // Video editing API is a separate service from video generation
+        const videoEditClient = new VideoEditClient(new Config(), finalHeaders);
         const storage = new S3Storage();
         
         // Use user-provided EP as model, fallback to default model
@@ -320,6 +322,62 @@ export async function POST(request: NextRequest) {
           content: `正在拼接 ${segments.length} 个视频片段...`,
         });
 
+        // Step 2b-1: Transfer videos to object storage for accessible URLs
+        // Video edit API cannot access Volcengine temporary URLs directly
+        sendEvent(controller, {
+          type: 'upload_start',
+          content: '正在转存视频到对象存储...',
+        });
+
+        const accessibleVideoUrls: string[] = [];
+        for (let i = 0; i < segmentVideoUrls.length; i++) {
+          try {
+            // Use uploadFromUrl to transfer video from Volcengine to object storage
+            const uploadedKey = await storage.uploadFromUrl({
+              url: segmentVideoUrls[i],
+              timeout: 60000, // 60 seconds timeout
+            });
+            
+            // Generate presigned URL for video editing
+            const accessibleUrl = await storage.generatePresignedUrl({
+              key: uploadedKey,
+              expireTime: 3600, // 1 hour for processing
+            });
+            
+            accessibleVideoUrls.push(accessibleUrl);
+            console.log(`视频 ${i + 1} 转存成功: ${uploadedKey}, URL: ${accessibleUrl.substring(0, 100)}...`);
+          } catch (transferError) {
+            console.error(`视频 ${i + 1} 转存失败:`, transferError);
+            // If transfer fails, fall back to individual segments
+            sendEvent(controller, {
+              type: 'concat_fallback',
+              content: '视频转存失败，返回分段视频',
+            });
+            
+            const subtitles = generateSubtitlesFromSegments(segments);
+            const totalDuration = segments.reduce((sum, s) => sum + (s.duration || 4), 0);
+            
+            sendEvent(controller, {
+              type: 'complete',
+              content: {
+                videoUrl: segmentVideoUrls[0],
+                segmentVideos: segments.map((seg, idx) => ({
+                  id: seg.id,
+                  script: seg.script,
+                  videoUrl: segmentVideoUrls[idx],
+                  duration: seg.duration || 4,
+                })),
+                subtitles: subtitles,
+                duration: totalDuration,
+                isSegmented: true,
+              },
+            });
+            
+            controller.close();
+            return;
+          }
+        }
+
         // Use smooth transitions between segments
         const transitions = [
           '1182376', // 圆形打开
@@ -337,10 +395,14 @@ export async function POST(request: NextRequest) {
         let totalDuration: number;
 
         try {
+          // Use accessible URLs from object storage for concatenation
+          console.log('开始视频拼接, URLs:', accessibleVideoUrls.map(u => u.substring(0, 80) + '...'));
           const concatResponse = await videoEditClient.concatVideos(
-            segmentVideoUrls,
+            accessibleVideoUrls,
             selectedTransitions.length > 0 ? { transitions: selectedTransitions } : undefined
           );
+
+          console.log('视频拼接成功:', concatResponse.url?.substring(0, 100));
 
           if (!concatResponse.url) {
             throw new Error('视频拼接失败');
