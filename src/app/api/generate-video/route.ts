@@ -110,7 +110,30 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const productName = formData.get('productName') as string;
   const segmentsJson = formData.get('segments') as string;
-  const imageUrl = formData.get('imageUrl') as string | null;
+  let imageUrl = formData.get('imageUrl') as string | null;
+  const productImageFile = formData.get('productImage') as File | null;
+
+  // Upload product image BEFORE creating the stream (if needed)
+  if (!imageUrl && productImageFile && productImageFile.size > 0) {
+    try {
+      console.log('正在上传商品图片...');
+      const storage = new S3Storage();
+      const arrayBuffer = await productImageFile.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const fileName = `product_images/${Date.now()}_${productImageFile.name}`;
+      
+      const imageKey = await storage.uploadFile({
+        fileContent: buffer,
+        fileName: fileName,
+        contentType: productImageFile.type || 'image/jpeg',
+      });
+      
+      imageUrl = await storage.generatePresignedUrl({ key: imageKey, expireTime: 86400 });
+      console.log('商品图片上传成功:', imageUrl);
+    } catch (error) {
+      console.error('商品图片上传失败:', error);
+    }
+  }
 
   if (!segmentsJson) {
     return new Response(JSON.stringify({ error: '缺少分段数据' }), {
