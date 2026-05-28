@@ -4,9 +4,7 @@ import {
   VideoEditClient,
   S3Storage, 
   Config, 
-  HeaderUtils,
-  SubtitleConfig,
-  TextItem
+  HeaderUtils
 } from 'coze-coding-dev-sdk';
 
 export const runtime = 'nodejs';
@@ -187,54 +185,11 @@ export async function POST(request: NextRequest) {
         // Step 3: Generate subtitles
         const subtitles = generateSubtitlesFromSegments(segments);
 
-        // Step 4: Add subtitles to video
-        if (subtitles.length > 0) {
-          const subtitleConfig: SubtitleConfig = {
-            font_pos_config: {
-              pos_x: '0',
-              pos_y: '85%',
-              width: '100%',
-              height: '15%',
-            },
-            font_size: 42,
-            font_color: '#FFFFFFFF',
-            font_type: '1525745',
-            background_color: '#000000AA',
-            background_border_width: 8,
-            border_width: 2,
-            border_color: '#000000FF',
-          };
-
-          const textList: TextItem[] = subtitles.map(sub => ({
-            start_time: sub.start,
-            end_time: sub.end,
-            text: sub.text,
-          }));
-
-          const subtitleResponse = await videoEditClient.addSubtitles(
-            finalVideoUrl,
-            subtitleConfig,
-            { textList }
-          );
-
-          if (subtitleResponse.url) {
-            sendEvent(controller, {
-              type: 'video_url',
-              content: subtitleResponse.url,
-            });
-          } else {
-            // Fallback to video without subtitles
-            sendEvent(controller, {
-              type: 'video_url',
-              content: finalVideoUrl,
-            });
-          }
-        } else {
-          sendEvent(controller, {
-            type: 'video_url',
-            content: finalVideoUrl,
-          });
-        }
+        // Return video URL and subtitles (subtitles will be displayed on frontend)
+        sendEvent(controller, {
+          type: 'video_url',
+          content: finalVideoUrl,
+        });
 
         sendEvent(controller, {
           type: 'subtitles',
