@@ -21,9 +21,16 @@ interface ScriptSegment {
   duration: number;
 }
 
+interface SegmentVideo {
+  id: number;
+  script: string;
+  videoUrl: string;
+  duration: number;
+}
+
 interface StreamData {
-  type: 'segment_start' | 'segment_video' | 'concat_start' | 'download_start' | 'upload_start' | 'subtitle_start' | 'video_url' | 'subtitles' | 'complete' | 'done' | 'error';
-  content: string | { segmentId: number; videoUrl: string } | { subtitles: Subtitle[] } | { videoUrl: string; subtitles: Subtitle[]; duration: number };
+  type: 'segment_start' | 'segment_video' | 'concat_start' | 'concat_fallback' | 'download_start' | 'upload_start' | 'subtitle_start' | 'video_url' | 'subtitles' | 'complete' | 'done' | 'error';
+  content: string | { segmentId: number; videoUrl: string } | { subtitles: Subtitle[] } | { videoUrl: string; subtitles: Subtitle[]; duration: number; segmentVideos?: SegmentVideo[]; isSegmented?: boolean };
   segmentId?: number;
 }
 
@@ -169,12 +176,29 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // Initialize clients with SDK default configuration
-        // SDK will automatically handle API credentials from environment or defaults
-        // Only override timeout for video processing (longer duration)
-        const config = new Config({ 
-          timeout: 180000, // 180 seconds for video processing
+        // Initialize video client with user-provided ARK API configuration
+        // Using Doubao-Seedance-1.5-pro model via Volcano Engine ARK platform
+        const arkApiKey = process.env.ARK_API_KEY;
+        const arkBaseUrl = process.env.ARK_BASE_URL;
+        const videoModelEP = process.env.VIDEO_MODEL_EP;
+        
+        // Log configuration for debugging
+        console.log('视频生成配置:', {
+          hasApiKey: !!arkApiKey,
+          baseUrl: arkBaseUrl,
+          modelEP: videoModelEP,
         });
+        
+        // Use custom config if ARK credentials are provided, otherwise use SDK default
+        const config = arkApiKey && arkBaseUrl 
+          ? new Config({ 
+              apiKey: arkApiKey,
+              baseUrl: arkBaseUrl,
+              timeout: 180000, // 180 seconds for video processing
+            })
+          : new Config({ 
+              timeout: 180000,
+            });
         
         // Add mock mode header only for test_run
         const finalHeaders = useMockMode 
@@ -184,6 +208,9 @@ export async function POST(request: NextRequest) {
         const videoClient = new VideoGenerationClient(config, finalHeaders);
         const videoEditClient = new VideoEditClient(config, finalHeaders);
         const storage = new S3Storage();
+        
+        // Use user-provided EP as model, fallback to default model
+        const videoModel = videoModelEP || 'doubao-seedance-1-5-pro-251215';
 
         const segmentVideoUrls: string[] = [];
 
@@ -224,12 +251,12 @@ export async function POST(request: NextRequest) {
           });
           
           // Generate video with visual prompt and voiceover script
-          // Using doubao-seedance-1-5-pro-251215 model with audio generation support
+          // Using user-provided model EP (ep-20260514120705-pqv86) for Doubao-Seedance-1.5-pro
           // The model can generate synchronized audio including voice, sound effects, and background music
           let videoResponse;
           try {
             videoResponse = await videoClient.videoGeneration(content, {
-              model: 'doubao-seedance-1-5-pro-251215',
+              model: videoModel, // Use user-provided EP or default model
               duration: Math.max(5, Math.min(10, segment.duration || 5)), // 5-10 seconds
               ratio: '16:9',
               resolution: '720p',
@@ -268,9 +295,9 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // Step 2: Concatenate all segment videos (skip in mock mode)
-        if (useMockMode) {
-          // In mock mode, directly return the first mock video URL
+        // Step 2: Concatenate all segment videos (skip if only one segment)
+        if (segments.length === 1) {
+          // Single segment - no need to concatenate
           const totalDuration = segments.reduce((sum, s) => sum + (s.duration || 4), 0);
           const subtitles = generateSubtitlesFromSegments(segments);
           
@@ -287,6 +314,7 @@ export async function POST(request: NextRequest) {
           return;
         }
         
+        // Step 2b: Concatenate multiple segments
         sendEvent(controller, {
           type: 'concat_start',
           content: `正在拼接 ${segments.length} 个视频片段...`,
@@ -305,17 +333,53 @@ export async function POST(request: NextRequest) {
           transitions[i % transitions.length]
         );
 
-        const concatResponse = await videoEditClient.concatVideos(
-          segmentVideoUrls,
-          selectedTransitions.length > 0 ? { transitions: selectedTransitions } : undefined
-        );
+        let concatenatedVideoUrl: string;
+        let totalDuration: number;
 
-        if (!concatResponse.url) {
-          throw new Error('视频拼接失败');
+        try {
+          const concatResponse = await videoEditClient.concatVideos(
+            segmentVideoUrls,
+            selectedTransitions.length > 0 ? { transitions: selectedTransitions } : undefined
+          );
+
+          if (!concatResponse.url) {
+            throw new Error('视频拼接失败');
+          }
+          
+          concatenatedVideoUrl = concatResponse.url;
+          totalDuration = concatResponse.video_meta?.duration || segments.reduce((sum, s) => sum + (s.duration || 4), 0);
+        } catch (concatError) {
+          // If concatenation fails, return individual segment videos
+          console.error('视频拼接失败，返回分段视频:', concatError);
+          
+          sendEvent(controller, {
+            type: 'concat_fallback',
+            content: '视频拼接服务暂时不可用，返回分段视频',
+          });
+          
+          const subtitles = generateSubtitlesFromSegments(segments);
+          totalDuration = segments.reduce((sum, s) => sum + (s.duration || 4), 0);
+          
+          // Return segment videos with their individual URLs
+          sendEvent(controller, {
+            type: 'complete',
+            content: {
+              videoUrl: segmentVideoUrls[0], // First video as main
+              segmentVideos: segments.map((seg, idx) => ({
+                id: seg.id,
+                script: seg.script,
+                videoUrl: segmentVideoUrls[idx],
+                duration: seg.duration || 4,
+              })),
+              subtitles: subtitles,
+              duration: totalDuration,
+              isSegmented: true, // Flag to indicate multiple segments
+            },
+          });
+          
+          controller.close();
+          return;
         }
-
-        const concatenatedVideoUrl = concatResponse.url;
-        const totalDuration = concatResponse.video_meta?.duration || segments.reduce((sum, s) => sum + (s.duration || 4), 0);
 
         // Step 3: Download concatenated video
         sendEvent(controller, {

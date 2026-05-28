@@ -106,6 +106,10 @@ export default function Home() {
   // 视频分段进度
   const [segmentProgress, setSegmentProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
   
+  // 分段视频（当拼接失败时使用）
+  const [segmentVideos, setSegmentVideos] = useState<Array<{ id: number; script: string; videoUrl: string; duration: number }>>([]);
+  const [isSegmented, setIsSegmented] = useState(false);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -436,11 +440,24 @@ export default function Home() {
               } else if (parsed.type === 'subtitles') {
                 setSubtitles(parsed.content.subtitles);
               } else if (parsed.type === 'complete') {
-                // Mock mode complete - set video URL and subtitles
+                // Complete - set video URL and subtitles
                 setVideoSteps(prev => updateStepStatus(prev, 'subtitle', 'completed'));
-                const data = parsed.content as { videoUrl: string; subtitles: Subtitle[]; duration: number };
+                const data = parsed.content as { 
+                  videoUrl: string; 
+                  subtitles: Subtitle[]; 
+                  duration: number;
+                  segmentVideos?: Array<{ id: number; script: string; videoUrl: string; duration: number }>;
+                  isSegmented?: boolean;
+                };
                 setVideoUrl(data.videoUrl);
                 setSubtitles(data.subtitles);
+                if (data.segmentVideos && data.isSegmented) {
+                  setSegmentVideos(data.segmentVideos);
+                  setIsSegmented(true);
+                } else {
+                  setSegmentVideos([]);
+                  setIsSegmented(false);
+                }
               } else if (parsed.type === 'done') {
                 // Done
               } else if (parsed.type === 'error') {
@@ -930,46 +947,103 @@ export default function Home() {
               <CardTitle className="flex items-center gap-2">
                 <Play className="w-5 h-5 text-blue-600" />
                 生成结果
+                {isSegmented && (
+                  <Badge variant="secondary" className="ml-2">
+                    分段视频 ({segmentVideos.length}段)
+                  </Badge>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-4">
-                <video
-                  ref={videoRef}
-                  src={videoUrl}
-                  controls
-                  className="w-full h-full object-contain"
-                  poster={productImagePreview}
-                >
-                  您的浏览器不支持视频播放
-                </video>
-                {/* Subtitle Overlay */}
-                {currentSubtitle && (
-                  <div className="absolute bottom-12 left-0 right-0 flex justify-center pointer-events-none">
-                    <div className="bg-black/70 text-white px-4 py-2 rounded-lg max-w-[80%] text-center">
-                      {currentSubtitle}
+              {/* 分段视频模式 */}
+              {isSegmented && segmentVideos.length > 0 ? (
+                <div className="space-y-4">
+                  {segmentVideos.map((seg, index) => (
+                    <div key={seg.id} className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30">
+                      <div className="flex items-center justify-between mb-2">
+                        <Badge variant="outline">第 {index + 1} 段</Badge>
+                        <span className="text-sm text-gray-500">{seg.duration}秒</span>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">
+                        {seg.script}
+                      </p>
+                      <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+                        <video
+                          src={seg.videoUrl}
+                          controls
+                          className="w-full h-full object-contain"
+                          poster={productImagePreview}
+                        >
+                          您的浏览器不支持视频播放
+                        </video>
+                      </div>
+                      <Button
+                        onClick={async () => {
+                          try {
+                            const response = await fetch(seg.videoUrl);
+                            const blob = await response.blob();
+                            const url = window.URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.download = `${productName}_第${index + 1}段.mp4`;
+                            link.click();
+                            window.URL.revokeObjectURL(url);
+                          } catch {
+                            alert('下载失败');
+                          }
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                      >
+                        <Download className="w-3 h-3 mr-1" />
+                        下载此段
+                      </Button>
                     </div>
+                  ))}
+                </div>
+              ) : (
+                /* 单个视频模式 */
+                <>
+                  <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-4">
+                    <video
+                      ref={videoRef}
+                      src={videoUrl}
+                      controls
+                      className="w-full h-full object-contain"
+                      poster={productImagePreview}
+                    >
+                      您的浏览器不支持视频播放
+                    </video>
+                    {/* Subtitle Overlay */}
+                    {currentSubtitle && (
+                      <div className="absolute bottom-12 left-0 right-0 flex justify-center pointer-events-none">
+                        <div className="bg-black/70 text-white px-4 py-2 rounded-lg max-w-[80%] text-center">
+                          {currentSubtitle}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleDownload}
-                  className="flex-1 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700"
-                  size="lg"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  下载视频
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowSubtitleEditor(!showSubtitleEditor)}
-                  disabled={subtitles.length === 0}
-                >
-                  字幕 {subtitles.length > 0 && `(${subtitles.length}条)`}
-                </Button>
-              </div>
+                  
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleDownload}
+                      className="flex-1 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700"
+                      size="lg"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      下载视频
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowSubtitleEditor(!showSubtitleEditor)}
+                      disabled={subtitles.length === 0}
+                    >
+                      字幕 {subtitles.length > 0 && `(${subtitles.length}条)`}
+                    </Button>
+                  </div>
+                </>
+              )}
 
               {/* Subtitle List */}
               {showSubtitleEditor && subtitles.length > 0 && (
