@@ -118,8 +118,8 @@ export async function POST(request: NextRequest) {
             | { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' }
           > = [];
           
-          // Use product image as first frame for the first segment or if available
-          if (imageUrl && (i === 0 || Math.random() > 0.5)) {
+          // Use product image as first frame for the first segment only
+          if (imageUrl && i === 0) {
             content.push({
               type: 'image_url' as const,
               image_url: { url: imageUrl },
