@@ -130,12 +130,11 @@ export async function POST(request: NextRequest) {
             text: segment.prompt,
           });
 
+          // Generate video with minimal parameters to avoid 400 errors
           const videoResponse = await videoClient.videoGeneration(content, {
             model: 'doubao-seedance-1-5-pro-251215',
-            duration: segment.duration || 4,
+            duration: Math.max(4, Math.min(12, segment.duration || 5)), // Ensure duration is between 4-12
             ratio: '16:9',
-            resolution: '720p',
-            generateAudio: false, // Don't generate audio for segments
           });
 
           if (!videoResponse.videoUrl) {
