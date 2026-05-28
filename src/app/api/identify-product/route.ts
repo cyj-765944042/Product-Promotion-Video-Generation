@@ -15,7 +15,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '请上传图片' }, { status: 400 });
     }
 
-    // Initialize clients
+    // Initialize clients with SDK default configuration
+    // SDK will automatically handle API credentials from environment or defaults
     const config = new Config();
     const llmClient = new LLMClient(config, customHeaders);
     const storage = new S3Storage();

@@ -97,14 +97,20 @@ export async function POST(request: NextRequest) {
   const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
   
   // Check if we should use mock mode (for development/testing)
-  // Mock mode is enabled when:
-  // 1. x-run-mode header is set to 'test_run'
-  // 2. Or environment variable COZE_PROJECT_ENV is 'DEV'
-  const useMockMode = customHeaders['x-run-mode'] === 'test_run' || process.env.COZE_PROJECT_ENV === 'DEV';
+  // Mock mode is only enabled when x-run-mode header is explicitly set to 'test_run'
+  // Note: We now use real API for video generation with configured ARK_API_KEY
+  const useMockMode = customHeaders['x-run-mode'] === 'test_run';
   
   if (useMockMode) {
     console.log('🧪 Mock mode enabled for video generation');
   }
+  
+  // Log API configuration for debugging
+  console.log('视频生成API配置:', {
+    hasApiKey: !!process.env.ARK_API_KEY,
+    baseUrl: process.env.ARK_BASE_URL,
+    videoModelEP: process.env.VIDEO_MODEL_EP,
+  });
   
   // Parse form data
   const formData = await request.formData();
@@ -163,18 +169,14 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // Initialize clients with extended timeout for video processing
-        // Note: API credentials are loaded from environment variables automatically
-        // If you encounter 403 errors, ensure the following env vars are set:
-        // - COZE_API_KEY or ARK_API_KEY
-        // - COZE_BASE_URL or ARK_BASE_URL (for specific EP)
-        
-        // Use default configuration - SDK will load credentials from environment variables
+        // Initialize clients with SDK default configuration
+        // SDK will automatically handle API credentials from environment or defaults
+        // Only override timeout for video processing (longer duration)
         const config = new Config({ 
-          timeout: 120000, // 120 seconds for video processing
+          timeout: 180000, // 180 seconds for video processing
         });
         
-        // Add mock mode header for development environment
+        // Add mock mode header only for test_run
         const finalHeaders = useMockMode 
           ? { ...customHeaders, 'x-run-mode': 'test_run' }
           : customHeaders;
@@ -222,16 +224,30 @@ export async function POST(request: NextRequest) {
           });
           
           // Generate video with visual prompt and voiceover script
-          // Using default model 'doubao-seedance-1-0-pro-fast-251015' which is available
+          // Using doubao-seedance-1-5-pro-251215 model with audio generation support
+          // The model can generate synchronized audio including voice, sound effects, and background music
           let videoResponse;
           try {
             videoResponse = await videoClient.videoGeneration(content, {
-              model: 'doubao-seedance-1-0-pro-fast-251015',
+              model: 'doubao-seedance-1-5-pro-251215',
               duration: Math.max(5, Math.min(10, segment.duration || 5)), // 5-10 seconds
               ratio: '16:9',
+              resolution: '720p',
+              generateAudio: true, // Enable audio generation
             });
           } catch (error) {
             console.error('视频生成API错误:', error);
+            // Check if it's a permission error (403)
+            const errorMessage = error instanceof Error ? error.message : '';
+            if (errorMessage.includes('403') || errorMessage.includes('permission')) {
+              throw new Error(`视频生成服务暂不可用。这可能是因为：
+1. 当前环境没有视频生成权限
+2. 需要配置火山方舟API密钥
+
+解决方案：
+- 在生产环境中部署，视频生成功能将自动可用
+- 或者在.env.local中配置有效的API密钥`);
+            }
             // 返回更详细的错误信息
             if (error instanceof Error) {
               throw new Error(`第 ${i + 1} 段视频生成失败: ${error.message}`);
