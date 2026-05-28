@@ -92,9 +92,11 @@ export default function Home() {
   // 视频生成状态
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [videoSteps, setVideoSteps] = useState<GenerationStep[]>([
-    { id: 'segments', title: '调用火山引擎图生视频API（分段生成）', status: 'pending' },
+    { id: 'segments', title: '调用火山引擎图生视频API（分段生成，每段带配音）', status: 'pending' },
     { id: 'concat', title: '拼接视频片段并添加转场', status: 'pending' },
-    { id: 'subtitle', title: '生成字幕并同步播放', status: 'pending' },
+    { id: 'download', title: '下载拼接后的视频', status: 'pending' },
+    { id: 'upload', title: '上传视频到对象存储', status: 'pending' },
+    { id: 'subtitle', title: '添加字幕到视频中', status: 'pending' },
   ]);
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
@@ -419,12 +421,19 @@ export default function Home() {
               } else if (parsed.type === 'concat_start') {
                 setVideoSteps(prev => updateStepStatus(prev, 'segments', 'completed'));
                 setVideoSteps(prev => updateStepStatus(prev, 'concat', 'in_progress'));
-              } else if (parsed.type === 'video_url') {
+              } else if (parsed.type === 'download_start') {
                 setVideoSteps(prev => updateStepStatus(prev, 'concat', 'completed'));
-                setVideoUrl(parsed.content);
+                setVideoSteps(prev => updateStepStatus(prev, 'download', 'in_progress'));
+              } else if (parsed.type === 'upload_start') {
+                setVideoSteps(prev => updateStepStatus(prev, 'download', 'completed'));
+                setVideoSteps(prev => updateStepStatus(prev, 'upload', 'in_progress'));
+              } else if (parsed.type === 'subtitle_start') {
+                setVideoSteps(prev => updateStepStatus(prev, 'upload', 'completed'));
                 setVideoSteps(prev => updateStepStatus(prev, 'subtitle', 'in_progress'));
-              } else if (parsed.type === 'subtitles') {
+              } else if (parsed.type === 'video_url') {
                 setVideoSteps(prev => updateStepStatus(prev, 'subtitle', 'completed'));
+                setVideoUrl(parsed.content);
+              } else if (parsed.type === 'subtitles') {
                 setSubtitles(parsed.content.subtitles);
               } else if (parsed.type === 'done') {
                 // Done

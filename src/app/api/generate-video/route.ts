@@ -6,6 +6,10 @@ import {
   Config, 
   HeaderUtils
 } from 'coze-coding-dev-sdk';
+import fs from 'fs';
+import path from 'path';
+import https from 'https';
+import http from 'http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,7 +22,7 @@ interface ScriptSegment {
 }
 
 interface StreamData {
-  type: 'segment_start' | 'segment_video' | 'concat_start' | 'video_url' | 'subtitles' | 'done' | 'error';
+  type: 'segment_start' | 'segment_video' | 'concat_start' | 'download_start' | 'upload_start' | 'subtitle_start' | 'video_url' | 'subtitles' | 'done' | 'error';
   content: string | { segmentId: number; videoUrl: string } | { subtitles: Subtitle[] };
   segmentId?: number;
 }
@@ -54,6 +58,39 @@ function generateSubtitlesFromSegments(segments: ScriptSegment[]): Subtitle[] {
   }
 
   return subtitles;
+}
+
+// Download video from URL to local file
+async function downloadVideo(url: string, outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https') ? https : http;
+    const file = fs.createWriteStream(outputPath);
+    
+    protocol.get(url, (response) => {
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        // Follow redirect
+        const redirectUrl = response.headers.location;
+        if (redirectUrl) {
+          downloadVideo(redirectUrl, outputPath).then(resolve).catch(reject);
+          return;
+        }
+      }
+      
+      if (response.statusCode !== 200) {
+        reject(new Error(`Failed to download video: HTTP ${response.statusCode}`));
+        return;
+      }
+      
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close();
+        resolve();
+      });
+    }).on('error', (err) => {
+      fs.unlink(outputPath, () => {});
+      reject(err);
+    });
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -101,7 +138,7 @@ export async function POST(request: NextRequest) {
 
         const segmentVideoUrls: string[] = [];
 
-        // Step 1: Generate video for each segment
+        // Step 1: Generate video for each segment (with audio)
         for (let i = 0; i < segments.length; i++) {
           const segment = segments[i];
           
@@ -130,10 +167,10 @@ export async function POST(request: NextRequest) {
             text: segment.prompt,
           });
 
-          // Generate video with minimal parameters to avoid 400 errors
+          // Generate video (with default audio generation enabled)
           const videoResponse = await videoClient.videoGeneration(content, {
             model: 'doubao-seedance-1-5-pro-251215',
-            duration: Math.max(4, Math.min(12, segment.duration || 5)), // Ensure duration is between 4-12
+            duration: Math.max(4, Math.min(12, segment.duration || 5)),
             ratio: '16:9',
           });
 
@@ -178,17 +215,109 @@ export async function POST(request: NextRequest) {
           throw new Error('视频拼接失败');
         }
 
-        const finalVideoUrl = concatResponse.url;
+        const concatenatedVideoUrl = concatResponse.url;
         const totalDuration = concatResponse.video_meta?.duration || segments.reduce((sum, s) => sum + (s.duration || 4), 0);
 
-        // Step 3: Generate subtitles
+        // Step 3: Download concatenated video
+        sendEvent(controller, {
+          type: 'download_start',
+          content: '正在下载拼接后的视频...',
+        });
+
+        const tmpDir = '/tmp/video-processing';
+        if (!fs.existsSync(tmpDir)) {
+          fs.mkdirSync(tmpDir, { recursive: true });
+        }
+
+        const localVideoPath = path.join(tmpDir, `concatenated_${Date.now()}.mp4`);
+        await downloadVideo(concatenatedVideoUrl, localVideoPath);
+
+        // Step 4: Upload to object storage to get accessible URL
+        sendEvent(controller, {
+          type: 'upload_start',
+          content: '正在上传视频到对象存储...',
+        });
+
+        // Read the local video file and upload
+        const videoBuffer = fs.readFileSync(localVideoPath);
+        const uploadedKey = await storage.uploadFile({
+          fileContent: videoBuffer,
+          fileName: `videos/concatenated_${Date.now()}.mp4`,
+          contentType: 'video/mp4',
+        });
+
+        // Generate presigned URL for accessing the video
+        const accessibleVideoUrl = await storage.generatePresignedUrl({
+          key: uploadedKey,
+          expireTime: 86400, // 1 day
+        });
+
+        // Clean up local file
+        try {
+          fs.unlinkSync(localVideoPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+
+        // Step 5: Add subtitles to video
+        sendEvent(controller, {
+          type: 'subtitle_start',
+          content: '正在添加字幕到视频...',
+        });
+
         const subtitles = generateSubtitlesFromSegments(segments);
 
-        // Return video URL and subtitles (subtitles will be displayed on frontend)
-        sendEvent(controller, {
-          type: 'video_url',
-          content: finalVideoUrl,
-        });
+        // Prepare subtitle configuration
+        const textList = subtitles.map(sub => ({
+          start_time: sub.start,
+          end_time: sub.end,
+          text: sub.text,
+        }));
+
+        const subtitleConfig = {
+          font_pos_config: {
+            pos_x: '0',
+            pos_y: '90%',
+            width: '100%',
+            height: '10%',
+          },
+          font_size: 36,
+          font_color: '#FFFFFFFF',
+          font_type: '1525745',
+          background_color: '#00000088',
+          background_border_width: 0,
+          border_width: 1,
+          border_color: '#00000088',
+        };
+
+        try {
+          const subtitleResponse = await videoEditClient.addSubtitles(
+            accessibleVideoUrl,
+            subtitleConfig,
+            { textList }
+          );
+
+          if (subtitleResponse.url) {
+            // Use video with embedded subtitles
+            sendEvent(controller, {
+              type: 'video_url',
+              content: subtitleResponse.url,
+            });
+          } else {
+            // Fallback to video without subtitles
+            sendEvent(controller, {
+              type: 'video_url',
+              content: accessibleVideoUrl,
+            });
+          }
+        } catch (subtitleError) {
+          console.error('字幕添加失败，返回无字幕视频:', subtitleError);
+          // If subtitle addition fails, return video without subtitles
+          sendEvent(controller, {
+            type: 'video_url',
+            content: accessibleVideoUrl,
+          });
+        }
 
         sendEvent(controller, {
           type: 'subtitles',
@@ -199,7 +328,7 @@ export async function POST(request: NextRequest) {
         sendEvent(controller, {
           type: 'done',
           content: JSON.stringify({
-            videoUrl: finalVideoUrl,
+            videoUrl: accessibleVideoUrl,
             duration: totalDuration,
             segments: segments.length,
           }),
