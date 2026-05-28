@@ -162,16 +162,21 @@ export async function POST(request: NextRequest) {
             });
           }
           
+          // Combine visual prompt with voiceover script for automatic audio generation
+          // The model will generate synchronized audio based on the quoted text
+          const promptWithVoiceover = `${segment.prompt}，同时旁白说："${segment.script}"`;
+          
           content.push({
             type: 'text' as const,
-            text: segment.prompt,
+            text: promptWithVoiceover,
           });
 
-          // Generate video (with default audio generation enabled)
+          // Generate video with automatic audio generation (generateAudio: true by default)
           const videoResponse = await videoClient.videoGeneration(content, {
             model: 'doubao-seedance-1-5-pro-251215',
             duration: Math.max(4, Math.min(12, segment.duration || 5)),
             ratio: '16:9',
+            generateAudio: true, // Explicitly enable audio generation for voiceover
           });
 
           if (!videoResponse.videoUrl) {
