@@ -130,8 +130,8 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // Initialize clients
-        const config = new Config();
+        // Initialize clients with extended timeout for video processing
+        const config = new Config({ timeout: 120000 }); // 120 seconds timeout
         const videoClient = new VideoGenerationClient(config, customHeaders);
         const videoEditClient = new VideoEditClient(config, customHeaders);
         const storage = new S3Storage();
