@@ -395,37 +395,55 @@ export async function POST(request: NextRequest) {
           transitions[i % transitions.length]
         );
 
-        let concatenatedVideoUrl: string;
-        let totalDuration: number;
+        let concatenatedVideoUrl: string = '';
+        let totalDuration: number = 0;
 
-        try {
-          // Use accessible URLs from object storage for concatenation
-          console.log('开始视频拼接, URLs:', accessibleVideoUrls.map(u => u.substring(0, 80) + '...'));
-          const concatResponse = await videoEditClient.concatVideos(
-            accessibleVideoUrls,
-            selectedTransitions.length > 0 ? { transitions: selectedTransitions } : undefined
-          );
+        // Retry mechanism for concatenation (max 3 attempts)
+        let lastError: Error | null = null;
+        let concatSuccess = false;
 
-          console.log('视频拼接成功:', concatResponse.url?.substring(0, 100));
+        for (let attempt = 1; attempt <= 3 && !concatSuccess; attempt++) {
+          try {
+            console.log(`开始视频拼接 (第${attempt}次尝试), URLs:`, accessibleVideoUrls.length, '个视频');
+            const concatResponse = await videoEditClient.concatVideos(
+              accessibleVideoUrls,
+              selectedTransitions.length > 0 ? { transitions: selectedTransitions } : undefined
+            );
 
-          if (!concatResponse.url) {
-            throw new Error('视频拼接失败');
+            console.log('视频拼接成功:', concatResponse.url?.substring(0, 100));
+
+            if (!concatResponse.url) {
+              throw new Error('视频拼接失败：未返回视频URL');
+            }
+
+            concatenatedVideoUrl = concatResponse.url;
+            totalDuration = concatResponse.video_meta?.duration || segments.reduce((sum, s) => sum + (s.duration || 4), 0);
+            concatSuccess = true;
+          } catch (concatErr) {
+            lastError = concatErr instanceof Error ? concatErr : new Error(String(concatErr));
+            console.error(`视频拼接第${attempt}次失败:`, lastError.message);
+
+            // Wait before retry (exponential backoff)
+            if (attempt < 3) {
+              const waitTime = attempt * 2000; // 2s, 4s
+              console.log(`等待 ${waitTime/1000}s 后重试...`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
           }
-          
-          concatenatedVideoUrl = concatResponse.url;
-          totalDuration = concatResponse.video_meta?.duration || segments.reduce((sum, s) => sum + (s.duration || 4), 0);
-        } catch (concatError) {
-          // If concatenation fails, return individual segment videos
-          console.error('视频拼接失败，返回分段视频:', concatError);
-          
+        }
+
+        if (!concatSuccess) {
+          // All retries failed, return individual segment videos
+          console.error('视频拼接多次重试失败，返回分段视频:', lastError?.message);
+
           sendEvent(controller, {
             type: 'concat_fallback',
-            content: '视频拼接服务暂时不可用，返回分段视频',
+            content: '视频拼接服务暂时不可用，已为您生成分段视频',
           });
-          
+
           const subtitles = generateSubtitlesFromSegments(segments);
           totalDuration = segments.reduce((sum, s) => sum + (s.duration || 4), 0);
-          
+
           // Return segment videos with their individual URLs
           sendEvent(controller, {
             type: 'complete',
@@ -442,7 +460,7 @@ export async function POST(request: NextRequest) {
               isSegmented: true, // Flag to indicate multiple segments
             },
           });
-          
+
           controller.close();
           return;
         }
