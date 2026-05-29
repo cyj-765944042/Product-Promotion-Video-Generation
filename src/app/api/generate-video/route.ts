@@ -32,6 +32,8 @@ interface StreamData {
   type: 'segment_start' | 'segment_video' | 'concat_start' | 'concat_fallback' | 'download_start' | 'upload_start' | 'subtitle_start' | 'video_url' | 'subtitles' | 'complete' | 'done' | 'error';
   content: string | { segmentId: number; videoUrl: string } | { subtitles: Subtitle[] } | { videoUrl: string; subtitles: Subtitle[]; duration: number; segmentVideos?: SegmentVideo[]; isSegmented?: boolean };
   segmentId?: number;
+  current?: number;
+  total?: number;
 }
 
 interface Subtitle {
@@ -224,6 +226,8 @@ export async function POST(request: NextRequest) {
             type: 'segment_start',
             content: `正在生成第 ${i + 1}/${segments.length} 段视频...`,
             segmentId: segment.id,
+            current: i + 1,
+            total: segments.length,
           });
 
           const content: Array<

@@ -419,7 +419,10 @@ export default function Home() {
               
               if (parsed.type === 'segment_start') {
                 setVideoSteps(prev => updateStepStatus(prev, 'segments', 'in_progress'));
-                setSegmentProgress({ current: (parsed.segmentId || 0) + 1, total: scriptSegments.length });
+                setSegmentProgress({ 
+                  current: parsed.current || 1, 
+                  total: parsed.total || scriptSegments.length 
+                });
               } else if (parsed.type === 'segment_video') {
                 // Segment video generated
               } else if (parsed.type === 'concat_start') {
