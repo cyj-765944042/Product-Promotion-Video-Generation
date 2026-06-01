@@ -4,7 +4,8 @@ import {
   VideoEditClient,
   S3Storage, 
   Config, 
-  TTSClient
+  TTSClient,
+  HeaderUtils
 } from 'coze-coding-dev-sdk';
 
 export const runtime = 'nodejs';
@@ -70,10 +71,14 @@ export async function POST(request: NextRequest) {
 
   const encoder = new TextEncoder();
   const config = new Config();
-  const videoClient = new VideoGenerationClient(config);
-  const videoEditClient = new VideoEditClient(config);
+  
+  // Extract headers from request for proper authentication
+  const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
+  
+  const videoClient = new VideoGenerationClient(config, customHeaders);
+  const videoEditClient = new VideoEditClient(config, customHeaders);
   const storage = new S3Storage();
-  const ttsClient = new TTSClient(config);
+  const ttsClient = new TTSClient(config, customHeaders);
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -128,25 +133,33 @@ export async function POST(request: NextRequest) {
           const videoDuration = Math.max(3, Math.min(10, audioDuration));
 
           try {
-            // Build video generation content
-            const videoContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+            // Build video generation content with proper typing
+            const videoContent: Array<
+              { type: 'text'; text: string } | 
+              { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' }
+            > = [];
             
+            // Add image as first frame if available
+            if (imageUrl) {
+              videoContent.push({ 
+                type: 'image_url', 
+                image_url: { url: imageUrl },
+                role: 'first_frame'
+              });
+            }
+            
+            // Add text prompt
             if (segment.prompt) {
               videoContent.push({ type: 'text', text: segment.prompt });
             }
 
-            if (imageUrl) {
-              videoContent.push({ 
-                type: 'image_url', 
-                image_url: { url: imageUrl } 
-              });
-            }
-
             // Generate video with retry
             const videoResponse = await retryWithBackoff(async () => {
-              return await videoClient.videoGeneration(videoContent as any, {
+              return await videoClient.videoGeneration(videoContent, {
+                model: 'doubao-seedance-1-5-pro-251215',
                 duration: videoDuration,
                 ratio: '16:9',
+                resolution: '720p',
                 generateAudio: false,
               });
             }, 3);
