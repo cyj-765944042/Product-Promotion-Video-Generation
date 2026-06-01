@@ -4,7 +4,9 @@ import {
   VideoEditClient,
   S3Storage, 
   Config, 
-  HeaderUtils
+  HeaderUtils,
+  TTSClient,
+  ASRClient
 } from 'coze-coding-dev-sdk';
 import fs from 'fs';
 import path from 'path';
@@ -49,13 +51,15 @@ async function sendEvent(controller: ReadableStreamDefaultController, data: Stre
 }
 
 // Generate subtitles from segmented script
-function generateSubtitlesFromSegments(segments: ScriptSegment[]): Subtitle[] {
+function generateSubtitlesFromSegments(segments: ScriptSegment[], durations?: number[]): Subtitle[] {
   const subtitles: Subtitle[] = [];
   let currentTime = 0;
 
-  for (const segment of segments) {
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
     const text = segment.script.trim();
-    const duration = segment.duration || 4;
+    // Use actual audio duration if provided, otherwise fall back to segment duration
+    const duration = durations?.[i] ?? segment.duration ?? 4;
     
     subtitles.push({
       start: currentTime,
@@ -185,18 +189,68 @@ export async function POST(request: NextRequest) {
         });
         
         const videoClient = new VideoGenerationClient(defaultConfig, finalHeaders);
-        // Video edit client uses SDK default config
         const videoEditClient = new VideoEditClient(defaultConfig, finalHeaders);
         const storage = new S3Storage();
+        const ttsClient = new TTSClient(defaultConfig, finalHeaders);
+        const asrClient = new ASRClient(defaultConfig, finalHeaders);
         
         // Use SDK default model
         const videoModel = 'doubao-seedance-1-5-pro-251215';
 
         const segmentVideoUrls: string[] = [];
+        const segmentDurations: number[] = []; // Store actual audio durations
 
-        // Step 1: Generate video for each segment (with audio)
+        // Step 1: Generate audio for each segment first using TTS
+        sendEvent(controller, {
+          type: 'segment_start',
+          content: `正在生成 ${segments.length} 段口播音频...`,
+          segmentId: 0,
+          current: 0,
+          total: segments.length,
+        });
+
+        const audioUrls: string[] = [];
+        const audioDurations: number[] = [];
+        
         for (let i = 0; i < segments.length; i++) {
           const segment = segments[i];
+          
+          try {
+            // Generate TTS audio for this segment
+            const ttsResponse = await ttsClient.synthesize({
+              uid: `user_${Date.now()}`,
+              text: segment.script,
+              speaker: 'zh_female_xueayi_saturn_bigtts', // Children's audiobook voice - good for product narration
+              audioFormat: 'mp3',
+              sampleRate: 24000,
+            });
+            
+            audioUrls.push(ttsResponse.audioUri);
+            
+            // Get audio duration using ASR
+            const asrResult = await asrClient.recognize({
+              uid: `user_${Date.now()}`,
+              url: ttsResponse.audioUri,
+            });
+            
+            // ASR returns duration in milliseconds, convert to seconds
+            const audioDuration = asrResult.duration ? Math.ceil(asrResult.duration / 1000) : segment.duration || 5;
+            audioDurations.push(audioDuration);
+            
+            console.log(`Segment ${i + 1} audio duration: ${audioDuration}s`);
+          } catch (error) {
+            console.error(`TTS generation failed for segment ${i + 1}:`, error);
+            // Fallback to default duration
+            audioUrls.push('');
+            audioDurations.push(segment.duration || 5);
+          }
+        }
+
+        // Step 2: Generate video for each segment based on audio duration
+        for (let i = 0; i < segments.length; i++) {
+          const segment = segments[i];
+          const audioDuration = audioDurations[i];
+          const audioUrl = audioUrls[i];
           
           sendEvent(controller, {
             type: 'segment_start',
@@ -212,52 +266,41 @@ export async function POST(request: NextRequest) {
           > = [];
           
           // Use product image as reference for video generation
-          // Include image for all segments to maintain product consistency
           if (imageUrl) {
             content.push({
               type: 'image_url' as const,
               image_url: { url: imageUrl },
-              role: i === 0 ? 'first_frame' as const : undefined, // Only first segment uses first_frame
+              role: i === 0 ? 'first_frame' as const : undefined,
             });
           }
           
-          // Add the visual prompt for video generation
-          // Include product name and script for better product relevance
-          const promptWithScript = productName 
-            ? `${productName}产品展示：${segment.prompt}，同时旁白说："${segment.script}"`
-            : `${segment.prompt}，同时旁白说："${segment.script}"`;
+          // Video prompt without audio script (audio will be added separately)
+          const videoPrompt = productName 
+            ? `${productName}产品展示：${segment.prompt}`
+            : segment.prompt;
           
           content.push({
             type: 'text' as const,
-            text: promptWithScript,
+            text: videoPrompt,
           });
           
-          // Generate video with visual prompt and voiceover script
-          // Using user-provided model EP (ep-20260514120705-pqv86) for Doubao-Seedance-1.5-pro
-          // The model can generate synchronized audio including voice, sound effects, and background music
+          // Generate video with duration matching audio length
+          // Duration based on TTS audio duration
           let videoResponse;
           try {
             videoResponse = await videoClient.videoGeneration(content, {
-              model: videoModel, // Use user-provided EP or default model
-              duration: Math.max(5, Math.min(10, segment.duration || 5)), // 5-10 seconds
+              model: videoModel,
+              duration: Math.max(3, Math.min(10, audioDuration)), // Use audio duration, 3-10 seconds
               ratio: '16:9',
               resolution: '720p',
-              generateAudio: true, // Enable audio generation
+              generateAudio: false, // We'll add our own TTS audio
             });
           } catch (error) {
             console.error('视频生成API错误:', error);
-            // Check if it's a permission error (403)
             const errorMessage = error instanceof Error ? error.message : '';
             if (errorMessage.includes('403') || errorMessage.includes('permission')) {
-              throw new Error(`视频生成服务暂不可用。这可能是因为：
-1. 当前环境没有视频生成权限
-2. 需要配置火山方舟API密钥
-
-解决方案：
-- 在生产环境中部署，视频生成功能将自动可用
-- 或者在.env.local中配置有效的API密钥`);
+              throw new Error(`视频生成服务暂不可用。请检查API配置或联系管理员。`);
             }
-            // 返回更详细的错误信息
             if (error instanceof Error) {
               throw new Error(`第 ${i + 1} 段视频生成失败: ${error.message}`);
             }
@@ -268,20 +311,43 @@ export async function POST(request: NextRequest) {
             throw new Error(`第 ${i + 1} 段视频生成失败：未返回视频URL`);
           }
 
-          segmentVideoUrls.push(videoResponse.videoUrl);
+          // Step 3: Combine video with TTS audio
+          let finalVideoUrl = videoResponse.videoUrl;
+          
+          if (audioUrl) {
+            try {
+              sendEvent(controller, {
+                type: 'subtitle_start',
+                content: `正在合并第 ${i + 1} 段音频...`,
+              });
+              
+              // Compile video with TTS audio - pass video and audio as separate arguments
+              const compiledVideo = await videoEditClient.compileVideoAudio(
+                videoResponse.videoUrl,
+                audioUrl,
+                { isAudioReserve: false }
+              );
+              finalVideoUrl = compiledVideo.url || videoResponse.videoUrl;
+            } catch (error) {
+              console.error(`音频合并失败 for segment ${i + 1}:`, error);
+              // Continue without audio merge
+            }
+          }
+
+          segmentVideoUrls.push(finalVideoUrl);
+          segmentDurations.push(audioDuration);
 
           sendEvent(controller, {
             type: 'segment_video',
-            content: { segmentId: segment.id, videoUrl: videoResponse.videoUrl },
+            content: { segmentId: segment.id, videoUrl: finalVideoUrl },
             segmentId: i,
           });
         }
 
-        // Step 2: Concatenate all segment videos (skip if only one segment)
+        // Step 4: Concatenate all segment videos (skip if only one segment)
         if (segments.length === 1) {
-          // Single segment - no need to concatenate
-          const totalDuration = segments.reduce((sum, s) => sum + (s.duration || 4), 0);
-          const subtitles = generateSubtitlesFromSegments(segments);
+          const totalDuration = segmentDurations[0];
+          const subtitles = generateSubtitlesFromSegments(segments, segmentDurations);
           
           sendEvent(controller, {
             type: 'complete',
@@ -296,14 +362,13 @@ export async function POST(request: NextRequest) {
           return;
         }
         
-        // Step 2b: Concatenate multiple segments
+        // Step 4b: Concatenate multiple segments
         sendEvent(controller, {
           type: 'concat_start',
           content: `正在拼接 ${segments.length} 个视频片段...`,
         });
 
-        // Step 2b-1: Transfer videos to object storage for accessible URLs
-        // Video edit API cannot access Volcengine temporary URLs directly
+        // Step 4b-1: Transfer videos to object storage for accessible URLs
         sendEvent(controller, {
           type: 'upload_start',
           content: '正在转存视频到对象存储...',
@@ -334,8 +399,8 @@ export async function POST(request: NextRequest) {
               content: '视频转存失败，返回分段视频',
             });
             
-            const subtitles = generateSubtitlesFromSegments(segments);
-            const totalDuration = segments.reduce((sum, s) => sum + (s.duration || 4), 0);
+            const subtitles = generateSubtitlesFromSegments(segments, segmentDurations);
+            const totalDuration = segmentDurations.reduce((sum, d) => sum + d, 0);
             
             sendEvent(controller, {
               type: 'complete',
@@ -345,7 +410,7 @@ export async function POST(request: NextRequest) {
                   id: seg.id,
                   script: seg.script,
                   videoUrl: segmentVideoUrls[idx],
-                  duration: seg.duration || 4,
+                  duration: segmentDurations[idx],
                 })),
                 subtitles: subtitles,
                 duration: totalDuration,
@@ -417,8 +482,8 @@ export async function POST(request: NextRequest) {
             content: '视频拼接服务暂时不可用，已为您生成分段视频',
           });
 
-          const subtitles = generateSubtitlesFromSegments(segments);
-          totalDuration = segments.reduce((sum, s) => sum + (s.duration || 4), 0);
+          const subtitles = generateSubtitlesFromSegments(segments, segmentDurations);
+          totalDuration = segmentDurations.reduce((sum, d) => sum + d, 0);
 
           // Return segment videos with their individual URLs
           sendEvent(controller, {
@@ -429,7 +494,7 @@ export async function POST(request: NextRequest) {
                 id: seg.id,
                 script: seg.script,
                 videoUrl: segmentVideoUrls[idx],
-                duration: seg.duration || 4,
+                duration: segmentDurations[idx],
               })),
               subtitles: subtitles,
               duration: totalDuration,
@@ -488,7 +553,7 @@ export async function POST(request: NextRequest) {
           content: '正在添加字幕到视频...',
         });
 
-        const subtitles = generateSubtitlesFromSegments(segments);
+        const subtitles = generateSubtitlesFromSegments(segments, segmentDurations);
 
         // Prepare subtitle configuration
         const textList = subtitles.map(sub => ({
