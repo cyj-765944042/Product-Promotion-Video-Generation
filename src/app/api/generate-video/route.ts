@@ -566,10 +566,35 @@ export async function POST(request: NextRequest) {
           };
         });
         
-        // Wait for all video generations to complete
-        const videoResults = await Promise.all(videoGenerationPromises);
+        // Use a counter to track completed videos (atomic increment)
+        let completedCount = 0;
         
-        // Sort by index to maintain order and send completion events
+        // Wait for all video generations to complete, sending events as each completes
+        const videoResults = await Promise.all(
+          videoGenerationPromises.map(async (promise) => {
+            const result = await promise;
+            
+            // Increment completed count atomically
+            completedCount++;
+            
+            // Send completion event immediately when this video finishes
+            sendEvent(controller, {
+              type: 'segment_video',
+              content: { 
+                segmentId: result.segmentId, 
+                videoUrl: result.videoUrl,
+                duration: result.audioDuration,
+              },
+              segmentId: result.index,
+              current: completedCount,  // Use completed count instead of index
+              total: segments.length,
+            });
+            
+            return result;
+          })
+        );
+        
+        // Sort by index to maintain order
         videoResults.sort((a, b) => a.index - b.index);
         
         for (const result of videoResults) {
@@ -586,19 +611,6 @@ export async function POST(request: NextRequest) {
             segmentId: result.segmentId,
             url: result.videoUrl,
             duration: result.audioDuration,
-          });
-
-          // Send completion event for each segment
-          sendEvent(controller, {
-            type: 'segment_video',
-            content: { 
-              segmentId: result.segmentId, 
-              videoUrl: result.videoUrl,
-              duration: result.audioDuration,
-            },
-            segmentId: result.index,
-            current: result.index + 1,
-            total: segments.length,
           });
         }
 

@@ -436,7 +436,12 @@ export default function Home() {
                   total: parsed.total || scriptSegments.length 
                 });
               } else if (parsed.type === 'segment_video') {
-                // Segment video generated
+                // Segment video generated - update progress
+                setProgressType('video');
+                setSegmentProgress({ 
+                  current: parsed.current || 1, 
+                  total: parsed.total || scriptSegments.length 
+                });
               } else if (parsed.type === 'audio_merge') {
                 setVideoSteps(prev => updateStepStatus(prev, 'segments', 'completed'));
                 setVideoSteps(prev => updateStepStatus(prev, 'audioMerge', 'in_progress'));
@@ -943,7 +948,7 @@ export default function Home() {
                     <span>
                       {progressType === 'tts' 
                         ? `正在生成第 ${segmentProgress.current} 段配音 / 共 ${segmentProgress.total} 段`
-                        : `正在生成第 ${segmentProgress.current} 段视频 / 共 ${segmentProgress.total} 段`}
+                        : `已生成 ${segmentProgress.current} / ${segmentProgress.total} 个视频片段`}
                     </span>
                   </div>
                 </div>
