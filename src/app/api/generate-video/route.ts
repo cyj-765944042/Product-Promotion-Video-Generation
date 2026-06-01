@@ -88,7 +88,7 @@ async function downloadFile(url: string, outputPath: string): Promise<void> {
   });
 }
 
-// Get audio duration using FFmpeg
+// Get audio duration using FFmpeg (returns precise float seconds)
 async function getAudioDurationFFmpeg(audioPath: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const ffprobe = spawn('ffprobe', [
@@ -107,7 +107,7 @@ async function getAudioDurationFFmpeg(audioPath: string): Promise<number> {
       if (code === 0) {
         const duration = parseFloat(output.trim());
         if (!isNaN(duration)) {
-          resolve(Math.ceil(duration)); // Round up to nearest second
+          resolve(duration); // Return precise float duration
         } else {
           resolve(5); // Default to 5 seconds if parsing fails
         }
@@ -160,7 +160,7 @@ async function mergeVideoAudioFFmpeg(
   });
 }
 
-// Get video duration using FFmpeg
+// Get video duration using FFmpeg (returns precise float seconds)
 async function getVideoDurationFFmpeg(videoPath: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const ffprobe = spawn('ffprobe', [
@@ -179,7 +179,7 @@ async function getVideoDurationFFmpeg(videoPath: string): Promise<number> {
       if (code === 0) {
         const duration = parseFloat(output.trim());
         if (!isNaN(duration)) {
-          resolve(Math.ceil(duration)); // Round up to nearest second
+          resolve(duration); // Return precise float duration
         } else {
           resolve(5); // Default to 5 seconds if parsing fails
         }
@@ -401,7 +401,8 @@ export async function POST(request: NextRequest) {
         const segmentVideoInfos: Array<{
           videoUrl: string;
           audioUrl: string;
-          duration: number;
+          audioDuration: number; // 音频时长，用于字幕时间计算
+          videoDuration: number; // 视频时长
           script: string;
         }> = [];
         
@@ -460,7 +461,8 @@ export async function POST(request: NextRequest) {
           segmentVideoInfos.push({
             videoUrl: videoResponse.videoUrl,
             audioUrl: audioInfo.url,
-            duration: audioInfo.duration,
+            audioDuration: audioInfo.duration, // 音频时长，用于字幕
+            videoDuration: audioInfo.duration, // 初始视频时长，后续会更新
             script: segment.script,
           });
           
@@ -523,12 +525,12 @@ export async function POST(request: NextRequest) {
               await mergeVideoAudioFFmpeg(localVideoPath, localAudioPath, mergedFilePath);
               
               // Get actual video duration after merge using FFmpeg
-              const actualDuration = await getVideoDurationFFmpeg(mergedFilePath);
-              console.log(`合并后视频真实时长: ${actualDuration}秒`);
+              const actualVideoDuration = await getVideoDurationFFmpeg(mergedFilePath);
+              console.log(`合并后视频真实时长: ${actualVideoDuration}秒，音频时长: ${info.audioDuration}秒`);
               
-              // Update segment video info with actual duration
-              segmentVideoInfos[i].duration = actualDuration;
-              mergedDurations.push(actualDuration);
+              // Update only videoDuration, keep audioDuration for subtitles
+              segmentVideoInfos[i].videoDuration = actualVideoDuration;
+              mergedDurations.push(actualVideoDuration);
               
               // Upload merged video to object storage
               console.log('上传合并后的视频...');
@@ -544,7 +546,7 @@ export async function POST(request: NextRequest) {
               });
               
               mergedVideoUrls.push(mergedVideoUrl);
-              console.log(`视频 ${i + 1} FFmpeg音视频合并成功，时长${actualDuration}秒`);
+              console.log(`视频 ${i + 1} FFmpeg音视频合并成功，视频${actualVideoDuration}秒，音频${info.audioDuration}秒`);
               
               // Clean up temp files
               fs.unlinkSync(localVideoPath);
@@ -554,11 +556,11 @@ export async function POST(request: NextRequest) {
               console.error(`FFmpeg音频合并失败 (${i + 1}):`, mergeError);
               // Fallback to original video URL and duration
               mergedVideoUrls.push(info.videoUrl);
-              mergedDurations.push(info.duration);
+              mergedDurations.push(info.videoDuration);
             }
           } else {
             mergedVideoUrls.push(info.videoUrl);
-            mergedDurations.push(info.duration);
+            mergedDurations.push(info.videoDuration);
           }
         }
 
@@ -566,9 +568,11 @@ export async function POST(request: NextRequest) {
         // Step 4: Concatenate all videos (skip if only one segment)
         // ==========================================
         if (segments.length === 1) {
+          // Use audioDuration for subtitle timing (audio starts at 0)
+          const audioDuration = segmentVideoInfos[0].audioDuration;
           const subtitles: Subtitle[] = [{
             start: 0,
-            end: segmentVideoInfos[0].duration,
+            end: audioDuration,
             text: segmentVideoInfos[0].script,
           }];
           
@@ -577,7 +581,7 @@ export async function POST(request: NextRequest) {
             content: {
               videoUrl: mergedVideoUrls[0],
               subtitles: subtitles,
-              duration: segmentVideoInfos[0].duration,
+              duration: segmentVideoInfos[0].videoDuration,
             },
           });
           
@@ -609,11 +613,12 @@ export async function POST(request: NextRequest) {
           } catch (transferError) {
             console.error(`视频 ${i + 1} 转存失败:`, transferError);
             // Return individual segments on failure
+            // Use audioDuration for subtitle timing
             const subtitles = segmentVideoInfos.map((info, idx) => {
-              const prevDuration = segmentVideoInfos.slice(0, idx).reduce((sum, i) => sum + i.duration, 0);
+              const prevDuration = segmentVideoInfos.slice(0, idx).reduce((sum, i) => sum + i.audioDuration, 0);
               return {
                 start: prevDuration,
-                end: prevDuration + info.duration,
+                end: prevDuration + info.audioDuration,
                 text: info.script,
               };
             });
@@ -626,10 +631,10 @@ export async function POST(request: NextRequest) {
                   id: segments[idx].id,
                   script: info.script,
                   videoUrl: mergedVideoUrls[idx],
-                  duration: info.duration,
+                  duration: info.videoDuration,
                 })),
                 subtitles: subtitles,
-                duration: segmentVideoInfos.reduce((sum, i) => sum + i.duration, 0),
+                duration: segmentVideoInfos.reduce((sum, i) => sum + i.videoDuration, 0),
                 isSegmented: true,
               },
             });
@@ -663,7 +668,7 @@ export async function POST(request: NextRequest) {
 
             concatenatedVideoUrl = concatResponse.url;
             totalDuration = concatResponse.video_meta?.duration || 
-              segmentVideoInfos.reduce((sum, i) => sum + i.duration, 0);
+              segmentVideoInfos.reduce((sum, i) => sum + i.videoDuration, 0);
             break;
           } catch (concatErr) {
             console.error(`视频拼接第${attempt}次失败:`, concatErr);
@@ -675,11 +680,12 @@ export async function POST(request: NextRequest) {
 
         if (!concatenatedVideoUrl) {
           // Return individual segments
+          // Use audioDuration for subtitle timing
           const subtitles = segmentVideoInfos.map((info, idx) => {
-            const prevDuration = segmentVideoInfos.slice(0, idx).reduce((sum, i) => sum + i.duration, 0);
+            const prevDuration = segmentVideoInfos.slice(0, idx).reduce((sum, i) => sum + i.audioDuration, 0);
             return {
               start: prevDuration,
-              end: prevDuration + info.duration,
+              end: prevDuration + info.audioDuration,
               text: info.script,
             };
           });
@@ -692,10 +698,10 @@ export async function POST(request: NextRequest) {
                 id: segments[idx].id,
                 script: info.script,
                 videoUrl: mergedVideoUrls[idx],
-                duration: info.duration,
+                duration: info.videoDuration,
               })),
               subtitles: subtitles,
-              duration: segmentVideoInfos.reduce((sum, i) => sum + i.duration, 0),
+              duration: segmentVideoInfos.reduce((sum, i) => sum + i.videoDuration, 0),
               isSegmented: true,
             },
           });
@@ -712,17 +718,21 @@ export async function POST(request: NextRequest) {
           content: '正在添加字幕到视频...',
         });
 
-        // Generate subtitles based on actual durations
+        // Generate subtitles based on AUDIO durations (not video durations)
+        // Each audio starts at the beginning of its segment video
         const subtitles: Subtitle[] = [];
         let currentTime = 0;
         for (const info of segmentVideoInfos) {
+          // Use audioDuration for subtitle timing
           subtitles.push({
             start: currentTime,
-            end: currentTime + info.duration,
+            end: currentTime + info.audioDuration,
             text: info.script,
           });
-          currentTime += info.duration;
+          currentTime += info.audioDuration;
         }
+
+        console.log('字幕时间段（基于音频时长）:', subtitles.map(s => `${s.start}-${s.end}: ${s.text}`));
 
         const textList = subtitles.map(sub => ({
           start_time: sub.start,
