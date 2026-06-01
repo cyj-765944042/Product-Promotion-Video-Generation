@@ -160,6 +160,55 @@ async function mergeVideoAudioFFmpeg(
   });
 }
 
+// Sleep utility for exponential backoff
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Video generation with exponential backoff retry for 429 errors
+async function generateVideoWithBackoff(
+  videoClient: VideoGenerationClient,
+  content: Array<{ type: string; text?: string; url?: string }>,
+  options: {
+    model: string;
+    duration: number;
+    ratio: string;
+    resolution: string;
+    generateAudio: boolean;
+  },
+  segmentIndex: number,
+  maxRetries: number = 3
+): Promise<{ videoUrl: string }> {
+  const backoffDelays = [2000, 4000, 8000]; // 2s, 4s, 8s
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const videoResponse = await videoClient.videoGeneration(content as any, options as any);
+      
+      if (!videoResponse.videoUrl) {
+        throw new Error('未返回视频URL');
+      }
+      
+      return { videoUrl: videoResponse.videoUrl };
+    } catch (error: unknown) {
+      const is429Error = error instanceof Error && 
+        (error.message.includes('429') || 
+         (error as { statusCode?: number }).statusCode === 429);
+      
+      if (is429Error && attempt < maxRetries) {
+        const delay = backoffDelays[attempt];
+        console.log(`第 ${segmentIndex + 1} 段视频生成遇到429限流，等待 ${delay/1000} 秒后重试（第 ${attempt + 1}/${maxRetries} 次）...`);
+        await sleep(delay);
+      } else {
+        throw error;
+      }
+    }
+  }
+  
+  throw new Error(`第 ${segmentIndex + 1} 段视频生成失败，已重试${maxRetries}次`);
+}
+
 // Get video duration using FFmpeg (returns precise float seconds)
 async function getVideoDurationFFmpeg(videoPath: string): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -448,17 +497,20 @@ export async function POST(request: NextRequest) {
           
           console.log(`开始生成第 ${i + 1} 段视频（${videoDuration}秒）...`);
           
-          const videoResponse = await videoClient.videoGeneration(content, {
-            model: videoModel,
-            duration: videoDuration,
-            ratio: '16:9',
-            resolution: '720p',
-            generateAudio: false, // Don't generate audio, we'll add our own
-          });
-
-          if (!videoResponse.videoUrl) {
-            throw new Error(`第 ${i + 1} 段视频生成失败：未返回视频URL`);
-          }
+          // Use exponential backoff retry for 429 errors
+          const videoResponse = await generateVideoWithBackoff(
+            videoClient,
+            content,
+            {
+              model: videoModel,
+              duration: videoDuration,
+              ratio: '16:9',
+              resolution: '720p',
+              generateAudio: false, // Don't generate audio, we'll add our own
+            },
+            i,
+            3 // max retries
+          );
 
           console.log(`第 ${i + 1} 段视频生成成功:`, videoResponse.videoUrl);
           
