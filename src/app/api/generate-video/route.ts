@@ -184,6 +184,7 @@ async function generateVideoWithTaskCache(
     ratio: string;
     resolution: string;
     generateAudio: boolean;
+    watermark?: boolean;
   },
   segmentIndex: number,
   cacheKey: string,
@@ -550,6 +551,7 @@ export async function POST(request: NextRequest) {
               ratio: '16:9',
               resolution: '720p',
               generateAudio: false, // Don't generate audio, we'll add our own
+              watermark: false, // Disable AI watermark
             },
             i,
             cacheKey,
