@@ -165,8 +165,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Video generation with exponential backoff retry for 429 errors
-async function generateVideoWithBackoff(
+// Task cache to avoid duplicate video generation for the same segment
+// Key: cache key (segment identifier), Value: Promise of video generation result
+const videoTaskCache = new Map<string, Promise<{ videoUrl: string; taskId: string }>>();
+
+// Generate cache key for video task
+function getVideoTaskCacheKey(segmentIndex: number, prompt: string, duration: number): string {
+  return `${segmentIndex}_${prompt}_${duration}`;
+}
+
+// Video generation with task caching to avoid duplicate generation
+async function generateVideoWithTaskCache(
   videoClient: VideoGenerationClient,
   content: Array<{ type: string; text?: string; url?: string }>,
   options: {
@@ -177,36 +186,67 @@ async function generateVideoWithBackoff(
     generateAudio: boolean;
   },
   segmentIndex: number,
+  cacheKey: string,
   maxRetries: number = 3
-): Promise<{ videoUrl: string }> {
-  const backoffDelays = [2000, 4000, 8000]; // 2s, 4s, 8s
-  
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const videoResponse = await videoClient.videoGeneration(content as any, options as any);
-      
-      if (!videoResponse.videoUrl) {
-        throw new Error('未返回视频URL');
-      }
-      
-      return { videoUrl: videoResponse.videoUrl };
-    } catch (error: unknown) {
-      const is429Error = error instanceof Error && 
-        (error.message.includes('429') || 
-         (error as { statusCode?: number }).statusCode === 429);
-      
-      if (is429Error && attempt < maxRetries) {
-        const delay = backoffDelays[attempt];
-        console.log(`第 ${segmentIndex + 1} 段视频生成遇到429限流，等待 ${delay/1000} 秒后重试（第 ${attempt + 1}/${maxRetries} 次）...`);
-        await sleep(delay);
-      } else {
-        throw error;
-      }
-    }
+): Promise<{ videoUrl: string; taskId: string }> {
+  // Check if there's already a task in progress for this segment
+  const existingTask = videoTaskCache.get(cacheKey);
+  if (existingTask) {
+    console.log(`第 ${segmentIndex + 1} 段视频已有任务在执行，等待结果...`);
+    return existingTask;
   }
   
-  throw new Error(`第 ${segmentIndex + 1} 段视频生成失败，已重试${maxRetries}次`);
+  // Create new task promise
+  const taskPromise = (async (): Promise<{ videoUrl: string; taskId: string }> => {
+    const backoffDelays = [2000, 4000, 8000]; // 2s, 4s, 8s
+    let lastTaskId: string | null = null;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`第 ${segmentIndex + 1} 段视频生成开始（尝试 ${attempt + 1}/${maxRetries + 1}）...`);
+        
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const videoResponse = await videoClient.videoGeneration(content as any, options as any);
+        
+        if (!videoResponse.videoUrl) {
+          throw new Error('未返回视频URL');
+        }
+        
+        // Clear cache after successful completion
+        videoTaskCache.delete(cacheKey);
+        
+        console.log(`第 ${segmentIndex + 1} 段视频生成成功 (taskId: ${videoResponse.response.id})`);
+        
+        return { 
+          videoUrl: videoResponse.videoUrl, 
+          taskId: videoResponse.response.id 
+        };
+      } catch (error: unknown) {
+        const is429Error = error instanceof Error && 
+          (error.message.includes('429') || 
+           (error as { statusCode?: number }).statusCode === 429);
+        
+        if (is429Error && attempt < maxRetries) {
+          const delay = backoffDelays[attempt];
+          console.log(`第 ${segmentIndex + 1} 段视频生成遇到429限流，等待 ${delay/1000} 秒后重试（第 ${attempt + 1}/${maxRetries} 次）...`);
+          await sleep(delay);
+        } else {
+          // Clear cache on final failure
+          videoTaskCache.delete(cacheKey);
+          throw error;
+        }
+      }
+    }
+    
+    // Clear cache on failure
+    videoTaskCache.delete(cacheKey);
+    throw new Error(`第 ${segmentIndex + 1} 段视频生成失败，已重试${maxRetries}次`);
+  })();
+  
+  // Store the promise in cache before execution
+  videoTaskCache.set(cacheKey, taskPromise);
+  
+  return taskPromise;
 }
 
 // Get video duration using FFmpeg (returns precise float seconds)
@@ -497,8 +537,11 @@ export async function POST(request: NextRequest) {
           
           console.log(`开始生成第 ${i + 1} 段视频（${videoDuration}秒）...`);
           
-          // Use exponential backoff retry for 429 errors
-          const videoResponse = await generateVideoWithBackoff(
+          // Generate cache key for this segment
+          const cacheKey = getVideoTaskCacheKey(i, promptText, videoDuration);
+          
+          // Use task caching to avoid duplicate generation
+          const videoResponse = await generateVideoWithTaskCache(
             videoClient,
             content,
             {
@@ -509,10 +552,9 @@ export async function POST(request: NextRequest) {
               generateAudio: false, // Don't generate audio, we'll add our own
             },
             i,
+            cacheKey,
             3 // max retries
           );
-
-          console.log(`第 ${i + 1} 段视频生成成功:`, videoResponse.videoUrl);
           
           return {
             index: i,
