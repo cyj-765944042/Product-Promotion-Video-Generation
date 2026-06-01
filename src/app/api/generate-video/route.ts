@@ -20,13 +20,34 @@ interface Subtitle {
   text: string;
 }
 
+// 中间文件信息
+interface IntermediateFile {
+  type: 'audio' | 'video' | 'merged_video';
+  segmentId?: number;
+  url: string;
+  duration?: number;
+  localPath?: string;
+}
+
+// 视频生成任务的所有中间文件
+interface IntermediateFiles {
+  taskId: string;
+  audios: IntermediateFile[];
+  videos: IntermediateFile[];
+  mergedVideos: IntermediateFile[];
+  finalVideo?: IntermediateFile;
+}
+
 interface SSEEvent {
-  type: 'segment_start' | 'tts_start' | 'tts_complete' | 'segment_video' | 'audio_merge' | 'concat_start' | 'upload_start' | 'subtitle_start' | 'video_url' | 'subtitles' | 'complete' | 'done' | 'error';
+  type: 'segment_start' | 'tts_start' | 'tts_complete' | 'segment_video' | 'audio_merge' | 'concat_start' | 'upload_start' | 'subtitle_start' | 'video_url' | 'subtitles' | 'complete' | 'done' | 'error' | 'intermediate_files';
   content: unknown;
   segmentId?: number;
   current?: number;
   total?: number;
 }
+
+// 中间文件存储目录前缀（对象存储）
+const INTERMEDIATE_FOLDER = 'video_generation_intermediates';
 
 // Send SSE event
 function sendEvent(controller: ReadableStreamDefaultController, event: SSEEvent) {
@@ -131,6 +152,14 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // 中间文件存储记录 - 用于本地快速合成新内容
+  const intermediateFiles = {
+    audios: [] as Array<{ segmentId: number; url: string; duration: number; script: string }>,
+    segmentVideos: [] as Array<{ segmentId: number; url: string; duration: number }>,
+    finalVideo: null as { url: string; duration: number } | null,
+    subtitles: [] as Array<{ start: number; end: number; text: string }>,
+  };
+
   // Create streaming response
   const stream = new ReadableStream({
     async start(controller) {
@@ -225,6 +254,14 @@ export async function POST(request: NextRequest) {
               });
               
               console.log(`TTS音频 ${i + 1} 生成成功, 时长约 ${estimatedDuration}秒`);
+              
+              // 记录中间文件
+              intermediateFiles.audios.push({
+                segmentId: segment.id,
+                url: ttsResponse.audioUri,
+                duration: estimatedDuration,
+                script: segment.script,
+              });
             } else {
               throw new Error('TTS未返回音频URL');
             }
@@ -305,6 +342,13 @@ export async function POST(request: NextRequest) {
             audioUrl: audioInfo.url,
             duration: audioInfo.duration,
             script: segment.script,
+          });
+          
+          // 记录中间文件
+          intermediateFiles.segmentVideos.push({
+            segmentId: segment.id,
+            url: videoResponse.videoUrl,
+            duration: audioInfo.duration,
           });
 
           sendEvent(controller, {
@@ -596,6 +640,7 @@ export async function POST(request: NextRequest) {
             videoUrl: finalVideoUrl,
             duration: totalDuration,
             segments: segments.length,
+            intermediateFiles: intermediateFiles,
           }),
         });
 
