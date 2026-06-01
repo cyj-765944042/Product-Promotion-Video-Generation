@@ -105,6 +105,7 @@ export default function Home() {
   
   // 视频分段进度
   const [segmentProgress, setSegmentProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+  const [progressType, setProgressType] = useState<'tts' | 'video'>('tts'); // 区分TTS和视频生成阶段
   
   // 分段视频（当拼接失败时使用）
   const [segmentVideos, setSegmentVideos] = useState<Array<{ id: number; script: string; videoUrl: string; duration: number }>>([]);
@@ -419,6 +420,7 @@ export default function Home() {
               
               if (parsed.type === 'tts_start') {
                 setVideoSteps(prev => updateStepStatus(prev, 'tts', 'in_progress'));
+                setProgressType('tts');
                 setSegmentProgress({ 
                   current: parsed.current || 1, 
                   total: parsed.total || scriptSegments.length 
@@ -428,6 +430,7 @@ export default function Home() {
               } else if (parsed.type === 'segment_start') {
                 setVideoSteps(prev => updateStepStatus(prev, 'tts', 'completed'));
                 setVideoSteps(prev => updateStepStatus(prev, 'segments', 'in_progress'));
+                setProgressType('video');
                 setSegmentProgress({ 
                   current: parsed.current || 1, 
                   total: parsed.total || scriptSegments.length 
@@ -938,7 +941,9 @@ export default function Home() {
                   <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
                     <Scissors className="w-4 h-4" />
                     <span>
-                      正在生成第 {segmentProgress.current} 段视频 / 共 {segmentProgress.total} 段
+                      {progressType === 'tts' 
+                        ? `正在生成第 ${segmentProgress.current} 段配音 / 共 ${segmentProgress.total} 段`
+                        : `正在生成第 ${segmentProgress.current} 段视频 / 共 ${segmentProgress.total} 段`}
                     </span>
                   </div>
                 </div>

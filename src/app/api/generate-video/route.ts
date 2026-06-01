@@ -396,7 +396,7 @@ export async function POST(request: NextRequest) {
         }
 
         // ==========================================
-        // Step 2: Generate video for each segment based on audio duration
+        // Step 2: Generate videos in parallel for efficiency
         // ==========================================
         const segmentVideoInfos: Array<{
           videoUrl: string;
@@ -406,18 +406,19 @@ export async function POST(request: NextRequest) {
           script: string;
         }> = [];
         
-        for (let i = 0; i < segments.length; i++) {
-          const segment = segments[i];
+        // Send initial progress notification
+        sendEvent(controller, {
+          type: 'segment_start',
+          content: `正在并发生成 ${segments.length} 段视频...`,
+          segmentId: 0,
+          current: 0,
+          total: segments.length,
+        });
+        
+        // Create video generation promises for all segments
+        const videoGenerationPromises = segments.map(async (segment, i) => {
           const audioInfo = audioInfos[i];
           
-          sendEvent(controller, {
-            type: 'segment_start',
-            content: `正在生成第 ${i + 1}/${segments.length} 段视频（${audioInfo.duration}秒）...`,
-            segmentId: segment.id,
-            current: i + 1,
-            total: segments.length,
-          });
-
           const content: Array<
             | { type: 'text'; text: string }
             | { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' }
@@ -444,6 +445,9 @@ export async function POST(request: NextRequest) {
           
           // Generate video with duration matching the audio (min 5 seconds for API limit)
           const videoDuration = Math.max(5, audioInfo.duration);
+          
+          console.log(`开始生成第 ${i + 1} 段视频（${videoDuration}秒）...`);
+          
           const videoResponse = await videoClient.videoGeneration(content, {
             model: videoModel,
             duration: videoDuration,
@@ -457,30 +461,50 @@ export async function POST(request: NextRequest) {
           }
 
           console.log(`第 ${i + 1} 段视频生成成功:`, videoResponse.videoUrl);
-
-          segmentVideoInfos.push({
+          
+          return {
+            index: i,
+            segmentId: segment.id,
             videoUrl: videoResponse.videoUrl,
             audioUrl: audioInfo.url,
-            audioDuration: audioInfo.duration, // 音频时长，用于字幕
-            videoDuration: audioInfo.duration, // 初始视频时长，后续会更新
+            audioDuration: audioInfo.duration,
             script: segment.script,
+          };
+        });
+        
+        // Wait for all video generations to complete
+        const videoResults = await Promise.all(videoGenerationPromises);
+        
+        // Sort by index to maintain order and send completion events
+        videoResults.sort((a, b) => a.index - b.index);
+        
+        for (const result of videoResults) {
+          segmentVideoInfos.push({
+            videoUrl: result.videoUrl,
+            audioUrl: result.audioUrl,
+            audioDuration: result.audioDuration,
+            videoDuration: result.audioDuration,
+            script: result.script,
           });
           
           // 记录中间文件
           intermediateFiles.segmentVideos.push({
-            segmentId: segment.id,
-            url: videoResponse.videoUrl,
-            duration: audioInfo.duration,
+            segmentId: result.segmentId,
+            url: result.videoUrl,
+            duration: result.audioDuration,
           });
 
+          // Send completion event for each segment
           sendEvent(controller, {
             type: 'segment_video',
             content: { 
-              segmentId: segment.id, 
-              videoUrl: videoResponse.videoUrl,
-              duration: audioInfo.duration,
+              segmentId: result.segmentId, 
+              videoUrl: result.videoUrl,
+              duration: result.audioDuration,
             },
-            segmentId: i,
+            segmentId: result.index,
+            current: result.index + 1,
+            total: segments.length,
           });
         }
 
