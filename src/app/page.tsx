@@ -92,10 +92,10 @@ export default function Home() {
   // 视频生成状态
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [videoSteps, setVideoSteps] = useState<GenerationStep[]>([
-    { id: 'segments', title: '调用火山引擎图生视频API（分段生成，每段带配音）', status: 'pending' },
+    { id: 'tts', title: '生成每段口播的配音音频', status: 'pending' },
+    { id: 'segments', title: '调用火山引擎图生视频API（根据配音时长生成视频）', status: 'pending' },
+    { id: 'audioMerge', title: '将配音合并到视频中', status: 'pending' },
     { id: 'concat', title: '拼接视频片段并添加转场', status: 'pending' },
-    { id: 'download', title: '下载拼接后的视频', status: 'pending' },
-    { id: 'upload', title: '上传视频到对象存储', status: 'pending' },
     { id: 'subtitle', title: '添加字幕到视频中', status: 'pending' },
   ]);
   const [videoUrl, setVideoUrl] = useState<string>('');
@@ -417,7 +417,16 @@ export default function Home() {
             try {
               const parsed = JSON.parse(data);
               
-              if (parsed.type === 'segment_start') {
+              if (parsed.type === 'tts_start') {
+                setVideoSteps(prev => updateStepStatus(prev, 'tts', 'in_progress'));
+                setSegmentProgress({ 
+                  current: parsed.current || 1, 
+                  total: parsed.total || scriptSegments.length 
+                });
+              } else if (parsed.type === 'tts_complete') {
+                // TTS completed for a segment
+              } else if (parsed.type === 'segment_start') {
+                setVideoSteps(prev => updateStepStatus(prev, 'tts', 'completed'));
                 setVideoSteps(prev => updateStepStatus(prev, 'segments', 'in_progress'));
                 setSegmentProgress({ 
                   current: parsed.current || 1, 
@@ -425,17 +434,14 @@ export default function Home() {
                 });
               } else if (parsed.type === 'segment_video') {
                 // Segment video generated
-              } else if (parsed.type === 'concat_start') {
+              } else if (parsed.type === 'audio_merge') {
                 setVideoSteps(prev => updateStepStatus(prev, 'segments', 'completed'));
+                setVideoSteps(prev => updateStepStatus(prev, 'audioMerge', 'in_progress'));
+              } else if (parsed.type === 'concat_start') {
+                setVideoSteps(prev => updateStepStatus(prev, 'audioMerge', 'completed'));
                 setVideoSteps(prev => updateStepStatus(prev, 'concat', 'in_progress'));
-              } else if (parsed.type === 'download_start') {
-                setVideoSteps(prev => updateStepStatus(prev, 'concat', 'completed'));
-                setVideoSteps(prev => updateStepStatus(prev, 'download', 'in_progress'));
-              } else if (parsed.type === 'upload_start') {
-                setVideoSteps(prev => updateStepStatus(prev, 'download', 'completed'));
-                setVideoSteps(prev => updateStepStatus(prev, 'upload', 'in_progress'));
               } else if (parsed.type === 'subtitle_start') {
-                setVideoSteps(prev => updateStepStatus(prev, 'upload', 'completed'));
+                setVideoSteps(prev => updateStepStatus(prev, 'concat', 'completed'));
                 setVideoSteps(prev => updateStepStatus(prev, 'subtitle', 'in_progress'));
               } else if (parsed.type === 'video_url') {
                 setVideoSteps(prev => updateStepStatus(prev, 'subtitle', 'completed'));
