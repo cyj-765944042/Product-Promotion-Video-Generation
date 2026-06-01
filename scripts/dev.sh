@@ -29,6 +29,12 @@ kill_port_if_listening() {
 
 echo "Clearing port ${DEPLOY_RUN_PORT} before start."
 kill_port_if_listening
+
+# Create local storage directories for video generation
+TEMP_DIR="${COZE_WORKSPACE_PATH}/public/temp-videos"
+mkdir -p "${TEMP_DIR}/audio" "${TEMP_DIR}/video"
+echo "Local storage directories created at ${TEMP_DIR}"
+
 echo "Starting HTTP service on port ${DEPLOY_RUN_PORT} for dev..."
 
 NODE_OPTIONS='--no-deprecation' PORT=${DEPLOY_RUN_PORT} pnpm tsx watch src/server.ts
