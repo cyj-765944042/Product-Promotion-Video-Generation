@@ -107,7 +107,6 @@ export async function POST(request: NextRequest) {
   
   // Check if we should use mock mode (for development/testing)
   // Mock mode is only enabled when x-run-mode header is explicitly set to 'test_run'
-  // Note: We now use real API for video generation with configured ARK_API_KEY
   const useMockMode = customHeaders['x-run-mode'] === 'test_run';
   
   if (useMockMode) {
@@ -115,11 +114,7 @@ export async function POST(request: NextRequest) {
   }
   
   // Log API configuration for debugging
-  console.log('视频生成API配置:', {
-    hasApiKey: !!process.env.ARK_API_KEY,
-    baseUrl: process.env.ARK_BASE_URL,
-    videoModelEP: process.env.VIDEO_MODEL_EP,
-  });
+  console.log('视频生成API配置: 使用SDK默认配置');
   
   // Parse form data
   const formData = await request.formData();
@@ -182,39 +177,23 @@ export async function POST(request: NextRequest) {
         // Using Doubao-Seedance-1.5-pro model via Volcano Engine ARK platform
         const arkApiKey = process.env.ARK_API_KEY;
         const arkBaseUrl = process.env.ARK_BASE_URL;
-        const videoModelEP = process.env.VIDEO_MODEL_EP;
-        
-        // Log configuration for debugging
-        console.log('视频生成配置:', {
-          hasApiKey: !!arkApiKey,
-          baseUrl: arkBaseUrl,
-          modelEP: videoModelEP,
-        });
-        
-        // Use custom config if ARK credentials are provided, otherwise use SDK default
-        const config = arkApiKey && arkBaseUrl 
-          ? new Config({ 
-              apiKey: arkApiKey,
-              baseUrl: arkBaseUrl,
-              timeout: 180000, // 180 seconds for video processing
-            })
-          : new Config({ 
-              timeout: 180000,
-            });
-        
         // Add mock mode header only for test_run
         const finalHeaders = useMockMode 
           ? { ...customHeaders, 'x-run-mode': 'test_run' }
           : customHeaders;
         
-        const videoClient = new VideoGenerationClient(config, finalHeaders);
-        // Video edit client uses SDK default config (not ARK config)
-        // Video editing API is a separate service from video generation
-        const videoEditClient = new VideoEditClient(new Config(), finalHeaders);
+        // Use SDK default config (system API key)
+        const defaultConfig = new Config({ 
+          timeout: 180000, // 180 seconds for video processing
+        });
+        
+        const videoClient = new VideoGenerationClient(defaultConfig, finalHeaders);
+        // Video edit client uses SDK default config
+        const videoEditClient = new VideoEditClient(defaultConfig, finalHeaders);
         const storage = new S3Storage();
         
-        // Use user-provided EP as model, fallback to default model
-        const videoModel = videoModelEP || 'doubao-seedance-1-5-pro-251215';
+        // Use SDK default model
+        const videoModel = 'doubao-seedance-1-5-pro-251215';
 
         const segmentVideoUrls: string[] = [];
 
