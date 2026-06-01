@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { 
-  VideoGenerationClient, 
+  VideoGenerationClient,
   VideoEditClient,
   S3Storage, 
   Config, 
@@ -16,6 +16,110 @@ import {
 } from '@/lib/video-processor';
 import path from 'path';
 import fs from 'fs';
+
+// 火山方舟视频生成配置
+const VOLC_ARK_API_KEY = process.env.VOLC_ARK_API_KEY || '';
+const VOLC_ARK_ENDPOINT = process.env.VOLC_ARK_ENDPOINT || '';
+
+// 视频生成函数 - 优先使用用户配置的火山方舟，失败则回退到SDK
+async function generateVideo(
+  prompt: string,
+  imageUrl: string | undefined,
+  duration: number,
+  config: Config,
+  customHeaders: Record<string, string>
+): Promise<string> {
+  // 如果有用户配置的火山方舟凭证，先尝试使用
+  if (VOLC_ARK_API_KEY && VOLC_ARK_ENDPOINT) {
+    console.log('尝试使用用户配置的火山方舟API...');
+    try {
+      const url = 'https://ark.cn-beijing.volces.com/api/v3/videos/generations';
+      
+      const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+      
+      if (imageUrl) {
+        content.push({
+          type: 'image_url',
+          image_url: { url: imageUrl }
+        });
+      }
+      
+      content.push({
+        type: 'text',
+        text: prompt
+      });
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${VOLC_ARK_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: VOLC_ARK_ENDPOINT,
+          content: content,
+          duration: duration,
+          ratio: '16:9',
+          resolution: '720p'
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data?.[0]?.url) {
+          console.log('火山方舟视频生成成功');
+          return data.data[0].url;
+        } else if (data.video_url || data.url) {
+          console.log('火山方舟视频生成成功');
+          return data.video_url || data.url;
+        }
+      }
+      
+      console.log(`火山方舟API返回 ${response.status}，回退到SDK...`);
+    } catch (error) {
+      console.log('火山方舟API调用失败，回退到SDK:', error);
+    }
+  }
+  
+  // 使用coze SDK生成视频
+  console.log('使用coze SDK生成视频...');
+  
+  // 开发环境使用mock模式
+  const isDev = process.env.COZE_PROJECT_ENV === 'DEV';
+  const videoHeaders = isDev 
+    ? { ...customHeaders, 'x-run-mode': 'test_run' }
+    : customHeaders;
+  
+  const videoClient = new VideoGenerationClient(config, videoHeaders);
+  
+  const videoContent: Array<
+    { type: 'text'; text: string } | 
+    { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' }
+  > = [];
+  
+  if (imageUrl) {
+    videoContent.push({ 
+      type: 'image_url', 
+      image_url: { url: imageUrl },
+      role: 'first_frame'
+    });
+  }
+  
+  videoContent.push({ type: 'text', text: prompt });
+  
+  const response = await videoClient.videoGeneration(videoContent, {
+    model: 'doubao-seedance-1-5-pro-251215',
+    duration: duration,
+    ratio: '16:9',
+    resolution: '720p'
+  });
+  
+  if (!response.videoUrl) {
+    throw new Error('视频生成失败：未返回视频URL');
+  }
+  
+  return response.videoUrl;
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -100,8 +204,7 @@ export async function POST(request: NextRequest) {
   // Extract headers from request for proper authentication
   const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
   
-  // Production: Use real API (no mock mode)
-  const videoClient = new VideoGenerationClient(config, customHeaders);
+  // Use Volc Ark for video generation, coze SDK for other services
   const videoEditClient = new VideoEditClient(config, customHeaders);
   const ttsClient = new TTSClient(config, customHeaders);
 
@@ -179,38 +282,13 @@ export async function POST(request: NextRequest) {
           const videoDuration = Math.max(3, Math.min(10, audioDuration));
 
           try {
-            // Build video generation content with proper typing
-            const videoContent: Array<
-              { type: 'text'; text: string } | 
-              { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' }
-            > = [];
-            
-            // Add image as first frame if available
-            if (imageUrl) {
-              videoContent.push({ 
-                type: 'image_url', 
-                image_url: { url: imageUrl },
-                role: 'first_frame'
-              });
-            }
-            
-            // Add text prompt
-            if (segment.prompt) {
-              videoContent.push({ type: 'text', text: segment.prompt });
-            }
-
-            // Generate video with retry
-            const videoResponse = await retryWithBackoff(async () => {
-              return await videoClient.videoGeneration(videoContent, {
-                model: 'doubao-seedance-1-5-pro-251215',
-                duration: videoDuration,
-                ratio: '16:9',
-                resolution: '720p',
-                generateAudio: false,
-              });
+            // Use video generation with fallback support
+            const prompt = segment.prompt || `高质量产品展示视频，专业摄影，精美画面，展示商品细节和特点`;
+            videoUrl = await retryWithBackoff(async () => {
+              return await generateVideo(prompt, imageUrl || undefined, videoDuration, config, customHeaders);
             }, 3);
 
-            videoUrl = videoResponse.videoUrl || '';
+            console.log(`Segment ${i + 1} video generated: ${videoUrl ? 'success' : 'failed'}`);
           } catch (videoError) {
             console.error(`Video generation failed for segment ${i + 1}:`, videoError);
             
