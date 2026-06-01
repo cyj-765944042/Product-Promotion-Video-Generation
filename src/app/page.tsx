@@ -507,16 +507,14 @@ export default function Home() {
     if (!videoUrl) return;
     
     try {
-      const response = await fetch(videoUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      // Use backend proxy to handle cross-origin download
+      const proxyUrl = `/api/download-video?url=${encodeURIComponent(videoUrl)}&filename=${encodeURIComponent(`${productName}_带货视频.mp4`)}`;
       const link = document.createElement('a');
-      link.href = url;
+      link.href = proxyUrl;
       link.download = `${productName}_带货视频.mp4`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('下载失败:', error);
       alert('下载失败，请重试');
@@ -987,19 +985,14 @@ export default function Home() {
                         </video>
                       </div>
                       <Button
-                        onClick={async () => {
-                          try {
-                            const response = await fetch(seg.videoUrl);
-                            const blob = await response.blob();
-                            const url = window.URL.createObjectURL(blob);
-                            const link = document.createElement('a');
-                            link.href = url;
-                            link.download = `${productName}_第${index + 1}段.mp4`;
-                            link.click();
-                            window.URL.revokeObjectURL(url);
-                          } catch {
-                            alert('下载失败');
-                          }
+                        onClick={() => {
+                          const proxyUrl = `/api/download-video?url=${encodeURIComponent(seg.videoUrl)}&filename=${encodeURIComponent(`${productName}_第${index + 1}段.mp4`)}`;
+                          const link = document.createElement('a');
+                          link.href = proxyUrl;
+                          link.download = `${productName}_第${index + 1}段.mp4`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
                         }}
                         variant="outline"
                         size="sm"
