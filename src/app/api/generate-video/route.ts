@@ -100,13 +100,8 @@ export async function POST(request: NextRequest) {
   // Extract headers from request for proper authentication
   const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
   
-  // In DEV environment, use mock mode for video generation
-  const isDev = process.env.COZE_PROJECT_ENV === 'DEV';
-  const videoHeaders = isDev 
-    ? { ...customHeaders, 'x-run-mode': 'test_run' }
-    : customHeaders;
-  
-  const videoClient = new VideoGenerationClient(config, videoHeaders);
+  // Production: Use real API (no mock mode)
+  const videoClient = new VideoGenerationClient(config, customHeaders);
   const videoEditClient = new VideoEditClient(config, customHeaders);
   const ttsClient = new TTSClient(config, customHeaders);
 
