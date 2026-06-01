@@ -160,6 +160,40 @@ async function mergeVideoAudioFFmpeg(
   });
 }
 
+// Get video duration using FFmpeg
+async function getVideoDurationFFmpeg(videoPath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const ffprobe = spawn('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      videoPath
+    ]);
+    
+    let output = '';
+    ffprobe.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    ffprobe.on('close', (code) => {
+      if (code === 0) {
+        const duration = parseFloat(output.trim());
+        if (!isNaN(duration)) {
+          resolve(Math.ceil(duration)); // Round up to nearest second
+        } else {
+          resolve(5); // Default to 5 seconds if parsing fails
+        }
+      } else {
+        resolve(5); // Default to 5 seconds on error
+      }
+    });
+    
+    ffprobe.on('error', () => {
+      resolve(5); // Default to 5 seconds on error
+    });
+  });
+}
+
 export async function POST(request: NextRequest) {
   const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
   const useMockMode = customHeaders['x-run-mode'] === 'test_run';
@@ -452,6 +486,7 @@ export async function POST(request: NextRequest) {
         // Step 3: Merge audio and video for each segment
         // ==========================================
         const mergedVideoUrls: string[] = [];
+        const mergedDurations: number[] = []; // Store actual durations after merge
         
         for (let i = 0; i < segmentVideoInfos.length; i++) {
           const info = segmentVideoInfos[i];
@@ -487,6 +522,14 @@ export async function POST(request: NextRequest) {
               console.log(`FFmpeg合并音视频: ${mergedFilePath}`);
               await mergeVideoAudioFFmpeg(localVideoPath, localAudioPath, mergedFilePath);
               
+              // Get actual video duration after merge using FFmpeg
+              const actualDuration = await getVideoDurationFFmpeg(mergedFilePath);
+              console.log(`合并后视频真实时长: ${actualDuration}秒`);
+              
+              // Update segment video info with actual duration
+              segmentVideoInfos[i].duration = actualDuration;
+              mergedDurations.push(actualDuration);
+              
               // Upload merged video to object storage
               console.log('上传合并后的视频...');
               const mergedVideoBuffer = fs.readFileSync(mergedFilePath);
@@ -501,7 +544,7 @@ export async function POST(request: NextRequest) {
               });
               
               mergedVideoUrls.push(mergedVideoUrl);
-              console.log(`视频 ${i + 1} FFmpeg音视频合并成功`);
+              console.log(`视频 ${i + 1} FFmpeg音视频合并成功，时长${actualDuration}秒`);
               
               // Clean up temp files
               fs.unlinkSync(localVideoPath);
@@ -509,11 +552,13 @@ export async function POST(request: NextRequest) {
               
             } catch (mergeError) {
               console.error(`FFmpeg音频合并失败 (${i + 1}):`, mergeError);
-              // Fallback to original video URL
+              // Fallback to original video URL and duration
               mergedVideoUrls.push(info.videoUrl);
+              mergedDurations.push(info.duration);
             }
           } else {
             mergedVideoUrls.push(info.videoUrl);
+            mergedDurations.push(info.duration);
           }
         }
 
