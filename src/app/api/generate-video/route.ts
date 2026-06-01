@@ -167,7 +167,13 @@ export async function POST(request: NextRequest) {
             videoUrl = videoResponse.videoUrl || '';
           } catch (videoError) {
             console.error(`Video generation failed for segment ${i + 1}:`, videoError);
-            throw new Error(`第 ${i + 1} 段视频生成失败: ${videoError instanceof Error ? videoError.message : '未知错误'}`);
+            
+            // Check for specific error types
+            const errorMessage = videoError instanceof Error ? videoError.message : '未知错误';
+            if (errorMessage.includes('403') || errorMessage.includes('ErrSourceLimit')) {
+              throw new Error('视频生成服务当前资源受限，请稍后重试或联系管理员');
+            }
+            throw new Error(`第 ${i + 1} 段视频生成失败: ${errorMessage}`);
           }
 
           // Step 3: Compile video with audio
