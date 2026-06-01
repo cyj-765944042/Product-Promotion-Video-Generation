@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import ImageMatting from '@/components/ImageMatting';
 import { 
   Upload, 
   Video, 
@@ -66,6 +67,7 @@ export default function Home() {
   const [isIdentifyingImage, setIsIdentifyingImage] = useState(false);
   const [identifiedProduct, setIdentifiedProduct] = useState<string>('');
   const [showCropper, setShowCropper] = useState(false);
+  const [mattingImageUrl, setMattingImageUrl] = useState<string>(''); // 用于抠图的图片URL
   
   // 核心卖点 - 结构化
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
@@ -595,7 +597,10 @@ export default function Home() {
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => setShowCropper(!showCropper)}
+                        onClick={() => {
+                          setMattingImageUrl(uploadedImageUrl || productImagePreview);
+                          setShowCropper(true);
+                        }}
                         disabled={isGeneratingScript || isGeneratingVideo}
                         className="flex items-center gap-2"
                       >
@@ -640,6 +645,26 @@ export default function Home() {
                           <Loader2 className="w-6 h-6 text-white animate-spin" />
                         </div>
                       )}
+                    </div>
+                  )}
+                  
+                  {/* 抠图组件 */}
+                  {showCropper && mattingImageUrl && (
+                    <div className="mt-4">
+                      <ImageMatting
+                        imageUrl={mattingImageUrl}
+                        onComplete={(resultUrl) => {
+                          // 更新预览图
+                          setProductImagePreview(resultUrl);
+                          setUploadedImageUrl(resultUrl);
+                          setShowCropper(false);
+                          setMattingImageUrl('');
+                        }}
+                        onCancel={() => {
+                          setShowCropper(false);
+                          setMattingImageUrl('');
+                        }}
+                      />
                     </div>
                   )}
                 </div>
