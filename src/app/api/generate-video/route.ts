@@ -1,125 +1,15 @@
 import { NextRequest } from 'next/server';
 import { 
-  VideoGenerationClient,
+  VideoGenerationClient, 
   VideoEditClient,
   S3Storage, 
   Config, 
-  TTSClient,
   HeaderUtils
 } from 'coze-coding-dev-sdk';
-import { 
-  downloadFile,
-  generateSrtFile,
-  mergeVideoAudio,
-  concatenateVideos,
-  burnSubtitles
-} from '@/lib/video-processor';
-import path from 'path';
 import fs from 'fs';
-
-// 火山方舟视频生成配置
-const VOLC_ARK_API_KEY = process.env.VOLC_ARK_API_KEY || '';
-const VOLC_ARK_ENDPOINT = process.env.VOLC_ARK_ENDPOINT || '';
-
-// 视频生成函数 - 优先使用用户配置的火山方舟，失败则回退到SDK
-async function generateVideo(
-  prompt: string,
-  imageUrl: string | undefined,
-  duration: number,
-  config: Config,
-  customHeaders: Record<string, string>
-): Promise<string> {
-  // 如果有用户配置的火山方舟凭证，先尝试使用
-  if (VOLC_ARK_API_KEY && VOLC_ARK_ENDPOINT) {
-    console.log('尝试使用用户配置的火山方舟API...');
-    try {
-      const url = 'https://ark.cn-beijing.volces.com/api/v3/videos/generations';
-      
-      const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
-      
-      if (imageUrl) {
-        content.push({
-          type: 'image_url',
-          image_url: { url: imageUrl }
-        });
-      }
-      
-      content.push({
-        type: 'text',
-        text: prompt
-      });
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${VOLC_ARK_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: VOLC_ARK_ENDPOINT,
-          content: content,
-          duration: duration,
-          ratio: '16:9',
-          resolution: '720p'
-        })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.data?.[0]?.url) {
-          console.log('火山方舟视频生成成功');
-          return data.data[0].url;
-        } else if (data.video_url || data.url) {
-          console.log('火山方舟视频生成成功');
-          return data.video_url || data.url;
-        }
-      }
-      
-      console.log(`火山方舟API返回 ${response.status}，回退到SDK...`);
-    } catch (error) {
-      console.log('火山方舟API调用失败，回退到SDK:', error);
-    }
-  }
-  
-  // 使用coze SDK生成视频
-  console.log('使用coze SDK生成视频...');
-  
-  // 开发环境使用mock模式
-  const isDev = process.env.COZE_PROJECT_ENV === 'DEV';
-  const videoHeaders = isDev 
-    ? { ...customHeaders, 'x-run-mode': 'test_run' }
-    : customHeaders;
-  
-  const videoClient = new VideoGenerationClient(config, videoHeaders);
-  
-  const videoContent: Array<
-    { type: 'text'; text: string } | 
-    { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' }
-  > = [];
-  
-  if (imageUrl) {
-    videoContent.push({ 
-      type: 'image_url', 
-      image_url: { url: imageUrl },
-      role: 'first_frame'
-    });
-  }
-  
-  videoContent.push({ type: 'text', text: prompt });
-  
-  const response = await videoClient.videoGeneration(videoContent, {
-    model: 'doubao-seedance-1-5-pro-251215',
-    duration: duration,
-    ratio: '16:9',
-    resolution: '720p'
-  });
-  
-  if (!response.videoUrl) {
-    throw new Error('视频生成失败：未返回视频URL');
-  }
-  
-  return response.videoUrl;
-}
+import path from 'path';
+import https from 'https';
+import http from 'http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -131,318 +21,551 @@ interface ScriptSegment {
   duration: number;
 }
 
+interface SegmentVideo {
+  id: number;
+  script: string;
+  videoUrl: string;
+  duration: number;
+}
+
+interface StreamData {
+  type: 'segment_start' | 'segment_video' | 'concat_start' | 'concat_fallback' | 'download_start' | 'upload_start' | 'subtitle_start' | 'video_url' | 'subtitles' | 'complete' | 'done' | 'error';
+  content: string | { segmentId: number; videoUrl: string } | { subtitles: Subtitle[] } | { videoUrl: string; subtitles: Subtitle[]; duration: number; segmentVideos?: SegmentVideo[]; isSegmented?: boolean };
+  segmentId?: number;
+  current?: number;
+  total?: number;
+}
+
 interface Subtitle {
   start: number;
   end: number;
   text: string;
 }
 
-// Retry helper with exponential backoff
-async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  maxRetries: number = 3,
-  initialDelay: number = 2000
-): Promise<T> {
-  let lastError: Error | null = null;
-  
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      
-      if (attempt < maxRetries - 1) {
-        const delay = initialDelay * Math.pow(2, attempt);
-        console.log(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms delay`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-  }
-  
-  throw lastError;
+async function sendEvent(controller: ReadableStreamDefaultController, data: StreamData) {
+  const encoder = new TextEncoder();
+  const message = `data: ${JSON.stringify(data)}\n\n`;
+  controller.enqueue(encoder.encode(message));
 }
 
-// Get storage directory based on environment
-function getStorageDir(): string {
-  const isDev = process.env.COZE_PROJECT_ENV === 'DEV';
-  const baseDir = isDev 
-    ? process.env.COZE_WORKSPACE_PATH || '/workspace/projects'
-    : '/tmp';
-  
-  const storageDir = path.join(baseDir, 'public', 'videos');
-  
-  if (!fs.existsSync(storageDir)) {
-    fs.mkdirSync(storageDir, { recursive: true });
+// Generate subtitles from segmented script
+function generateSubtitlesFromSegments(segments: ScriptSegment[]): Subtitle[] {
+  const subtitles: Subtitle[] = [];
+  let currentTime = 0;
+
+  for (const segment of segments) {
+    const text = segment.script.trim();
+    const duration = segment.duration || 4;
+    
+    subtitles.push({
+      start: currentTime,
+      end: currentTime + duration,
+      text: text,
+    });
+    
+    currentTime += duration;
   }
-  
-  return storageDir;
+
+  return subtitles;
+}
+
+// Download video from URL to local file
+async function downloadVideo(url: string, outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https') ? https : http;
+    const file = fs.createWriteStream(outputPath);
+    
+    protocol.get(url, (response) => {
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        // Follow redirect
+        const redirectUrl = response.headers.location;
+        if (redirectUrl) {
+          downloadVideo(redirectUrl, outputPath).then(resolve).catch(reject);
+          return;
+        }
+      }
+      
+      if (response.statusCode !== 200) {
+        reject(new Error(`Failed to download video: HTTP ${response.statusCode}`));
+        return;
+      }
+      
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close();
+        resolve();
+      });
+    }).on('error', (err) => {
+      fs.unlink(outputPath, () => {});
+      reject(err);
+    });
+  });
 }
 
 export async function POST(request: NextRequest) {
+  const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
+  
+  // Check if we should use mock mode (for development/testing)
+  // Mock mode is only enabled when x-run-mode header is explicitly set to 'test_run'
+  const useMockMode = customHeaders['x-run-mode'] === 'test_run';
+  
+  if (useMockMode) {
+    console.log('🧪 Mock mode enabled for video generation');
+  }
+  
+  // Log API configuration for debugging
+  console.log('视频生成API配置: 使用SDK默认配置');
+  
+  // Parse form data
   const formData = await request.formData();
   const productName = formData.get('productName') as string;
-  const segmentsStr = formData.get('segments') as string;
-  const imageUrl = formData.get('imageUrl') as string | null;
+  const segmentsJson = formData.get('segments') as string;
+  let imageUrl = formData.get('imageUrl') as string | null;
+  const productImageFile = formData.get('productImage') as File | null;
 
-  let segments: ScriptSegment[] = [];
-  try {
-    segments = JSON.parse(segmentsStr || '[]');
-  } catch {
-    segments = [];
+  // Upload product image BEFORE creating the stream (if needed)
+  if (!imageUrl && productImageFile && productImageFile.size > 0) {
+    try {
+      console.log('正在上传商品图片...');
+      const storage = new S3Storage();
+      const arrayBuffer = await productImageFile.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const fileName = `product_images/${Date.now()}_${productImageFile.name}`;
+      
+      const imageKey = await storage.uploadFile({
+        fileContent: buffer,
+        fileName: fileName,
+        contentType: productImageFile.type || 'image/jpeg',
+      });
+      
+      imageUrl = await storage.generatePresignedUrl({ key: imageKey, expireTime: 86400 });
+      console.log('商品图片上传成功:', imageUrl);
+    } catch (error) {
+      console.error('商品图片上传失败:', error);
+    }
   }
 
-  if (!segments || segments.length === 0) {
-    return new Response(JSON.stringify({ error: '缺少视频分段信息' }), {
+  if (!segmentsJson) {
+    return new Response(JSON.stringify({ error: '缺少分段数据' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const encoder = new TextEncoder();
-  const config = new Config();
-  
-  // Extract headers from request for proper authentication
-  const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
-  
-  // Use Volc Ark for video generation, coze SDK for other services
-  const videoEditClient = new VideoEditClient(config, customHeaders);
-  const ttsClient = new TTSClient(config, customHeaders);
+  let segments: ScriptSegment[];
+  try {
+    segments = JSON.parse(segmentsJson);
+  } catch {
+    return new Response(JSON.stringify({ error: '分段数据格式错误' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
+  if (!segments || segments.length === 0) {
+    return new Response(JSON.stringify({ error: '分段数据为空' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Create streaming response
   const stream = new ReadableStream({
     async start(controller) {
-      const sendEvent = (type: string, data: unknown) => {
-        const message = `data: ${JSON.stringify({ type, content: data })}\n\n`;
-        controller.enqueue(encoder.encode(message));
-      };
-
-      const storageDir = getStorageDir();
-      const timestamp = Date.now();
-      
       try {
-        // Arrays to store local file paths
-        const localVideoPaths: string[] = [];
-        const localAudioPaths: string[] = [];
-        const subtitles: Subtitle[] = [];
-        let currentTime = 0;
+        // Initialize video client with SDK default configuration (system API key)
+        // Using Doubao-Seedance-1.5-pro model
+        const finalHeaders = useMockMode 
+          ? { ...customHeaders, 'x-run-mode': 'test_run' }
+          : customHeaders;
+        
+        // Use SDK default config (system API key)
+        const defaultConfig = new Config({ 
+          timeout: 180000, // 180 seconds for video processing
+        });
+        
+        const videoClient = new VideoGenerationClient(defaultConfig, finalHeaders);
+        // Video edit client uses SDK default config
+        const videoEditClient = new VideoEditClient(defaultConfig, finalHeaders);
+        const storage = new S3Storage();
+        
+        // Use SDK default model
+        const videoModel = 'doubao-seedance-1-5-pro-251215';
 
-        // Process each segment
+        const segmentVideoUrls: string[] = [];
+
+        // Step 1: Generate video for each segment (with audio)
         for (let i = 0; i < segments.length; i++) {
           const segment = segments[i];
           
-          // Step 1: Generate TTS audio
-          sendEvent('segment_start', { 
-            content: `正在生成第 ${i + 1} 段口播音频...`, 
-            segmentId: i, 
-            current: i + 1, 
-            total: segments.length 
+          sendEvent(controller, {
+            type: 'segment_start',
+            content: `正在生成第 ${i + 1}/${segments.length} 段视频...`,
+            segmentId: segment.id,
+            current: i + 1,
+            total: segments.length,
           });
 
-          let audioUrl: string | null = null;
-          let audioDuration = segment.duration || 5;
-
-          try {
-            const ttsResponse = await ttsClient.synthesize({ 
-              uid: `user_${timestamp}_${i}`,
-              text: segment.script,
-              speaker: 'zh_female_xiaohe_uranus_bigtts'
+          const content: Array<
+            | { type: 'text'; text: string }
+            | { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' }
+          > = [];
+          
+          // Use product image as reference for video generation
+          // Include image for all segments to maintain product consistency
+          if (imageUrl) {
+            content.push({
+              type: 'image_url' as const,
+              image_url: { url: imageUrl },
+              role: i === 0 ? 'first_frame' as const : undefined, // Only first segment uses first_frame
             });
-            audioUrl = ttsResponse.audioUri || null;
-            audioDuration = segment.duration || 5;
-            console.log(`Segment ${i + 1} audio generated: ${audioUrl ? 'success' : 'failed'}`);
-          } catch (ttsError) {
-            console.error(`TTS failed for segment ${i + 1}:`, ttsError);
           }
-
-          // Download audio to local storage
-          if (audioUrl) {
-            try {
-              const localAudioPath = await downloadFile(
-                audioUrl,
-                `audio_${timestamp}_${i}.mp3`
-              );
-              localAudioPaths.push(localAudioPath);
-              sendEvent('download', { content: `已下载第 ${i + 1} 段音频到本地` });
-            } catch (downloadError) {
-              console.error(`Audio download failed for segment ${i + 1}:`, downloadError);
-              localAudioPaths.push('');
-            }
-          } else {
-            localAudioPaths.push('');
-          }
-
-          // Step 2: Generate video
-          sendEvent('segment_start', { 
-            content: `正在生成第 ${i + 1}/${segments.length} 段视频...`, 
-            segmentId: i + 1, 
-            current: i + 1, 
-            total: segments.length 
+          
+          // Add the visual prompt for video generation
+          // Include product name and script for better product relevance
+          const promptWithScript = productName 
+            ? `${productName}产品展示：${segment.prompt}，同时旁白说："${segment.script}"`
+            : `${segment.prompt}，同时旁白说："${segment.script}"`;
+          
+          content.push({
+            type: 'text' as const,
+            text: promptWithScript,
           });
-
-          let videoUrl = '';
-          const videoDuration = Math.max(3, Math.min(10, audioDuration));
-
+          
+          // Generate video with visual prompt and voiceover script
+          // Using user-provided model EP (ep-20260514120705-pqv86) for Doubao-Seedance-1.5-pro
+          // The model can generate synchronized audio including voice, sound effects, and background music
+          let videoResponse;
           try {
-            // Use video generation with fallback support
-            const prompt = segment.prompt || `高质量产品展示视频，专业摄影，精美画面，展示商品细节和特点`;
-            videoUrl = await retryWithBackoff(async () => {
-              return await generateVideo(prompt, imageUrl || undefined, videoDuration, config, customHeaders);
-            }, 3);
+            videoResponse = await videoClient.videoGeneration(content, {
+              model: videoModel, // Use user-provided EP or default model
+              duration: Math.max(5, Math.min(10, segment.duration || 5)), // 5-10 seconds
+              ratio: '16:9',
+              resolution: '720p',
+              generateAudio: true, // Enable audio generation
+            });
+          } catch (error) {
+            console.error('视频生成API错误:', error);
+            // Check if it's a permission error (403)
+            const errorMessage = error instanceof Error ? error.message : '';
+            if (errorMessage.includes('403') || errorMessage.includes('permission')) {
+              throw new Error(`视频生成服务暂不可用。这可能是因为：
+1. 当前环境没有视频生成权限
+2. 需要配置火山方舟API密钥
 
-            console.log(`Segment ${i + 1} video generated: ${videoUrl ? 'success' : 'failed'}`);
-          } catch (videoError) {
-            console.error(`Video generation failed for segment ${i + 1}:`, videoError);
-            
-            const errorMessage = videoError instanceof Error ? videoError.message : '未知错误';
-            if (errorMessage.includes('403') || errorMessage.includes('ErrSourceLimit')) {
-              throw new Error('视频生成服务当前资源受限，请稍后重试或联系管理员');
+解决方案：
+- 在生产环境中部署，视频生成功能将自动可用
+- 或者在.env.local中配置有效的API密钥`);
             }
-            throw new Error(`第 ${i + 1} 段视频生成失败: ${errorMessage}`);
+            // 返回更详细的错误信息
+            if (error instanceof Error) {
+              throw new Error(`第 ${i + 1} 段视频生成失败: ${error.message}`);
+            }
+            throw error;
           }
 
-          // Download video to local storage
-          if (videoUrl) {
-            try {
-              const localVideoPath = await downloadFile(
-                videoUrl,
-                `video_${timestamp}_${i}.mp4`
-              );
-              localVideoPaths.push(localVideoPath);
-              sendEvent('download', { content: `已下载第 ${i + 1} 段视频到本地` });
-            } catch (downloadError) {
-              console.error(`Video download failed for segment ${i + 1}:`, downloadError);
-              throw new Error(`第 ${i + 1} 段视频下载失败`);
-            }
-          } else {
+          if (!videoResponse.videoUrl) {
             throw new Error(`第 ${i + 1} 段视频生成失败：未返回视频URL`);
           }
 
-          // Send segment video URL
-          sendEvent('segment_video', {
-            segmentId: i + 1,
-            videoUrl: videoUrl
-          });
+          segmentVideoUrls.push(videoResponse.videoUrl);
 
-          // Add subtitle entry
-          subtitles.push({
-            start: currentTime,
-            end: currentTime + videoDuration,
-            text: segment.script
+          sendEvent(controller, {
+            type: 'segment_video',
+            content: { segmentId: segment.id, videoUrl: videoResponse.videoUrl },
+            segmentId: i,
           });
-          currentTime += videoDuration;
         }
 
-        // Step 3: Merge audio into each video segment using FFmpeg
-        sendEvent('merge_start', { content: '正在合并音频和视频...' });
-        
-        const mergedVideoPaths: string[] = [];
-        
-        for (let i = 0; i < localVideoPaths.length; i++) {
-          const localVideo = localVideoPaths[i];
-          const localAudio = localAudioPaths[i];
+        // Step 2: Concatenate all segment videos (skip if only one segment)
+        if (segments.length === 1) {
+          // Single segment - no need to concatenate
+          const totalDuration = segments.reduce((sum, s) => sum + (s.duration || 4), 0);
+          const subtitles = generateSubtitlesFromSegments(segments);
           
-          if (localAudio) {
-            const mergedPath = path.join(storageDir, `merged_${timestamp}_${i}.mp4`);
-            try {
-              await mergeVideoAudio(localVideo, localAudio, mergedPath);
-              mergedVideoPaths.push(mergedPath);
-              sendEvent('merge_progress', { 
-                content: `已合并第 ${i + 1}/${localVideoPaths.length} 段音频`,
-                current: i + 1,
-                total: localVideoPaths.length
-              });
-            } catch (mergeError) {
-              console.error(`Merge failed for segment ${i + 1}:`, mergeError);
-              mergedVideoPaths.push(localVideo); // Fallback to original video
-            }
-          } else {
-            mergedVideoPaths.push(localVideo);
-          }
+          sendEvent(controller, {
+            type: 'complete',
+            content: {
+              videoUrl: segmentVideoUrls[0],
+              subtitles: subtitles,
+              duration: totalDuration,
+            },
+          });
+          
+          controller.close();
+          return;
         }
+        
+        // Step 2b: Concatenate multiple segments
+        sendEvent(controller, {
+          type: 'concat_start',
+          content: `正在拼接 ${segments.length} 个视频片段...`,
+        });
 
-        // Step 4: Concatenate all videos using FFmpeg
-        sendEvent('concat_start', { content: `正在拼接 ${mergedVideoPaths.length} 个视频片段...` });
-        
-        let finalVideoPath: string;
-        
-        if (mergedVideoPaths.length > 1) {
-          finalVideoPath = path.join(storageDir, `concat_${timestamp}.mp4`);
+        // Step 2b-1: Transfer videos to object storage for accessible URLs
+        // Video edit API cannot access Volcengine temporary URLs directly
+        sendEvent(controller, {
+          type: 'upload_start',
+          content: '正在转存视频到对象存储...',
+        });
+
+        const accessibleVideoUrls: string[] = [];
+        for (let i = 0; i < segmentVideoUrls.length; i++) {
           try {
-            await concatenateVideos(mergedVideoPaths, finalVideoPath);
-            sendEvent('concat_done', { content: '视频拼接完成' });
-          } catch (concatError) {
-            console.error('Video concatenation failed:', concatError);
-            // Fallback to first video
-            finalVideoPath = mergedVideoPaths[0];
-            sendEvent('concat_fallback', { 
-              content: '视频拼接暂时不可用，使用第一个片段'
+            // Use uploadFromUrl to transfer video from Volcengine to object storage
+            const uploadedKey = await storage.uploadFromUrl({
+              url: segmentVideoUrls[i],
+              timeout: 60000, // 60 seconds timeout
             });
+            
+            // Generate presigned URL for video editing
+            const accessibleUrl = await storage.generatePresignedUrl({
+              key: uploadedKey,
+              expireTime: 3600, // 1 hour for processing
+            });
+            
+            accessibleVideoUrls.push(accessibleUrl);
+            console.log(`视频 ${i + 1} 转存成功: ${uploadedKey}, URL: ${accessibleUrl.substring(0, 100)}...`);
+          } catch (transferError) {
+            console.error(`视频 ${i + 1} 转存失败:`, transferError);
+            // If transfer fails, fall back to individual segments
+            sendEvent(controller, {
+              type: 'concat_fallback',
+              content: '视频转存失败，返回分段视频',
+            });
+            
+            const subtitles = generateSubtitlesFromSegments(segments);
+            const totalDuration = segments.reduce((sum, s) => sum + (s.duration || 4), 0);
+            
+            sendEvent(controller, {
+              type: 'complete',
+              content: {
+                videoUrl: segmentVideoUrls[0],
+                segmentVideos: segments.map((seg, idx) => ({
+                  id: seg.id,
+                  script: seg.script,
+                  videoUrl: segmentVideoUrls[idx],
+                  duration: seg.duration || 4,
+                })),
+                subtitles: subtitles,
+                duration: totalDuration,
+                isSegmented: true,
+              },
+            });
+            
+            controller.close();
+            return;
           }
-        } else {
-          finalVideoPath = mergedVideoPaths[0];
         }
 
-        // Step 5: Generate SRT and burn subtitles using FFmpeg
-        sendEvent('subtitle_start', { content: '正在生成并嵌入字幕...' });
-        
-        const srtPath = generateSrtFile(subtitles, `subs_${timestamp}.srt`);
-        const finalOutputPath = path.join(storageDir, `final_${timestamp}.mp4`);
-        
-        try {
-          await burnSubtitles(finalVideoPath, srtPath, finalOutputPath);
-          finalVideoPath = finalOutputPath;
-          sendEvent('subtitle_done', { content: '字幕已嵌入视频' });
-        } catch (subtitleError) {
-          console.error('Subtitle burn failed:', subtitleError);
-          // Continue without subtitles
-          sendEvent('subtitle_fallback', { content: '字幕嵌入失败，使用无字幕版本' });
-        }
+        // Use smooth transitions between segments
+        const transitions = [
+          '1182376', // 圆形打开
+          '1182356', // 百叶窗
+          '1182371', // 对角擦除
+          '1182374', // 透镜变换
+        ];
 
-        // Cleanup SRT file
-        try {
-          if (fs.existsSync(srtPath)) {
-            fs.unlinkSync(srtPath);
+        // Select transitions (one less than number of segments)
+        const selectedTransitions = segments.slice(0, -1).map((_, i) => 
+          transitions[i % transitions.length]
+        );
+
+        let concatenatedVideoUrl: string = '';
+        let totalDuration: number = 0;
+
+        // Retry mechanism for concatenation (max 3 attempts)
+        let lastError: Error | null = null;
+        let concatSuccess = false;
+
+        for (let attempt = 1; attempt <= 3 && !concatSuccess; attempt++) {
+          try {
+            console.log(`开始视频拼接 (第${attempt}次尝试), URLs:`, accessibleVideoUrls.length, '个视频');
+            const concatResponse = await videoEditClient.concatVideos(
+              accessibleVideoUrls,
+              selectedTransitions.length > 0 ? { transitions: selectedTransitions } : undefined
+            );
+
+            console.log('视频拼接成功:', concatResponse.url?.substring(0, 100));
+
+            if (!concatResponse.url) {
+              throw new Error('视频拼接失败：未返回视频URL');
+            }
+
+            concatenatedVideoUrl = concatResponse.url;
+            totalDuration = concatResponse.video_meta?.duration || segments.reduce((sum, s) => sum + (s.duration || 4), 0);
+            concatSuccess = true;
+          } catch (concatErr) {
+            lastError = concatErr instanceof Error ? concatErr : new Error(String(concatErr));
+            console.error(`视频拼接第${attempt}次失败:`, lastError.message);
+
+            // Wait before retry (exponential backoff)
+            if (attempt < 3) {
+              const waitTime = attempt * 2000; // 2s, 4s
+              console.log(`等待 ${waitTime/1000}s 后重试...`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
           }
-        } catch (cleanupError) {
-          console.warn('SRT cleanup warning:', cleanupError);
         }
 
-        // Generate public URL
-        const filename = path.basename(finalVideoPath);
-        const publicUrl = `/videos/${filename}`;
-        
-        // Get file size
-        const stats = fs.statSync(finalVideoPath);
-        const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+        if (!concatSuccess) {
+          // All retries failed, return individual segment videos
+          console.error('视频拼接多次重试失败，返回分段视频:', lastError?.message);
 
-        // Send final result
-        sendEvent('video_url', publicUrl);
-        sendEvent('subtitles', { subtitles, localPath: finalVideoPath });
-        sendEvent('done', JSON.stringify({
-          videoUrl: publicUrl,
-          localPath: finalVideoPath,
-          fileSize: `${fileSizeMB} MB`,
-          duration: currentTime,
-          segments: segments.length
+          sendEvent(controller, {
+            type: 'concat_fallback',
+            content: '视频拼接服务暂时不可用，已为您生成分段视频',
+          });
+
+          const subtitles = generateSubtitlesFromSegments(segments);
+          totalDuration = segments.reduce((sum, s) => sum + (s.duration || 4), 0);
+
+          // Return segment videos with their individual URLs
+          sendEvent(controller, {
+            type: 'complete',
+            content: {
+              videoUrl: segmentVideoUrls[0], // First video as main
+              segmentVideos: segments.map((seg, idx) => ({
+                id: seg.id,
+                script: seg.script,
+                videoUrl: segmentVideoUrls[idx],
+                duration: seg.duration || 4,
+              })),
+              subtitles: subtitles,
+              duration: totalDuration,
+              isSegmented: true, // Flag to indicate multiple segments
+            },
+          });
+
+          controller.close();
+          return;
+        }
+
+        // Step 3: Download concatenated video
+        sendEvent(controller, {
+          type: 'download_start',
+          content: '正在下载拼接后的视频...',
+        });
+
+        const tmpDir = '/tmp/video-processing';
+        if (!fs.existsSync(tmpDir)) {
+          fs.mkdirSync(tmpDir, { recursive: true });
+        }
+
+        const localVideoPath = path.join(tmpDir, `concatenated_${Date.now()}.mp4`);
+        await downloadVideo(concatenatedVideoUrl, localVideoPath);
+
+        // Step 4: Upload to object storage to get accessible URL
+        sendEvent(controller, {
+          type: 'upload_start',
+          content: '正在上传视频到对象存储...',
+        });
+
+        // Read the local video file and upload
+        const videoBuffer = fs.readFileSync(localVideoPath);
+        const uploadedKey = await storage.uploadFile({
+          fileContent: videoBuffer,
+          fileName: `videos/concatenated_${Date.now()}.mp4`,
+          contentType: 'video/mp4',
+        });
+
+        // Generate presigned URL for accessing the video
+        const accessibleVideoUrl = await storage.generatePresignedUrl({
+          key: uploadedKey,
+          expireTime: 86400, // 1 day
+        });
+
+        // Clean up local file
+        try {
+          fs.unlinkSync(localVideoPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+
+        // Step 5: Add subtitles to video
+        sendEvent(controller, {
+          type: 'subtitle_start',
+          content: '正在添加字幕到视频...',
+        });
+
+        const subtitles = generateSubtitlesFromSegments(segments);
+
+        // Prepare subtitle configuration
+        const textList = subtitles.map(sub => ({
+          start_time: sub.start,
+          end_time: sub.end,
+          text: sub.text,
         }));
 
-        // Cleanup intermediate files
+        const subtitleConfig = {
+          font_pos_config: {
+            pos_x: '0',
+            pos_y: '90%',
+            width: '100%',
+            height: '10%',
+          },
+          font_size: 36,
+          font_color: '#FFFFFFFF',
+          font_type: '1525745',
+          background_color: '#00000088',
+          background_border_width: 0,
+          border_width: 1,
+          border_color: '#00000088',
+        };
+
         try {
-          for (const file of [...localVideoPaths, ...localAudioPaths, ...mergedVideoPaths]) {
-            if (fs.existsSync(file) && file !== finalVideoPath) {
-              fs.unlinkSync(file);
-            }
+          const subtitleResponse = await videoEditClient.addSubtitles(
+            accessibleVideoUrl,
+            subtitleConfig,
+            { textList }
+          );
+
+          if (subtitleResponse.url) {
+            // Use video with embedded subtitles
+            sendEvent(controller, {
+              type: 'video_url',
+              content: subtitleResponse.url,
+            });
+          } else {
+            // Fallback to video without subtitles
+            sendEvent(controller, {
+              type: 'video_url',
+              content: accessibleVideoUrl,
+            });
           }
-        } catch (cleanupError) {
-          console.warn('Intermediate files cleanup warning:', cleanupError);
+        } catch (subtitleError) {
+          console.error('字幕添加失败，返回无字幕视频:', subtitleError);
+          // If subtitle addition fails, return video without subtitles
+          sendEvent(controller, {
+            type: 'video_url',
+            content: accessibleVideoUrl,
+          });
         }
 
+        sendEvent(controller, {
+          type: 'subtitles',
+          content: { subtitles },
+        });
+
+        // Done
+        sendEvent(controller, {
+          type: 'done',
+          content: JSON.stringify({
+            videoUrl: accessibleVideoUrl,
+            duration: totalDuration,
+            segments: segments.length,
+          }),
+        });
+        controller.close();
       } catch (error) {
-        console.error('Video generation error:', error);
-        sendEvent('error', error instanceof Error ? error.message : '视频生成失败');
-      } finally {
+        console.error('视频生成失败:', error);
+        sendEvent(controller, {
+          type: 'error',
+          content: error instanceof Error ? error.message : '生成失败',
+        });
         controller.close();
       }
-    }
+    },
   });
 
   return new Response(stream, {
