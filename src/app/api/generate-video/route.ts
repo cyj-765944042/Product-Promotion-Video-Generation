@@ -140,16 +140,35 @@ export async function POST(request: NextRequest) {
           ? { ...customHeaders, 'x-run-mode': 'test_run' }
           : customHeaders;
         
-        const defaultConfig = new Config({ 
-          timeout: 180000, // 3 minutes for video processing
+        // 火山方舟视频生成配置
+        const arkApiKey = process.env.ARK_API_KEY;
+        const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com';
+        const videoModelEP = process.env.VIDEO_MODEL_EP;
+        
+        console.log('视频生成配置:', { 
+          hasApiKey: !!arkApiKey, 
+          baseUrl: arkBaseUrl, 
+          videoModelEP: videoModelEP 
         });
         
+        // 视频生成客户端使用火山方舟配置
+        const videoGenConfig = arkApiKey ? new Config({ 
+          apiKey: arkApiKey,
+          baseUrl: arkBaseUrl,
+          timeout: 180000, // 3 minutes for video processing
+        }) : new Config({ timeout: 180000 });
+        
+        // 其他客户端使用SDK默认配置
+        const defaultConfig = new Config({ timeout: 180000 });
+        
         const ttsClient = new TTSClient(defaultConfig, finalHeaders);
-        const videoClient = new VideoGenerationClient(defaultConfig, finalHeaders);
+        // 视频生成使用火山方舟配置，不需要额外headers
+        const videoClient = new VideoGenerationClient(videoGenConfig, arkApiKey ? undefined : finalHeaders);
         const videoEditClient = new VideoEditClient(defaultConfig, finalHeaders);
         const storage = new S3Storage();
         
-        const videoModel = 'doubao-seedance-1-5-pro-251215';
+        // 使用用户配置的EP或默认模型
+        const videoModel = videoModelEP || 'doubao-seedance-1-5-pro-251215';
 
         // ==========================================
         // Step 1: Generate TTS audio for each segment
@@ -267,45 +286,19 @@ export async function POST(request: NextRequest) {
           });
           
           // Generate video with duration matching the audio
-          let videoResponse;
-          try {
-            videoResponse = await videoClient.videoGeneration(content, {
-              model: videoModel,
-              duration: audioInfo.duration, // Use audio duration
-              ratio: '16:9',
-              resolution: '720p',
-              generateAudio: false, // Don't generate audio, we'll add our own
-            });
-          } catch (error) {
-            console.error('视频生成API错误:', error);
-            // Fallback to test_run mode if 403 error
-            if (error instanceof Error && error.message.includes('403')) {
-              console.log('尝试使用test_run模式重试...');
-              const mockConfig = new Config({ timeout: 180000 });
-              const mockVideoClient = new VideoGenerationClient(mockConfig, { 'x-run-mode': 'test_run' });
-              try {
-                videoResponse = await mockVideoClient.videoGeneration(content, {
-                  model: videoModel,
-                  duration: audioInfo.duration,
-                  ratio: '16:9',
-                  resolution: '720p',
-                  generateAudio: false,
-                });
-              } catch (mockError) {
-                console.error('test_run模式也失败:', mockError);
-                throw new Error(`第 ${i + 1} 段视频生成失败: ${mockError instanceof Error ? mockError.message : '未知错误'}`);
-              }
-            } else {
-              if (error instanceof Error) {
-                throw new Error(`第 ${i + 1} 段视频生成失败: ${error.message}`);
-              }
-              throw error;
-            }
-          }
+          const videoResponse = await videoClient.videoGeneration(content, {
+            model: videoModel,
+            duration: audioInfo.duration, // Use audio duration
+            ratio: '16:9',
+            resolution: '720p',
+            generateAudio: false, // Don't generate audio, we'll add our own
+          });
 
           if (!videoResponse.videoUrl) {
             throw new Error(`第 ${i + 1} 段视频生成失败：未返回视频URL`);
           }
+
+          console.log(`第 ${i + 1} 段视频生成成功:`, videoResponse.videoUrl);
 
           segmentVideoInfos.push({
             videoUrl: videoResponse.videoUrl,
