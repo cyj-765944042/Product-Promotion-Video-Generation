@@ -173,11 +173,8 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // Initialize video client with user-provided ARK API configuration
-        // Using Doubao-Seedance-1.5-pro model via Volcano Engine ARK platform
-        const arkApiKey = process.env.ARK_API_KEY;
-        const arkBaseUrl = process.env.ARK_BASE_URL;
-        // Add mock mode header only for test_run
+        // Initialize video client with SDK default configuration (system API key)
+        // Using Doubao-Seedance-1.5-pro model
         const finalHeaders = useMockMode 
           ? { ...customHeaders, 'x-run-mode': 'test_run' }
           : customHeaders;
