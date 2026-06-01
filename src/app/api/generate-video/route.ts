@@ -260,7 +260,7 @@ export async function POST(request: NextRequest) {
             total: segments.length,
           });
 
-          const content: Array<
+          let content: Array<
             | { type: 'text'; text: string }
             | { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' }
           > = [];
@@ -287,27 +287,61 @@ export async function POST(request: NextRequest) {
           // Generate video with duration matching audio length
           // Duration based on TTS audio duration
           let videoResponse;
-          try {
-            videoResponse = await videoClient.videoGeneration(content, {
-              model: videoModel,
-              duration: Math.max(3, Math.min(10, audioDuration)), // Use audio duration, 3-10 seconds
-              ratio: '16:9',
-              resolution: '720p',
-              generateAudio: false, // We'll add our own TTS audio
-            });
-          } catch (error) {
-            console.error('视频生成API错误:', error);
-            const errorMessage = error instanceof Error ? error.message : '';
-            if (errorMessage.includes('403') || errorMessage.includes('permission')) {
-              throw new Error(`视频生成服务暂不可用。请检查API配置或联系管理员。`);
+          const maxVideoRetries = 3;
+          let videoRetryCount = 0;
+          
+          while (videoRetryCount < maxVideoRetries) {
+            try {
+              videoResponse = await videoClient.videoGeneration(content, {
+                model: videoModel,
+                duration: Math.max(3, Math.min(10, audioDuration)), // Use audio duration, 3-10 seconds
+                ratio: '16:9',
+                resolution: '720p',
+                generateAudio: false, // We'll add our own TTS audio
+              });
+              break; // Success, exit retry loop
+            } catch (error) {
+              videoRetryCount++;
+              const errorMessage = error instanceof Error ? error.message : '';
+              console.error(`视频生成API错误 (重试 ${videoRetryCount}/${maxVideoRetries}):`, error);
+              
+              // Check if it's a timeout error
+              if (errorMessage.includes('timed out') || errorMessage.includes('URL is not reachable')) {
+                if (videoRetryCount < maxVideoRetries) {
+                  // Wait before retry with exponential backoff
+                  await new Promise(resolve => setTimeout(resolve, 2000 * videoRetryCount));
+                  continue;
+                }
+                // Final retry failed, try without reference image
+                if (content.some(c => c.type === 'image_url')) {
+                  console.log('最后尝试：不使用参考图片生成视频');
+                  content = [{ type: 'text' as const, text: videoPrompt }];
+                  try {
+                    videoResponse = await videoClient.videoGeneration(content, {
+                      model: videoModel,
+                      duration: Math.max(3, Math.min(10, audioDuration)),
+                      ratio: '16:9',
+                      resolution: '720p',
+                      generateAudio: false,
+                    });
+                    break;
+                  } catch (finalError) {
+                    throw new Error(`第 ${i + 1} 段视频生成失败：网络超时，请稍后重试`);
+                  }
+                }
+              }
+              
+              if (errorMessage.includes('403') || errorMessage.includes('permission')) {
+                throw new Error(`视频生成服务暂不可用。请检查API配置或联系管理员。`);
+              }
+              if (error instanceof Error) {
+                throw new Error(`第 ${i + 1} 段视频生成失败: ${error.message}`);
+              }
+              throw error;
             }
-            if (error instanceof Error) {
-              throw new Error(`第 ${i + 1} 段视频生成失败: ${error.message}`);
-            }
-            throw error;
           }
 
-          if (!videoResponse.videoUrl) {
+          if (!videoResponse || !videoResponse.videoUrl) {
             throw new Error(`第 ${i + 1} 段视频生成失败：未返回视频URL`);
           }
 
@@ -315,22 +349,37 @@ export async function POST(request: NextRequest) {
           let finalVideoUrl = videoResponse.videoUrl;
           
           if (audioUrl) {
-            try {
-              sendEvent(controller, {
-                type: 'subtitle_start',
-                content: `正在合并第 ${i + 1} 段音频...`,
-              });
-              
-              // Compile video with TTS audio - pass video and audio as separate arguments
-              const compiledVideo = await videoEditClient.compileVideoAudio(
-                videoResponse.videoUrl,
-                audioUrl,
-                { isAudioReserve: false }
-              );
-              finalVideoUrl = compiledVideo.url || videoResponse.videoUrl;
-            } catch (error) {
-              console.error(`音频合并失败 for segment ${i + 1}:`, error);
-              // Continue without audio merge
+            const maxAudioRetries = 3;
+            let audioRetryCount = 0;
+            let audioMergeSuccess = false;
+            
+            while (audioRetryCount < maxAudioRetries && !audioMergeSuccess) {
+              try {
+                sendEvent(controller, {
+                  type: 'subtitle_start',
+                  content: `正在合并第 ${i + 1} 段音频...${audioRetryCount > 0 ? `(重试 ${audioRetryCount}/${maxAudioRetries})` : ''}`,
+                });
+                
+                // Compile video with TTS audio - pass video and audio as separate arguments
+                const compiledVideo = await videoEditClient.compileVideoAudio(
+                  videoResponse.videoUrl,
+                  audioUrl,
+                  { isAudioReserve: false }
+                );
+                finalVideoUrl = compiledVideo.url || videoResponse.videoUrl;
+                audioMergeSuccess = true;
+              } catch (error) {
+                audioRetryCount++;
+                console.error(`音频合并失败 (重试 ${audioRetryCount}/${maxAudioRetries}):`, error);
+                
+                if (audioRetryCount < maxAudioRetries) {
+                  // Wait before retry
+                  await new Promise(resolve => setTimeout(resolve, 2000 * audioRetryCount));
+                } else {
+                  console.log(`音频合并最终失败，使用原始视频（无配音）`);
+                  // Continue without audio merge
+                }
+              }
             }
           }
 
