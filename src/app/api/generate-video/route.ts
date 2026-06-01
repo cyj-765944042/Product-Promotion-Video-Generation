@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { Config, VideoGenerationClient, VideoEditClient, S3Storage, TTSClient } from 'coze-coding-dev-sdk';
+import { Config, VideoGenerationClient, VideoEditClient, S3Storage, TTSClient, ASRClient } from 'coze-coding-dev-sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
@@ -208,6 +208,9 @@ export async function POST(request: NextRequest) {
           segmentId: number;
         }
         
+        // Initialize ASR client for getting real audio duration
+        const asrClient = new ASRClient(new Config());
+        
         const audioInfos: AudioInfo[] = [];
         
         for (let i = 0; i < segments.length; i++) {
@@ -232,14 +235,34 @@ export async function POST(request: NextRequest) {
             });
             
             if (ttsResponse.audioUri) {
-              // Estimate duration: Chinese TTS is roughly 3-4 characters per second
-              // Add some buffer for pauses
-              const charCount = segment.script.length;
-              const estimatedDuration = Math.max(3, Math.min(15, Math.ceil(charCount / 3.5)));
+              // Use ASR to get real audio duration
+              let realDuration = segment.duration || 5; // Default fallback
+              
+              try {
+                console.log('正在获取音频真实时长...');
+                const asrResult = await asrClient.recognize({
+                  url: ttsResponse.audioUri,
+                }) as { rawData?: { audio_info?: { duration?: number } } };
+                
+                // ASR returns duration in milliseconds in rawData.audio_info.duration
+                if (asrResult?.rawData?.audio_info?.duration) {
+                  realDuration = Math.ceil(asrResult.rawData.audio_info.duration / 1000);
+                  console.log(`ASR获取真实时长: ${realDuration}秒`);
+                } else {
+                  console.log('ASR未返回时长，使用估算值');
+                  const charCount = segment.script.length;
+                  realDuration = Math.max(3, Math.min(15, Math.ceil(charCount / 4)));
+                }
+              } catch (asrError) {
+                console.warn('ASR获取时长失败，使用估算值:', asrError);
+                // Fallback to estimation
+                const charCount = segment.script.length;
+                realDuration = Math.max(3, Math.min(15, Math.ceil(charCount / 4)));
+              }
               
               audioInfos.push({
                 url: ttsResponse.audioUri,
-                duration: estimatedDuration,
+                duration: realDuration,
                 segmentId: segment.id,
               });
               
@@ -248,18 +271,18 @@ export async function POST(request: NextRequest) {
                 content: { 
                   segmentId: segment.id, 
                   audioUrl: ttsResponse.audioUri,
-                  duration: estimatedDuration,
+                  duration: realDuration,
                 },
                 segmentId: i,
               });
               
-              console.log(`TTS音频 ${i + 1} 生成成功, 时长约 ${estimatedDuration}秒`);
+              console.log(`TTS音频 ${i + 1} 生成成功, 真实时长 ${realDuration}秒`);
               
               // 记录中间文件
               intermediateFiles.audios.push({
                 segmentId: segment.id,
                 url: ttsResponse.audioUri,
-                duration: estimatedDuration,
+                duration: realDuration,
                 script: segment.script,
               });
             } else {
@@ -322,10 +345,11 @@ export async function POST(request: NextRequest) {
             text: promptText,
           });
           
-          // Generate video with duration matching the audio
+          // Generate video with duration matching the audio (min 5 seconds for API limit)
+          const videoDuration = Math.max(5, audioInfo.duration);
           const videoResponse = await videoClient.videoGeneration(content, {
             model: videoModel,
-            duration: audioInfo.duration, // Use audio duration
+            duration: videoDuration,
             ratio: '16:9',
             resolution: '720p',
             generateAudio: false, // Don't generate audio, we'll add our own
