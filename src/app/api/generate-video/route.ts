@@ -1,10 +1,11 @@
 import { NextRequest } from 'next/server';
-import { Config, VideoGenerationClient, VideoEditClient, S3Storage, TTSClient, ASRClient } from 'coze-coding-dev-sdk';
+import { Config, VideoGenerationClient, VideoEditClient, S3Storage, TTSClient } from 'coze-coding-dev-sdk';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import * as https from 'https';
 import { HeaderUtils } from 'coze-coding-dev-sdk';
+import { spawn } from 'child_process';
 
 // Types
 interface ScriptSegment {
@@ -87,12 +88,76 @@ async function downloadFile(url: string, outputPath: string): Promise<void> {
   });
 }
 
-// Get audio duration from file (simple estimation based on file size for mp3)
-// For accurate duration, we'll use the duration from TTS response
-async function getAudioDurationFromUrl(audioUrl: string): Promise<number> {
-  // TTS usually returns ~1 second per 4-5 Chinese characters
-  // We'll estimate based on this, but ideally should use the actual duration from API
-  return 5; // Default 5 seconds, will be updated from TTS response
+// Get audio duration using FFmpeg
+async function getAudioDurationFFmpeg(audioPath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const ffprobe = spawn('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      audioPath
+    ]);
+    
+    let output = '';
+    ffprobe.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    ffprobe.on('close', (code) => {
+      if (code === 0) {
+        const duration = parseFloat(output.trim());
+        if (!isNaN(duration)) {
+          resolve(Math.ceil(duration)); // Round up to nearest second
+        } else {
+          resolve(5); // Default to 5 seconds if parsing fails
+        }
+      } else {
+        resolve(5); // Default to 5 seconds on error
+      }
+    });
+    
+    ffprobe.on('error', () => {
+      resolve(5); // Default to 5 seconds on error
+    });
+  });
+}
+
+// Merge video and audio using FFmpeg
+async function mergeVideoAudioFFmpeg(
+  videoPath: string, 
+  audioPath: string, 
+  outputPath: string
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn('ffmpeg', [
+      '-y', // Overwrite output
+      '-i', videoPath,
+      '-i', audioPath,
+      '-c:v', 'copy', // Copy video stream
+      '-c:a', 'aac', // Re-encode audio to AAC
+      '-map', '0:v:0', // Use video from first input
+      '-map', '1:a:0', // Use audio from second input
+      '-shortest', // End when shortest stream ends
+      outputPath
+    ]);
+    
+    let errorOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+    
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg merge failed with code ${code}: ${errorOutput}`));
+      }
+    });
+    
+    ffmpeg.on('error', (err) => {
+      reject(err);
+    });
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -206,10 +271,10 @@ export async function POST(request: NextRequest) {
           url: string;
           duration: number;
           segmentId: number;
+          localPath: string;
         }
         
-        // Initialize ASR client for getting real audio duration
-        const asrClient = new ASRClient(new Config());
+        // FFmpeg functions are defined at module level
         
         const audioInfos: AudioInfo[] = [];
         
@@ -235,35 +300,31 @@ export async function POST(request: NextRequest) {
             });
             
             if (ttsResponse.audioUri) {
-              // Use ASR to get real audio duration
+              // Use FFmpeg to get real audio duration
               let realDuration = segment.duration || 5; // Default fallback
+              let localAudioPath = '';
               
               try {
-                console.log('正在获取音频真实时长...');
-                const asrResult = await asrClient.recognize({
-                  url: ttsResponse.audioUri,
-                }) as { rawData?: { audio_info?: { duration?: number } } };
+                console.log('正在下载音频并获取真实时长...');
+                // Download audio to local temp file
+                localAudioPath = `/tmp/audio_${segment.id}_${Date.now()}.mp3`;
+                await downloadFile(ttsResponse.audioUri, localAudioPath);
                 
-                // ASR returns duration in milliseconds in rawData.audio_info.duration
-                if (asrResult?.rawData?.audio_info?.duration) {
-                  realDuration = Math.ceil(asrResult.rawData.audio_info.duration / 1000);
-                  console.log(`ASR获取真实时长: ${realDuration}秒`);
-                } else {
-                  console.log('ASR未返回时长，使用估算值');
-                  const charCount = segment.script.length;
-                  realDuration = Math.max(3, Math.min(15, Math.ceil(charCount / 4)));
-                }
-              } catch (asrError) {
-                console.warn('ASR获取时长失败，使用估算值:', asrError);
+                // Use FFmpeg to get duration
+                realDuration = await getAudioDurationFFmpeg(localAudioPath);
+                console.log(`FFmpeg获取真实时长: ${realDuration}秒`);
+              } catch (ffmpegError) {
+                console.warn('FFmpeg获取时长失败，使用估算值:', ffmpegError);
                 // Fallback to estimation
                 const charCount = segment.script.length;
-                realDuration = Math.max(3, Math.min(15, Math.ceil(charCount / 4)));
+                realDuration = Math.max(5, Math.min(15, Math.ceil(charCount / 4)));
               }
               
               audioInfos.push({
                 url: ttsResponse.audioUri,
                 duration: realDuration,
                 segmentId: segment.id,
+                localPath: localAudioPath,
               });
               
               sendEvent(controller, {
@@ -295,6 +356,7 @@ export async function POST(request: NextRequest) {
               url: '',
               duration: segment.duration || 5,
               segmentId: segment.id,
+              localPath: '',
             });
           }
         }
@@ -393,6 +455,7 @@ export async function POST(request: NextRequest) {
         
         for (let i = 0; i < segmentVideoInfos.length; i++) {
           const info = segmentVideoInfos[i];
+          const segmentId = segments[i].id;
           
           if (info.audioUrl) {
             sendEvent(controller, {
@@ -402,46 +465,51 @@ export async function POST(request: NextRequest) {
             });
             
             try {
-              // Transfer video to object storage for accessible URL
-              const uploadedVideoKey = await storage.uploadFromUrl({
-                url: info.videoUrl,
-                timeout: 60000,
-              });
-              const accessibleVideoUrl = await storage.generatePresignedUrl({
-                key: uploadedVideoKey,
-                expireTime: 3600,
-              });
+              // Download video to local temp directory
+              const videoFileName = `video_${segmentId}_${Date.now()}.mp4`;
+              const localVideoPath = `/tmp/${videoFileName}`;
               
-              // Transfer audio to object storage
-              const uploadedAudioKey = await storage.uploadFromUrl({
-                url: info.audioUrl,
-                timeout: 30000,
-              });
-              const accessibleAudioUrl = await storage.generatePresignedUrl({
-                key: uploadedAudioKey,
-                expireTime: 3600,
-              });
+              console.log(`下载视频到本地: ${localVideoPath}`);
+              await downloadFile(info.videoUrl, localVideoPath);
               
-              // Use video edit client to merge audio
-              // Note: compileVideoAudio API merges audio into video
-              const mergedVideo = await videoEditClient.compileVideoAudio(
-                accessibleVideoUrl,
-                accessibleAudioUrl,
-                {
-                  isAudioReserve: false, // Replace original audio
-                }
-              );
+              // Get local audio path from audioInfos
+              const audioInfo = audioInfos.find(a => a.segmentId === segmentId);
+              const localAudioPath = audioInfo?.localPath;
               
-              if (mergedVideo.url) {
-                mergedVideoUrls.push(mergedVideo.url);
-                console.log(`视频 ${i + 1} 音频合并成功`);
-              } else {
-                // Fallback to original video
-                mergedVideoUrls.push(info.videoUrl);
-                console.log(`视频 ${i + 1} 音频合并失败，使用原视频`);
+              if (!localAudioPath || !fs.existsSync(localAudioPath)) {
+                throw new Error(`音频文件不存在: ${localAudioPath}`);
               }
+              
+              // Use FFmpeg to merge audio and video
+              const mergedFileName = `merged_${segmentId}_${Date.now()}.mp4`;
+              const mergedFilePath = `/tmp/${mergedFileName}`;
+              
+              console.log(`FFmpeg合并音视频: ${mergedFilePath}`);
+              await mergeVideoAudioFFmpeg(localVideoPath, localAudioPath, mergedFilePath);
+              
+              // Upload merged video to object storage
+              console.log('上传合并后的视频...');
+              const mergedVideoBuffer = fs.readFileSync(mergedFilePath);
+              const mergedVideoKey = await storage.uploadFile({
+                fileContent: mergedVideoBuffer,
+                fileName: `videos/merged_${segmentId}_${Date.now()}.mp4`,
+                contentType: 'video/mp4',
+              });
+              const mergedVideoUrl = await storage.generatePresignedUrl({
+                key: mergedVideoKey,
+                expireTime: 86400,
+              });
+              
+              mergedVideoUrls.push(mergedVideoUrl);
+              console.log(`视频 ${i + 1} FFmpeg音视频合并成功`);
+              
+              // Clean up temp files
+              fs.unlinkSync(localVideoPath);
+              fs.unlinkSync(mergedFilePath);
+              
             } catch (mergeError) {
-              console.error(`音频合并失败 (${i + 1}):`, mergeError);
+              console.error(`FFmpeg音频合并失败 (${i + 1}):`, mergeError);
+              // Fallback to original video URL
               mergedVideoUrls.push(info.videoUrl);
             }
           } else {
