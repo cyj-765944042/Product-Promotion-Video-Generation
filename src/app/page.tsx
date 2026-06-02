@@ -730,7 +730,24 @@ export default function Home() {
           </h1>
         </div>
 
-        {/* 商品信息输入 */}
+        {/* 1. 商品名称 */}
+        <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              📦 商品名称
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Input
+              value={productName}
+              onChange={(e) => setProductName(e.target.value)}
+              placeholder="请输入商品名称，或上传图片自动识别"
+              className="w-full"
+            />
+          </CardContent>
+        </Card>
+
+        {/* 2. 上传商品图片 */}
         <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -752,16 +769,25 @@ export default function Home() {
                       e.stopPropagation();
                       setProductImage(null);
                       setProductImagePreview('');
+                      setAnalyzedFeatures([]);
                     }}
                   >
                     <X className="w-4 h-4" />
                   </button>
+                  {isAnalyzingImage && (
+                    <div className="absolute inset-0 bg-white/80 flex items-center justify-center rounded">
+                      <div className="flex items-center gap-2 text-blue-600">
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span>识别中...</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
                   <Upload className="w-12 h-12 mx-auto text-gray-400 mb-2" />
                   <p className="text-gray-500">点击上传，支持高清商品实拍图</p>
-                  <p className="text-xs text-gray-400 mt-1">自动识别物体/可进行手动抠图</p>
+                  <p className="text-xs text-gray-400 mt-1">自动识别商品主体，生成卖点</p>
                 </>
               )}
             </div>
@@ -775,24 +801,40 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        {/* 商品名称 */}
-        <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              📦 商品名称
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Input
-              value={productName}
-              onChange={(e) => setProductName(e.target.value)}
-              placeholder="请输入商品名称"
-              className="w-full"
-            />
-          </CardContent>
-        </Card>
+        {/* 3. AI识别结果 */}
+        {analyzedFeatures.length > 0 && (
+          <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-purple-600" />
+                ✨ AI识别结果
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-600 mb-2">已自动识别商品特征，可点击添加到核心卖点：</p>
+              <div className="flex flex-wrap gap-2">
+                {analyzedFeatures.map((feature, index) => (
+                  <Badge
+                    key={index}
+                    variant="outline"
+                    className="cursor-pointer hover:bg-blue-100 hover:text-blue-700 transition-all"
+                    onClick={() => {
+                      // 自动将识别的特征添加到特点中
+                      if (!selectedFeatures.includes(feature)) {
+                        setSelectedFeatures(prev => [...prev, feature]);
+                      }
+                    }}
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    {feature}
+                  </Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* 核心卖点 */}
+        {/* 4. 核心卖点 */}
         <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
