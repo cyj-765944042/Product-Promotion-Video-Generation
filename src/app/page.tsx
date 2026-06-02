@@ -363,7 +363,7 @@ export default function Home() {
       }
 
       const initData = await initResponse.json();
-      setTaskFolder(initData.folder);
+      setTaskFolder(initData);
 
       // 2. 并发生成所有视频片段
       const tempSegments: VideoSegment[] = [];
@@ -380,7 +380,7 @@ export default function Home() {
               script: segment.script,
               prompt: segment.prompt || '',
               imageUrl: uploadedImageUrl,
-              folderPath: initData.folder.folderPath,
+              folderPath: initData.folderPath,
               productName: productName
             }),
           });
