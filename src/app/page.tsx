@@ -365,63 +365,93 @@ export default function Home() {
       const initData = await initResponse.json();
       setTaskFolder(initData.folder);
 
-      // 2. 生成所有视频片段
-      const generateResponse = await fetch('/api/video-task/generate-segment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          taskId: initData.taskId,
-          folder: initData.folder,
-          segments: scriptSegments,
-          imageUrl: uploadedImageUrl 
-        }),
-      });
-
-      if (!generateResponse.ok) {
-        throw new Error('生成视频片段失败');
-      }
-
-      const reader = generateResponse.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) {
-        throw new Error('无法读取响应');
-      }
-
-      let buffer = '';
+      // 2. 并发生成所有视频片段
       const tempSegments: VideoSegment[] = [];
+      let audioCount = 0;
+      let videoCount = 0;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      const generatePromises = scriptSegments.map(async (segment, index) => {
+        try {
+          const response = await fetch('/api/video-task/generate-segment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              segmentId: segment.id,
+              script: segment.script,
+              prompt: segment.prompt || '',
+              imageUrl: uploadedImageUrl,
+              folderPath: initData.folder.folderPath,
+              productName: productName
+            }),
+          });
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+          if (!response.ok) {
+            throw new Error(`片段 ${segment.id} 生成失败`);
+          }
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            try {
-              const parsed = JSON.parse(data);
-              
-              if (parsed.type === 'audio_complete') {
-                setSegmentProgress(prev => ({ ...prev, audio: prev.audio + 1 }));
-              } else if (parsed.type === 'video_complete') {
-                const seg = parsed.content as VideoSegment;
-                seg.isSelected = true; // 默认选中
-                tempSegments.push(seg);
-                setVideoSegments([...tempSegments]);
-                setSegmentProgress(prev => ({ ...prev, video: prev.video + 1 }));
-              } else if (parsed.type === 'error') {
-                console.error('片段生成错误:', parsed.content);
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+
+          if (!reader) {
+            throw new Error('无法读取响应');
+          }
+
+          let buffer = '';
+          let segmentData: VideoSegment | null = null;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6);
+                try {
+                  const parsed = JSON.parse(data);
+
+                  if (parsed.type === 'tts_complete') {
+                    audioCount++;
+                    setSegmentProgress(prev => ({ ...prev, audio: audioCount }));
+                  } else if (parsed.type === 'video_complete') {
+                    videoCount++;
+                    segmentData = {
+                      id: segment.id,
+                      script: segment.script,
+                      prompt: segment.prompt || '',
+                      audioUrl: parsed.content.audioUrl,
+                      audioLocalPath: parsed.content.audioLocalPath,
+                      audioDuration: parsed.content.duration || parsed.content.audioDuration,
+                      videoUrl: parsed.content.videoUrl,
+                      videoLocalPath: parsed.content.videoLocalPath,
+                      videoDuration: parsed.content.duration,
+                      isGenerating: false,
+                      isSelected: true
+                    };
+                    setSegmentProgress(prev => ({ ...prev, video: videoCount }));
+                  }
+                } catch {
+                  // Ignore parse errors
+                }
               }
-            } catch {
-              // Ignore parse errors
             }
           }
+
+          return segmentData;
+        } catch (error) {
+          console.error(`片段 ${segment.id} 生成错误:`, error);
+          return null;
         }
-      }
+      });
+
+      const results = await Promise.all(generatePromises);
+
+      // 过滤掉失败的结果并更新状态
+      const validSegments = results.filter((s): s is VideoSegment => s !== null);
+      setVideoSegments(validSegments);
     } catch (error) {
       console.error('生成失败:', error);
       alert(error instanceof Error ? error.message : '生成失败，请重试');
