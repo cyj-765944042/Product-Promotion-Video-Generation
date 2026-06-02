@@ -418,20 +418,38 @@ export default function Home() {
                     setSegmentProgress(prev => ({ ...prev, audio: audioCount }));
                   } else if (parsed.type === 'video_complete') {
                     videoCount++;
+                    // video_complete 只包含视频信息，更新临时数据
                     segmentData = {
                       id: segment.id,
                       script: segment.script,
                       prompt: segment.prompt || '',
-                      audioUrl: parsed.content.audioUrl,
-                      audioLocalPath: parsed.content.audioLocalPath,
-                      audioDuration: parsed.content.duration || parsed.content.audioDuration,
-                      videoUrl: parsed.content.videoUrl,
-                      videoLocalPath: parsed.content.videoLocalPath,
-                      videoDuration: parsed.content.duration,
+                      audioUrl: '',
+                      audioLocalPath: '',
+                      audioDuration: 0,
+                      videoUrl: parsed.content.videoUrl || '',
+                      videoLocalPath: parsed.content.videoLocalPath || '',
+                      videoDuration: parsed.content.duration || 0,
                       isGenerating: false,
                       isSelected: true
                     };
                     setSegmentProgress(prev => ({ ...prev, video: videoCount }));
+                  } else if (parsed.type === 'done') {
+                    // done 事件包含完整的音频和视频信息
+                    const audioInfo = parsed.content.audio;
+                    const videoInfo = parsed.content.video;
+                    segmentData = {
+                      id: segment.id,
+                      script: segment.script,
+                      prompt: segment.prompt || '',
+                      audioUrl: audioInfo?.url || '',
+                      audioLocalPath: audioInfo?.localPath || '',
+                      audioDuration: audioInfo?.duration || 0,
+                      videoUrl: videoInfo?.url || '',
+                      videoLocalPath: videoInfo?.localPath || '',
+                      videoDuration: videoInfo?.duration || 0,
+                      isGenerating: false,
+                      isSelected: true
+                    };
                   }
                 } catch {
                   // Ignore parse errors
@@ -523,17 +541,30 @@ export default function Home() {
               const parsed = JSON.parse(data);
               
               if (parsed.type === 'video_complete') {
-                const newSeg = parsed.content as VideoSegment;
-                // 更新片段
+                const content = parsed.content;
+                // video_complete 只包含视频信息，先更新视频部分
                 setVideoSegments(prev => prev.map(seg => 
                   seg.id === segmentId ? { 
                     ...seg, 
-                    videoUrl: newSeg.videoUrl,
-                    videoLocalPath: newSeg.videoLocalPath,
-                    videoDuration: newSeg.videoDuration,
-                    audioUrl: newSeg.audioUrl,
-                    audioLocalPath: newSeg.audioLocalPath,
-                    audioDuration: newSeg.audioDuration,
+                    videoUrl: content.videoUrl || '',
+                    videoLocalPath: content.videoLocalPath || '',
+                    videoDuration: content.duration || 0,
+                    isGenerating: false 
+                  } : seg
+                ));
+              } else if (parsed.type === 'done') {
+                // done 事件包含完整的音频和视频信息
+                const audioInfo = parsed.content.audio;
+                const videoInfo = parsed.content.video;
+                setVideoSegments(prev => prev.map(seg => 
+                  seg.id === segmentId ? { 
+                    ...seg, 
+                    videoUrl: videoInfo?.url || seg.videoUrl,
+                    videoLocalPath: videoInfo?.localPath || seg.videoLocalPath,
+                    videoDuration: videoInfo?.duration || seg.videoDuration,
+                    audioUrl: audioInfo?.url || '',
+                    audioLocalPath: audioInfo?.localPath || '',
+                    audioDuration: audioInfo?.duration || 0,
                     isGenerating: false 
                   } : seg
                 ));
