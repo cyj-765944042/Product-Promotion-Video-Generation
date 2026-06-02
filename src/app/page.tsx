@@ -18,6 +18,7 @@ import {
   Circle,
   Edit3,
   Play,
+  Pause,
   X,
   Plus,
   Camera,
@@ -25,8 +26,175 @@ import {
   Film,
   Scissors,
   RefreshCw,
-  Check
+  Check,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
+
+// 同步播放视频、音频和字幕的播放器组件
+function SyncVideoPlayer({ 
+  videoUrl, 
+  audioUrl, 
+  script, 
+  poster 
+}: { 
+  videoUrl: string; 
+  audioUrl: string; 
+  script: string;
+  poster?: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+
+  // 同步播放/暂停
+  const togglePlay = useCallback(() => {
+    if (!videoRef.current || !audioRef.current) return;
+    
+    if (isPlaying) {
+      videoRef.current.pause();
+      audioRef.current.pause();
+    } else {
+      videoRef.current.play();
+      audioRef.current.play();
+    }
+    setIsPlaying(!isPlaying);
+  }, [isPlaying]);
+
+  // 同步进度
+  const handleTimeUpdate = useCallback(() => {
+    if (videoRef.current) {
+      setCurrentTime(videoRef.current.currentTime);
+    }
+  }, []);
+
+  // 同步跳转
+  const handleSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+    if (videoRef.current && audioRef.current) {
+      videoRef.current.currentTime = time;
+      audioRef.current.currentTime = time;
+      setCurrentTime(time);
+    }
+  }, []);
+
+  // 视频加载完成
+  const handleLoadedMetadata = useCallback(() => {
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration);
+    }
+  }, []);
+
+  // 播放结束
+  const handleEnded = useCallback(() => {
+    setIsPlaying(false);
+    if (videoRef.current && audioRef.current) {
+      videoRef.current.currentTime = 0;
+      audioRef.current.currentTime = 0;
+    }
+  }, []);
+
+  // 静音切换
+  const toggleMute = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  }, [isMuted]);
+
+  // 格式化时间
+  const formatTime = (time: number) => {
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="relative bg-black rounded-lg overflow-hidden">
+      {/* 视频元素 */}
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        className="w-full aspect-video object-contain"
+        poster={poster}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={handleEnded}
+        onClick={togglePlay}
+        playsInline
+      />
+      
+      {/* 音频元素 */}
+      <audio ref={audioRef} src={audioUrl} />
+      
+      {/* 字幕显示 */}
+      <div className="absolute bottom-16 left-0 right-0 flex justify-center pointer-events-none">
+        <div className="bg-black/70 text-white px-4 py-2 rounded-lg max-w-[80%] text-center">
+          <p className="text-sm md:text-base">{script}</p>
+        </div>
+      </div>
+      
+      {/* 自定义控制栏 */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+        <div className="flex items-center gap-3">
+          {/* 播放/暂停按钮 */}
+          <button
+            onClick={togglePlay}
+            className="text-white hover:text-blue-400 transition-colors"
+          >
+            {isPlaying ? (
+              <Pause className="w-6 h-6" />
+            ) : (
+              <Play className="w-6 h-6" />
+            )}
+          </button>
+          
+          {/* 进度条 */}
+          <input
+            type="range"
+            min="0"
+            max={duration || 100}
+            value={currentTime}
+            onChange={handleSeek}
+            className="flex-1 h-1 bg-white/30 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
+          />
+          
+          {/* 时间显示 */}
+          <span className="text-white text-xs whitespace-nowrap">
+            {formatTime(currentTime)} / {formatTime(duration)}
+          </span>
+          
+          {/* 静音按钮 */}
+          <button
+            onClick={toggleMute}
+            className="text-white hover:text-blue-400 transition-colors"
+          >
+            {isMuted ? (
+              <VolumeX className="w-5 h-5" />
+            ) : (
+              <Volume2 className="w-5 h-5" />
+            )}
+          </button>
+        </div>
+      </div>
+      
+      {/* 点击播放遮罩 */}
+      {!isPlaying && (
+        <div 
+          className="absolute inset-0 flex items-center justify-center bg-black/30 cursor-pointer"
+          onClick={togglePlay}
+        >
+          <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center">
+            <Play className="w-8 h-8 text-blue-600 ml-1" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface GenerationStep {
   id: string;
@@ -1188,17 +1356,13 @@ export default function Home() {
                     </Button>
                   </div>
 
-                  {/* 视频播放器 */}
-                  <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-                    <video
-                      src={segment.videoUrl}
-                      controls
-                      className="w-full h-full object-contain"
-                      poster={productImagePreview}
-                    >
-                      您的浏览器不支持视频播放
-                    </video>
-                  </div>
+                  {/* 视频播放器 - 同步播放音频和字幕 */}
+                  <SyncVideoPlayer
+                    videoUrl={segment.videoUrl}
+                    audioUrl={segment.audioUrl}
+                    script={segment.script}
+                    poster={productImagePreview}
+                  />
                 </div>
               ))}
 
