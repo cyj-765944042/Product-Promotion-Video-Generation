@@ -544,6 +544,11 @@ export default function Home() {
       return;
     }
 
+    if (!productName || productName.trim() === '') {
+      alert('请先填写商品名称');
+      return;
+    }
+
     setIsGeneratingSegments(true);
     setVideoSegments([]);
     setSegmentProgress({ audio: 0, video: 0, total: scriptSegments.length });
@@ -563,7 +568,10 @@ export default function Home() {
       });
 
       if (!initResponse.ok) {
-        throw new Error('初始化任务失败');
+        const errorData = await initResponse.json().catch(() => ({}));
+        const errorMsg = errorData.error || '初始化任务失败';
+        console.error('初始化失败:', errorData);
+        throw new Error(errorMsg);
       }
 
       const initData = await initResponse.json();

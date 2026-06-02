@@ -17,8 +17,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { productName } = body;
 
-    if (!productName) {
-      return new Response(JSON.stringify({ error: '缺少商品名称' }), {
+    if (!productName || productName.trim() === '') {
+      return new Response(JSON.stringify({ error: '请先填写商品名称' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -27,23 +27,28 @@ export async function POST(request: NextRequest) {
     // 清理商品名称，移除特殊字符
     const sanitizedName = productName.replace(/[^\u4e00-\u9fa5a-zA-Z0-9_-]/g, '_');
     
-    // 在 public 文件夹中创建商品文件夹
-    const publicDir = path.join(process.cwd(), 'public');
+    // 根据环境选择目录
+    const isProduction = process.env.COZE_PROJECT_ENV === 'PROD';
+    const baseDir = isProduction 
+      ? '/tmp'  // 生产环境使用 /tmp
+      : path.join(process.cwd(), 'public');
     
-    // 确保public目录存在
-    if (!fs.existsSync(publicDir)) {
-      fs.mkdirSync(publicDir, { recursive: true });
+    console.log(`环境: ${isProduction ? '生产' : '开发'}, 基础目录: ${baseDir}`);
+    
+    // 确保基础目录存在
+    if (!fs.existsSync(baseDir)) {
+      fs.mkdirSync(baseDir, { recursive: true });
     }
     
     // 查找可用的文件夹名称
     let folderName = sanitizedName;
-    let folderPath = path.join(publicDir, folderName);
+    let folderPath = path.join(baseDir, folderName);
     let suffix = 0;
     
     while (fs.existsSync(folderPath)) {
       suffix++;
       folderName = `${sanitizedName}_${suffix}`;
-      folderPath = path.join(publicDir, folderName);
+      folderPath = path.join(baseDir, folderName);
     }
     
     // 创建文件夹
