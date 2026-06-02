@@ -972,11 +972,11 @@ export default function Home() {
               {videoSegments.map((segment, index) => (
                 <div key={segment.id} className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30">
                   <div className="flex items-center gap-4 mb-3">
-                    {/* 勾选框 */}
+                    {/* 红色勾选框 */}
                     <Checkbox
                       checked={segment.isSelected}
                       onCheckedChange={() => toggleSegmentSelection(segment.id)}
-                      className="data-[state=checked]:bg-blue-600"
+                      className="w-6 h-6 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600 border-2"
                     />
                     
                     <div className="flex-1">
@@ -989,23 +989,23 @@ export default function Home() {
                       </p>
                     </div>
 
-                    {/* 重新生成按钮 */}
+                    {/* 重新生成按钮 - 红色大按钮 */}
                     <Button
-                      variant="outline"
-                      size="sm"
+                      variant="destructive"
+                      size="lg"
                       onClick={() => handleRegenerateSegment(segment.id)}
                       disabled={segment.isGenerating}
-                      className="flex items-center gap-1"
+                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-3"
                     >
                       {segment.isGenerating ? (
                         <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <Loader2 className="w-5 h-5 animate-spin" />
                           生成中...
                         </>
                       ) : (
                         <>
-                          <RefreshCw className="w-4 h-4" />
-                          重新生成
+                          <RefreshCw className="w-5 h-5" />
+                          重新生成视频
                         </>
                       )}
                     </Button>
