@@ -597,10 +597,31 @@ export default function Home() {
       return;
     }
 
-    // 检查所有片段是否都有有效的音频路径
-    const invalidSegments = selectedSegments.filter(seg => !seg.audioLocalPath);
-    if (invalidSegments.length > 0) {
-      console.error('无效片段:', invalidSegments);
+    // 处理片段数据，确保音频路径有效
+    const processedSegments = selectedSegments.map(seg => {
+      // 如果音频路径缺失，从视频路径推导
+      let audioPath = seg.audioLocalPath;
+      if (!audioPath && seg.videoLocalPath) {
+        // 从视频路径推导音频路径
+        // video/video_1_xxx.mp4 -> audio/audio_1_xxx.mp3
+        const videoMatch = seg.videoLocalPath.match(/video_(\d+_\d+)\.mp4$/);
+        if (videoMatch) {
+          audioPath = seg.videoLocalPath
+            .replace('/video/', '/audio/')
+            .replace(/video_(\d+_\d+)\.mp4$/, 'audio_$1.mp3');
+          console.log(`从视频路径推导音频路径: ${seg.videoLocalPath} -> ${audioPath}`);
+        }
+      }
+      return {
+        ...seg,
+        audioLocalPath: audioPath
+      };
+    });
+
+    // 检查音频文件是否存在（通过路径检查）
+    const segmentsWithoutAudio = processedSegments.filter(seg => !seg.audioLocalPath);
+    if (segmentsWithoutAudio.length > 0) {
+      console.error('无效片段:', segmentsWithoutAudio);
       alert('部分视频片段缺少音频文件，请重新生成这些片段');
       return;
     }
@@ -615,7 +636,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           folderPath: taskFolder?.folderPath,
-          segments: selectedSegments.map(seg => ({
+          segments: processedSegments.map(seg => ({
             audioPath: seg.audioLocalPath,
             videoPath: seg.videoLocalPath,
             script: seg.script,
