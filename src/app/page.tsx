@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { getAccessibleUrl } from '@/lib/utils';
 import { 
   Upload, 
   Video, 
@@ -49,6 +50,10 @@ function SyncVideoPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
+  
+  // 转换本地路径为可访问的 URL
+  const accessibleVideoUrl = getAccessibleUrl(videoUrl);
+  const accessibleAudioUrl = getAccessibleUrl(audioUrl);
 
   // 同步播放/暂停
   const togglePlay = useCallback(() => {
@@ -117,7 +122,7 @@ function SyncVideoPlayer({
       {/* 视频元素 */}
       <video
         ref={videoRef}
-        src={videoUrl}
+        src={accessibleVideoUrl}
         className="w-full aspect-video object-contain"
         poster={poster}
         onTimeUpdate={handleTimeUpdate}
@@ -128,7 +133,7 @@ function SyncVideoPlayer({
       />
       
       {/* 音频元素 */}
-      <audio ref={audioRef} src={audioUrl} />
+      <audio ref={audioRef} src={accessibleAudioUrl} />
       
       {/* 字幕显示 */}
       <div className="absolute bottom-16 left-0 right-0 flex justify-center pointer-events-none">
@@ -1366,8 +1371,8 @@ export default function Home() {
 
                   {/* 视频播放器 - 同步播放音频和字幕 */}
                   <SyncVideoPlayer
-                    videoUrl={segment.videoUrl}
-                    audioUrl={segment.audioUrl}
+                    videoUrl={segment.videoLocalPath || segment.videoUrl}
+                    audioUrl={segment.audioLocalPath || segment.audioUrl}
                     script={segment.script}
                     poster={productImagePreview}
                   />
@@ -1410,7 +1415,7 @@ export default function Home() {
               <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-4">
                 <video
                   ref={videoRef}
-                  src={finalVideoUrl}
+                  src={getAccessibleUrl(finalVideoUrl)}
                   controls
                   className="w-full h-full object-contain"
                   poster={productImagePreview}
@@ -1421,7 +1426,7 @@ export default function Home() {
 
               <div className="flex gap-3">
                 <Button
-                  onClick={() => handleDownload(finalVideoUrl, `${productName || '视频'}_最终版.mp4`)}
+                  onClick={() => handleDownload(getAccessibleUrl(finalVideoUrl), `${productName || '视频'}_最终版.mp4`)}
                   className="flex-1 h-11 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700"
                 >
                   <Download className="w-5 h-5 mr-2" />

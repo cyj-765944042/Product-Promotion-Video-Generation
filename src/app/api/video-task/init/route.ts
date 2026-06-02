@@ -28,12 +28,14 @@ export async function POST(request: NextRequest) {
     const sanitizedName = productName.replace(/[^\u4e00-\u9fa5a-zA-Z0-9_-]/g, '_');
     
     // 根据环境选择目录
-    const isProduction = process.env.COZE_PROJECT_ENV === 'PROD';
+    // 优先使用环境变量判断，如果没有设置则检测 public 目录是否存在
+    const publicDir = path.join(process.cwd(), 'public');
+    const isProduction = process.env.COZE_PROJECT_ENV === 'PROD' || !fs.existsSync(publicDir);
     const baseDir = isProduction 
       ? '/tmp'  // 生产环境使用 /tmp
-      : path.join(process.cwd(), 'public');
+      : publicDir;
     
-    console.log(`环境: ${isProduction ? '生产' : '开发'}, 基础目录: ${baseDir}`);
+    console.log(`环境判断: COZE_PROJECT_ENV=${process.env.COZE_PROJECT_ENV}, publicDir存在=${fs.existsSync(publicDir)}, 使用目录: ${baseDir}`);
     
     // 确保基础目录存在
     if (!fs.existsSync(baseDir)) {

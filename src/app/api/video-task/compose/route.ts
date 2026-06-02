@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
         sendEvent(controller, {
           type: 'complete',
           content: {
-            videoUrl: `/${path.basename(folderPath)}/${path.basename(finalVideoPath)}`,
+            videoUrl: finalVideoPath,  // 返回完整本地路径，前端会通过 getAccessibleUrl 转换
             videoLocalPath: finalVideoPath,
             duration: finalDuration,
           },
