@@ -526,7 +526,7 @@ export default function Home() {
   // 重新生成单个视频片段
   const handleRegenerateSegment = async (segmentId: number) => {
     const segment = videoSegments.find(s => s.id === segmentId);
-    if (!segment) return;
+    if (!segment || !taskFolder) return;
 
     // 设置为生成中
     setVideoSegments(prev => prev.map(seg => 
@@ -538,16 +538,12 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          taskId: `regenerate_${Date.now()}`,
-          folder: taskFolder,
-          segments: [{ 
-            id: segment.id, 
-            script: segment.script, 
-            prompt: segment.prompt, 
-            duration: segment.audioDuration 
-          }],
+          segmentId: segment.id, 
+          script: segment.script, 
+          prompt: segment.prompt, 
           imageUrl: uploadedImageUrl,
-          regenerateIndex: segmentId - 1
+          folderPath: taskFolder.folderPath,
+          productName: productName
         }),
       });
 
