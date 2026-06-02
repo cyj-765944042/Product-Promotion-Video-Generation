@@ -71,6 +71,7 @@ export default function Home() {
   // 图片分析状态
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
   const [analyzedFeatures, setAnalyzedFeatures] = useState<string[]>([]);
+  const [identifiedProduct, setIdentifiedProduct] = useState<string>('');
   
   // 核心卖点 - 动态可编辑
   const [materials, setMaterials] = useState<string[]>([]); // 材质列表
@@ -168,6 +169,10 @@ export default function Home() {
               // 设置商品名称
               if (analyzeData.productName) {
                 setProductName(analyzeData.productName);
+              }
+              // 设置识别的商品类型
+              if (analyzeData.productType) {
+                setIdentifiedProduct(analyzeData.productType);
               }
               // 设置分析出的特点 - 自动添加到特点列表
               if (analyzeData.features && analyzeData.features.length > 0) {
@@ -748,81 +753,108 @@ export default function Home() {
           </h1>
         </div>
 
-        {/* 1. 商品名称 */}
+        {/* Step 1: 商品信息 */}
         <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              📦 商品名称
+              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold">1</span>
+              商品信息
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <Input
-              value={productName}
-              onChange={(e) => setProductName(e.target.value)}
-              placeholder="请输入商品名称，或上传图片自动识别"
-              className="w-full"
-            />
-          </CardContent>
-        </Card>
+          <CardContent className="space-y-6">
+            {/* 商品名称 */}
+            <div>
+              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                📦 商品名称
+              </label>
+              <Input
+                placeholder="请输入商品名称，如：智能保温杯"
+                value={productName}
+                onChange={(e) => setProductName(e.target.value)}
+                disabled={isGeneratingScript || isGeneratingSegments}
+                className="border-gray-300 dark:border-gray-600"
+              />
+            </div>
 
-        {/* 2. 上传商品图片 */}
-        <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Camera className="w-5 h-5 text-blue-600" />
-              📷 上传商品图片
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div 
-              className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 transition-colors"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {productImagePreview ? (
-                <div className="relative inline-block">
-                  <img src={productImagePreview} alt="商品图片" className="max-h-48 mx-auto rounded" />
-                  <button
-                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setProductImage(null);
-                      setProductImagePreview('');
-                      setAnalyzedFeatures([]);
-                      setMaterials([]);
-                      setFeatures([]);
-                      setOtherPoints([]);
-                    }}
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                  {isAnalyzingImage && (
-                    <div className="absolute inset-0 bg-white/80 flex items-center justify-center rounded">
-                      <div className="flex items-center gap-2 text-blue-600">
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        <span>识别中...</span>
-                      </div>
+            {/* 上传商品图片 */}
+            <div>
+              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                📷 上传商品图片
+              </label>
+              <div className="space-y-3">
+                <div className="flex gap-4 items-start">
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isGeneratingScript || isGeneratingSegments}
+                      className="flex items-center gap-2"
+                    >
+                      <Upload className="w-4 h-4" />
+                      选择图片
+                    </Button>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                    disabled={isGeneratingScript || isGeneratingSegments}
+                  />
+                  {productImagePreview && (
+                    <div className="relative">
+                      <img
+                        src={productImagePreview}
+                        alt="商品预览"
+                        className="w-32 h-32 object-cover rounded-lg border border-gray-300 dark:border-gray-600"
+                      />
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
+                        onClick={() => {
+                          setProductImage(null);
+                          setProductImagePreview('');
+                          setUploadedImageUrl('');
+                          setIdentifiedProduct('');
+                          setAnalyzedFeatures([]);
+                          setMaterials([]);
+                          setFeatures([]);
+                          setOtherPoints([]);
+                        }}
+                        disabled={isGeneratingScript || isGeneratingSegments}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                      {isAnalyzingImage && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg">
+                          <Loader2 className="w-6 h-6 text-white animate-spin" />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              ) : (
-                <>
-                  <Upload className="w-12 h-12 mx-auto text-gray-400 mb-2" />
-                  <p className="text-gray-500">点击上传，支持高清商品实拍图</p>
-                  <p className="text-xs text-gray-400 mt-1">自动识别商品主体，生成卖点</p>
-                </>
-              )}
+                
+                {/* AI识别结果 */}
+                {identifiedProduct && (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+                      <Camera className="w-4 h-4" />
+                      <span>AI识别商品：{identifiedProduct}</span>
+                    </div>
+                  </div>
+                )}
+                
+                <p className="text-xs text-gray-500">支持高清商品实拍图，AI将自动识别商品主体并生成卖点建议</p>
+              </div>
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
-            />
           </CardContent>
         </Card>
 
-        {/* 3. AI识别结果 */}
+        {/* 2. AI识别结果 */}
         {analyzedFeatures.length > 0 && (
           <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
             <CardHeader>
@@ -848,10 +880,11 @@ export default function Home() {
           </Card>
         )}
 
-        {/* 4. 核心卖点 */}
+        {/* 3. 核心卖点 */}
         <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
+              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold">2</span>
               🔥 核心卖点
             </CardTitle>
           </CardHeader>
@@ -963,7 +996,7 @@ export default function Home() {
         {/* 生成带货文案按钮 */}
         <Button
           onClick={handleGenerateScript}
-          disabled={!productName.trim() || isGeneratingScript}
+          disabled={!productName.trim() || isGeneratingScript || (materials.length === 0 && features.length === 0 && otherPoints.length === 0)}
           className="w-full h-14 text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg mb-6"
           size="lg"
         >

@@ -20,12 +20,14 @@ export async function POST(request: NextRequest) {
 
 你需要返回以下信息（JSON格式）：
 1. productName: 商品名称，简洁明了，不超过10个字
-2. materials: 商品材质数组，包含1-3种材质（如：304不锈钢、玻璃、PP塑料、硅胶、陶瓷、铝合金、实木等）
-3. features: 商品特点数组，包含3-5个特点，每个特点不超过6个字（如：便携轻便、防水防尘、保温保冷、易清洗等）
+2. productType: 商品类型，如：保温杯、婴儿车、手机壳、充电宝等，不超过6个字
+3. materials: 商品材质数组，包含1-3种材质（如：304不锈钢、玻璃、PP塑料、硅胶、陶瓷、铝合金、实木等）
+4. features: 商品特点数组，包含3-5个特点，每个特点不超过6个字（如：便携轻便、防水防尘、保温保冷、易清洗等）
 
 返回格式示例：
 {
   "productName": "智能保温杯",
+  "productType": "保温杯",
   "materials": ["304不锈钢", "PP塑料"],
   "features": ["保温保冷", "便携轻便", "防漏设计", "大容量"]
 }
@@ -37,7 +39,7 @@ export async function POST(request: NextRequest) {
       {
         role: 'user',
         content: [
-          { type: 'text', text: '请分析这张商品图片，识别商品名称、材质和特点。' },
+          { type: 'text', text: '请分析这张商品图片，识别商品名称、类型、材质和特点。' },
           {
             type: 'image_url',
             image_url: {
@@ -70,6 +72,7 @@ export async function POST(request: NextRequest) {
       // 如果解析失败，返回默认值
       analysisResult = {
         productName: '未识别商品',
+        productType: '',
         materials: [],
         features: ['高品质', '实用设计', '性价比高'],
       };
@@ -78,6 +81,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       productName: analysisResult.productName || '未识别商品',
+      productType: analysisResult.productType || '',
       materials: analysisResult.materials || [],
       features: analysisResult.features || ['高品质', '实用设计', '性价比高'],
     });
