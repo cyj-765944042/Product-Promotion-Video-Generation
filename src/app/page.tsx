@@ -437,6 +437,7 @@ export default function Home() {
                     // done 事件包含完整的音频和视频信息
                     const audioInfo = parsed.content.audio;
                     const videoInfo = parsed.content.video;
+                    console.log('收到 done 事件:', { segmentId: segment.id, audioInfo, videoInfo });
                     segmentData = {
                       id: segment.id,
                       script: segment.script,
@@ -450,6 +451,7 @@ export default function Home() {
                       isGenerating: false,
                       isSelected: true
                     };
+                    console.log('片段数据已设置:', segmentData);
                   }
                 } catch {
                   // Ignore parse errors
@@ -592,6 +594,14 @@ export default function Home() {
     const selectedSegments = videoSegments.filter(seg => seg.isSelected);
     if (selectedSegments.length === 0) {
       alert('请至少选择一个视频片段');
+      return;
+    }
+
+    // 检查所有片段是否都有有效的音频路径
+    const invalidSegments = selectedSegments.filter(seg => !seg.audioLocalPath);
+    if (invalidSegments.length > 0) {
+      console.error('无效片段:', invalidSegments);
+      alert('部分视频片段缺少音频文件，请重新生成这些片段');
       return;
     }
 
