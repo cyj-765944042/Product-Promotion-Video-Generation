@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Upload, 
   Video, 
@@ -22,7 +23,9 @@ import {
   Camera,
   Eraser,
   Film,
-  Scissors
+  Scissors,
+  RefreshCw,
+  Check
 } from 'lucide-react';
 
 interface GenerationStep {
@@ -36,6 +39,20 @@ interface ScriptSegment {
   script: string;
   prompt: string;
   duration: number;
+}
+
+interface VideoSegment {
+  id: number;
+  script: string;
+  prompt: string;
+  audioUrl: string;
+  audioLocalPath: string;
+  audioDuration: number;
+  videoUrl: string;
+  videoLocalPath: string;
+  videoDuration: number;
+  isGenerating: boolean;
+  isSelected: boolean;
 }
 
 interface Subtitle {
@@ -63,131 +80,68 @@ export default function Home() {
   const [productImage, setProductImage] = useState<File | null>(null);
   const [productImagePreview, setProductImagePreview] = useState<string>('');
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string>('');
-  const [isIdentifyingImage, setIsIdentifyingImage] = useState(false);
-  const [identifiedProduct, setIdentifiedProduct] = useState<string>('');
-  const [showCropper, setShowCropper] = useState(false);
   
-  // 核心卖点 - 结构化
+  // 核心卖点
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
-  const [customSellingPoints, setCustomSellingPoints] = useState<string[]>([]);
-  const [customPointInput, setCustomPointInput] = useState('');
-  
-  // AI建议的卖点
-  const [aiSuggestedPoints, setAiSuggestedPoints] = useState<string[]>([]);
-  
+  const [customSellingPoints, setCustomSellingPoints] = useState('');
+
   // 文案生成状态
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
+  const [scriptSegments, setScriptSegments] = useState<ScriptSegment[]>([]);
   const [scriptSteps, setScriptSteps] = useState<GenerationStep[]>([
     { id: 'identify', title: 'AI识别商品图片信息', status: 'pending' },
     { id: 'script', title: '自动生成抖音带货口播文案（分段）', status: 'pending' },
     { id: 'prompt', title: '生成火山引擎专用视频Prompt（每段3-6秒）', status: 'pending' },
   ]);
-  
-  // 分段文案数据
-  const [scriptSegments, setScriptSegments] = useState<ScriptSegment[]>([]);
-  const [totalSegments, setTotalSegments] = useState(0);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(-1);
-  
-  // 视频生成状态
-  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
-  const [videoSteps, setVideoSteps] = useState<GenerationStep[]>([
-    { id: 'tts', title: '生成每段口播的配音音频', status: 'pending' },
-    { id: 'segments', title: '调用火山引擎图生视频API（根据配音时长生成视频）', status: 'pending' },
-    { id: 'audioMerge', title: '将配音合并到视频中', status: 'pending' },
-    { id: 'concat', title: '拼接视频片段并添加转场', status: 'pending' },
-    { id: 'subtitle', title: '添加字幕到视频中', status: 'pending' },
-  ]);
-  const [videoUrl, setVideoUrl] = useState<string>('');
-  const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
-  const [currentSubtitle, setCurrentSubtitle] = useState<string>('');
-  const [showSubtitleEditor, setShowSubtitleEditor] = useState(false);
-  
-  // 视频分段进度
-  const [segmentProgress, setSegmentProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
-  const [progressType, setProgressType] = useState<'tts' | 'video'>('tts'); // 区分TTS和视频生成阶段
-  
-  // 分段视频（当拼接失败时使用）
-  const [segmentVideos, setSegmentVideos] = useState<Array<{ id: number; script: string; videoUrl: string; duration: number }>>([]);
-  const [isSegmented, setIsSegmented] = useState(false);
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [totalSegments, setTotalSegments] = useState(0);
+
+  // 视频任务状态
+  const [taskFolder, setTaskFolder] = useState<string>('');
+  const [videoSegments, setVideoSegments] = useState<VideoSegment[]>([]);
+  const [isGeneratingSegments, setIsGeneratingSegments] = useState(false);
+  const [segmentProgress, setSegmentProgress] = useState({ audio: 0, video: 0, total: 0 });
+
+  // 最终视频状态
+  const [isComposing, setIsComposing] = useState(false);
+  const [finalVideoUrl, setFinalVideoUrl] = useState<string>('');
+  const [finalSubtitles, setFinalSubtitles] = useState<Subtitle[]>([]);
+
   const videoRef = useRef<HTMLVideoElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 计算文案进度
+  const scriptProgress = scriptSteps.reduce((sum, step) => {
+    if (step.status === 'completed') return sum + 33.33;
+    if (step.status === 'in_progress') return sum + 16.66;
+    return sum;
+  }, 0);
+
+  // 更新步骤状态
+  const updateStepStatus = (steps: GenerationStep[], stepId: string, status: GenerationStep['status']): GenerationStep[] => {
+    return steps.map(step => step.id === stepId ? { ...step, status } : step);
+  };
 
   // 获取所有卖点
-  const getAllSellingPoints = useCallback(() => {
+  const getAllSellingPoints = () => {
     const points: string[] = [];
-    if (selectedMaterials.length > 0) {
-      points.push(`材质：${selectedMaterials.join('、')}`);
-    }
-    if (selectedFeatures.length > 0) {
-      points.push(`特点：${selectedFeatures.join('、')}`);
-    }
-    if (customSellingPoints.length > 0) {
-      points.push(...customSellingPoints);
-    }
-    return points.join('；');
-  }, [selectedMaterials, selectedFeatures, customSellingPoints]);
+    if (selectedMaterials.length > 0) points.push(`材质：${selectedMaterials.join('、')}`);
+    if (selectedFeatures.length > 0) points.push(`特点：${selectedFeatures.join('、')}`);
+    if (customSellingPoints.trim()) points.push(customSellingPoints.trim());
+    return points.length > 0 ? points.join('；') : null;
+  };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 处理图片上传
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setProductImage(file);
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setProductImagePreview(reader.result as string);
+      reader.onload = (e) => {
+        setProductImagePreview(e.target?.result as string);
       };
       reader.readAsDataURL(file);
-      
-      // 自动识别商品
-      await identifyProduct(file);
-    }
-  };
-
-  // AI识别商品
-  const identifyProduct = async (file: File) => {
-    setIsIdentifyingImage(true);
-    setIdentifiedProduct('');
-    setAiSuggestedPoints([]);
-    
-    try {
-      const formData = new FormData();
-      formData.append('image', file);
-
-      const response = await fetch('/api/identify-product', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error('识别失败');
-      }
-
-      const result = await response.json();
-      
-      if (result.productName && !productName) {
-        setProductName(result.productName);
-      }
-      
-      if (result.productType) {
-        setIdentifiedProduct(result.productType);
-      }
-      
-      if (result.suggestedPoints && result.suggestedPoints.length > 0) {
-        setAiSuggestedPoints(result.suggestedPoints);
-      }
-      
-      if (result.suggestedMaterials && result.suggestedMaterials.length > 0) {
-        setSelectedMaterials(prev => [...new Set([...prev, ...result.suggestedMaterials])]);
-      }
-      
-      if (result.suggestedFeatures && result.suggestedFeatures.length > 0) {
-        setSelectedFeatures(prev => [...new Set([...prev, ...result.suggestedFeatures])]);
-      }
-    } catch (error) {
-      console.error('识别失败:', error);
-    } finally {
-      setIsIdentifyingImage(false);
     }
   };
 
@@ -209,44 +163,19 @@ export default function Home() {
     );
   };
 
-  // 添加自定义卖点
-  const addCustomPoint = () => {
-    if (customPointInput.trim()) {
-      setCustomSellingPoints(prev => [...prev, customPointInput.trim()]);
-      setCustomPointInput('');
-    }
-  };
-
-  // 删除自定义卖点
-  const removeCustomPoint = (index: number) => {
-    setCustomSellingPoints(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // 添加AI建议的卖点
-  const addAiSuggestedPoint = (point: string) => {
-    if (!customSellingPoints.includes(point)) {
-      setCustomSellingPoints(prev => [...prev, point]);
-    }
-    setAiSuggestedPoints(prev => prev.filter(p => p !== point));
-  };
-
-  const updateStepStatus = (steps: GenerationStep[], stepId: string, status: GenerationStep['status']) => {
-    return steps.map(step => 
-      step.id === stepId ? { ...step, status } : step
-    );
-  };
-
-  // 更新分段文案
+  // 更新文案段
   const updateSegment = (index: number, field: 'script' | 'prompt', value: string) => {
-    setScriptSegments(prev => prev.map((seg, i) => 
-      i === index ? { ...seg, [field]: value } : seg
-    ));
+    setScriptSegments(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
   };
 
   // 生成带货文案
   const handleGenerateScript = async () => {
     if (!productName.trim()) {
-      alert('请填写商品名称');
+      alert('请输入商品名称');
       return;
     }
 
@@ -258,8 +187,6 @@ export default function Home() {
 
     setIsGeneratingScript(true);
     setScriptSegments([]);
-    setVideoUrl('');
-    setSubtitles([]);
     setTotalSegments(0);
     setCurrentSegmentIndex(-1);
     
@@ -342,7 +269,7 @@ export default function Home() {
               } else if (parsed.type === 'error') {
                 throw new Error(parsed.content);
               }
-            } catch (e) {
+            } catch {
               // Ignore parse errors
             }
           }
@@ -357,42 +284,140 @@ export default function Home() {
     }
   };
 
-  // 生成带货视频
+  // 初始化视频任务
   const handleGenerateVideo = async () => {
     if (scriptSegments.length === 0) {
       alert('请先生成文案');
       return;
     }
 
-    setIsGeneratingVideo(true);
-    setVideoUrl('');
-    setSubtitles([]);
-    setSegmentProgress({ current: 0, total: 0 });
-    
-    // Reset steps
-    setVideoSteps([
-      { id: 'segments', title: '调用火山引擎图生视频API（分段生成）', status: 'pending' },
-      { id: 'concat', title: '拼接视频片段并添加转场', status: 'pending' },
-      { id: 'subtitle', title: '生成字幕并同步播放', status: 'pending' },
-    ]);
+    setIsGeneratingSegments(true);
+    setVideoSegments([]);
+    setSegmentProgress({ audio: 0, video: 0, total: scriptSegments.length });
+    setFinalVideoUrl('');
+    setFinalSubtitles([]);
 
     try {
-      const formData = new FormData();
-      formData.append('productName', productName);
-      formData.append('segments', JSON.stringify(scriptSegments));
-      if (uploadedImageUrl) {
-        formData.append('imageUrl', uploadedImageUrl);
-      } else if (productImage) {
-        formData.append('productImage', productImage);
+      // 1. 初始化任务，创建文件夹
+      const initResponse = await fetch('/api/video-task/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          productName,
+          segments: scriptSegments,
+          imageUrl: uploadedImageUrl 
+        }),
+      });
+
+      if (!initResponse.ok) {
+        throw new Error('初始化任务失败');
       }
 
-      const response = await fetch('/api/generate-video', {
+      const initData = await initResponse.json();
+      setTaskFolder(initData.folder);
+
+      // 2. 生成所有视频片段
+      const generateResponse = await fetch('/api/video-task/generate-segment', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          taskId: initData.taskId,
+          folder: initData.folder,
+          segments: scriptSegments,
+          imageUrl: uploadedImageUrl 
+        }),
+      });
+
+      if (!generateResponse.ok) {
+        throw new Error('生成视频片段失败');
+      }
+
+      const reader = generateResponse.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('无法读取响应');
+      }
+
+      let buffer = '';
+      const tempSegments: VideoSegment[] = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            try {
+              const parsed = JSON.parse(data);
+              
+              if (parsed.type === 'audio_complete') {
+                setSegmentProgress(prev => ({ ...prev, audio: prev.audio + 1 }));
+              } else if (parsed.type === 'video_complete') {
+                const seg = parsed.content as VideoSegment;
+                seg.isSelected = true; // 默认选中
+                tempSegments.push(seg);
+                setVideoSegments([...tempSegments]);
+                setSegmentProgress(prev => ({ ...prev, video: prev.video + 1 }));
+              } else if (parsed.type === 'error') {
+                console.error('片段生成错误:', parsed.content);
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('生成失败:', error);
+      alert(error instanceof Error ? error.message : '生成失败，请重试');
+    } finally {
+      setIsGeneratingSegments(false);
+    }
+  };
+
+  // 切换片段选中状态
+  const toggleSegmentSelection = (segmentId: number) => {
+    setVideoSegments(prev => prev.map(seg => 
+      seg.id === segmentId ? { ...seg, isSelected: !seg.isSelected } : seg
+    ));
+  };
+
+  // 重新生成单个视频片段
+  const handleRegenerateSegment = async (segmentId: number) => {
+    const segment = videoSegments.find(s => s.id === segmentId);
+    if (!segment) return;
+
+    // 设置为生成中
+    setVideoSegments(prev => prev.map(seg => 
+      seg.id === segmentId ? { ...seg, isGenerating: true } : seg
+    ));
+
+    try {
+      const response = await fetch('/api/video-task/generate-segment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          taskId: `regenerate_${Date.now()}`,
+          folder: taskFolder,
+          segments: [{ 
+            id: segment.id, 
+            script: segment.script, 
+            prompt: segment.prompt, 
+            duration: segment.audioDuration 
+          }],
+          imageUrl: uploadedImageUrl,
+          regenerateIndex: segmentId - 1
+        }),
       });
 
       if (!response.ok) {
-        throw new Error('生成失败');
+        throw new Error('重新生成失败');
       }
 
       const reader = response.body?.getReader();
@@ -418,382 +443,286 @@ export default function Home() {
             try {
               const parsed = JSON.parse(data);
               
-              if (parsed.type === 'tts_start') {
-                setVideoSteps(prev => updateStepStatus(prev, 'tts', 'in_progress'));
-                setProgressType('tts');
-                setSegmentProgress({ 
-                  current: parsed.current || 1, 
-                  total: parsed.total || scriptSegments.length 
-                });
-              } else if (parsed.type === 'tts_complete') {
-                // TTS completed for a segment
-              } else if (parsed.type === 'segment_start') {
-                setVideoSteps(prev => updateStepStatus(prev, 'tts', 'completed'));
-                setVideoSteps(prev => updateStepStatus(prev, 'segments', 'in_progress'));
-                setProgressType('video');
-                setSegmentProgress({ 
-                  current: parsed.current || 1, 
-                  total: parsed.total || scriptSegments.length 
-                });
-              } else if (parsed.type === 'segment_video') {
-                // Segment video generated - update progress
-                setProgressType('video');
-                setSegmentProgress({ 
-                  current: parsed.current || 1, 
-                  total: parsed.total || scriptSegments.length 
-                });
-              } else if (parsed.type === 'audio_merge') {
-                setVideoSteps(prev => updateStepStatus(prev, 'segments', 'completed'));
-                setVideoSteps(prev => updateStepStatus(prev, 'audioMerge', 'in_progress'));
-              } else if (parsed.type === 'concat_start') {
-                setVideoSteps(prev => updateStepStatus(prev, 'audioMerge', 'completed'));
-                setVideoSteps(prev => updateStepStatus(prev, 'concat', 'in_progress'));
-              } else if (parsed.type === 'subtitle_start') {
-                setVideoSteps(prev => updateStepStatus(prev, 'concat', 'completed'));
-                setVideoSteps(prev => updateStepStatus(prev, 'subtitle', 'in_progress'));
-              } else if (parsed.type === 'video_url') {
-                setVideoSteps(prev => updateStepStatus(prev, 'subtitle', 'completed'));
-                setVideoUrl(parsed.content);
-              } else if (parsed.type === 'subtitles') {
-                setSubtitles(parsed.content.subtitles);
-              } else if (parsed.type === 'complete') {
-                // Complete - set video URL and subtitles
-                setVideoSteps(prev => updateStepStatus(prev, 'subtitle', 'completed'));
-                const data = parsed.content as { 
-                  videoUrl: string; 
-                  subtitles: Subtitle[]; 
-                  duration: number;
-                  segmentVideos?: Array<{ id: number; script: string; videoUrl: string; duration: number }>;
-                  isSegmented?: boolean;
-                };
-                setVideoUrl(data.videoUrl);
-                setSubtitles(data.subtitles);
-                if (data.segmentVideos && data.isSegmented) {
-                  setSegmentVideos(data.segmentVideos);
-                  setIsSegmented(true);
-                } else {
-                  setSegmentVideos([]);
-                  setIsSegmented(false);
-                }
-              } else if (parsed.type === 'done') {
-                // Done
+              if (parsed.type === 'video_complete') {
+                const newSeg = parsed.content as VideoSegment;
+                // 更新片段
+                setVideoSegments(prev => prev.map(seg => 
+                  seg.id === segmentId ? { 
+                    ...seg, 
+                    videoUrl: newSeg.videoUrl,
+                    videoLocalPath: newSeg.videoLocalPath,
+                    videoDuration: newSeg.videoDuration,
+                    audioUrl: newSeg.audioUrl,
+                    audioLocalPath: newSeg.audioLocalPath,
+                    audioDuration: newSeg.audioDuration,
+                    isGenerating: false 
+                  } : seg
+                ));
               } else if (parsed.type === 'error') {
                 throw new Error(parsed.content);
               }
-            } catch (e) {
+            } catch {
               // Ignore parse errors
             }
           }
         }
       }
     } catch (error) {
-      console.error('生成失败:', error);
-      alert(error instanceof Error ? error.message : '生成失败，请重试');
-    } finally {
-      setIsGeneratingVideo(false);
+      console.error('重新生成失败:', error);
+      alert(error instanceof Error ? error.message : '重新生成失败，请重试');
+      // 恢复状态
+      setVideoSegments(prev => prev.map(seg => 
+        seg.id === segmentId ? { ...seg, isGenerating: false } : seg
+      ));
     }
   };
 
-  // 视频字幕同步
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || subtitles.length === 0) return;
+  // 合成最终视频
+  const handleComposeVideo = async () => {
+    const selectedSegments = videoSegments.filter(seg => seg.isSelected);
+    if (selectedSegments.length === 0) {
+      alert('请至少选择一个视频片段');
+      return;
+    }
 
-    const handleTimeUpdate = () => {
-      const currentTime = video.currentTime;
-      const currentSub = subtitles.find(
-        sub => currentTime >= sub.start && currentTime <= sub.end
-      );
-      setCurrentSubtitle(currentSub?.text || '');
-    };
+    setIsComposing(true);
+    setFinalVideoUrl('');
+    setFinalSubtitles([]);
 
-    video.addEventListener('timeupdate', handleTimeUpdate);
-    return () => video.removeEventListener('timeupdate', handleTimeUpdate);
-  }, [subtitles]);
-
-  const handleDownload = async () => {
-    if (!videoUrl) return;
-    
     try {
-      // Use backend proxy to handle cross-origin download
-      const proxyUrl = `/api/download-video?url=${encodeURIComponent(videoUrl)}&filename=${encodeURIComponent(`${productName}_带货视频.mp4`)}`;
-      const link = document.createElement('a');
-      link.href = proxyUrl;
-      link.download = `${productName}_带货视频.mp4`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const response = await fetch('/api/video-task/compose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          folder: taskFolder,
+          segments: selectedSegments,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('合成失败');
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('无法读取响应');
+      }
+
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            try {
+              const parsed = JSON.parse(data);
+              
+              if (parsed.type === 'complete') {
+                setFinalVideoUrl(parsed.content.videoUrl);
+                setFinalSubtitles(parsed.content.subtitles || []);
+              } else if (parsed.type === 'error') {
+                throw new Error(parsed.content);
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
     } catch (error) {
-      console.error('下载失败:', error);
-      alert('下载失败，请重试');
+      console.error('合成失败:', error);
+      alert(error instanceof Error ? error.message : '合成失败，请重试');
+    } finally {
+      setIsComposing(false);
     }
   };
 
-  const scriptCompletedSteps = scriptSteps.filter(s => s.status === 'completed').length;
-  const scriptProgress = (scriptCompletedSteps / scriptSteps.length) * 100;
-  
-  const videoCompletedSteps = videoSteps.filter(s => s.status === 'completed').length;
-  const videoProgress = (videoCompletedSteps / videoSteps.length) * 100;
+  // 下载视频
+  const handleDownload = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      link.click();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch {
+      // Fallback to proxy
+      const proxyUrl = `/api/download-video?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
+      window.open(proxyUrl, '_blank');
+    }
+  };
 
-  const canGenerateVideo = scriptSegments.length > 0 && !isGeneratingScript && !isGeneratingVideo;
+  // 是否可以生成视频
+  const canGenerateVideo = scriptSegments.length > 0 && !isGeneratingSegments;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+      <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             🎬 AI商家带货视频生成Agent
           </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            一键生成专业带货短视频，让您的商品更具吸引力
-          </p>
         </div>
 
-        {/* Step 1: 商品信息输入 */}
+        {/* 商品信息输入 */}
         <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold">1</span>
-              商品信息
+              <Camera className="w-5 h-5 text-blue-600" />
+              📷 上传商品图片
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Product Name */}
-            <div>
-              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                📦 商品名称
-              </label>
-              <Input
-                placeholder="请输入商品名称，如：智能保温杯"
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
-                disabled={isGeneratingScript || isGeneratingVideo}
-                className="border-gray-300 dark:border-gray-600"
-              />
-            </div>
-
-            {/* Product Image Upload */}
-            <div>
-              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                📷 上传商品图片
-              </label>
-              <div className="space-y-3">
-                <div className="flex gap-4 items-start">
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isGeneratingScript || isGeneratingVideo}
-                      className="flex items-center gap-2"
-                    >
-                      <Upload className="w-4 h-4" />
-                      选择图片
-                    </Button>
-                    {productImage && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setShowCropper(!showCropper)}
-                        disabled={isGeneratingScript || isGeneratingVideo}
-                        className="flex items-center gap-2"
-                      >
-                        <Eraser className="w-4 h-4" />
-                        手动抠图
-                      </Button>
-                    )}
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                    disabled={isGeneratingScript || isGeneratingVideo}
-                  />
-                  {productImagePreview && (
-                    <div className="relative">
-                      <img
-                        src={productImagePreview}
-                        alt="商品预览"
-                        className="w-32 h-32 object-cover rounded-lg border border-gray-300 dark:border-gray-600"
-                      />
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
-                        onClick={() => {
-                          setProductImage(null);
-                          setProductImagePreview('');
-                          setUploadedImageUrl('');
-                          setIdentifiedProduct('');
-                          setAiSuggestedPoints([]);
-                        }}
-                        disabled={isGeneratingScript || isGeneratingVideo}
-                      >
-                        ×
-                      </Button>
-                      {isIdentifyingImage && (
-                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg">
-                          <Loader2 className="w-6 h-6 text-white animate-spin" />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                
-                {/* AI识别结果 */}
-                {identifiedProduct && (
-                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
-                      <Camera className="w-4 h-4" />
-                      <span>AI识别商品：{identifiedProduct}</span>
-                    </div>
-                  </div>
-                )}
-                
-                <p className="text-xs text-gray-500">支持高清商品实拍图，AI将自动识别商品主体并生成卖点建议</p>
-              </div>
-            </div>
-
-            {/* 核心卖点 - 结构化输入 */}
-            <div>
-              <label className="block text-sm font-medium mb-3 text-gray-700 dark:text-gray-300">
-                🔥 核心卖点
-              </label>
-              
-              {/* 材质选择 */}
-              <div className="mb-4">
-                <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">材质</div>
-                <div className="flex flex-wrap gap-2">
-                  {MATERIAL_OPTIONS.map(material => (
-                    <Badge
-                      key={material}
-                      variant={selectedMaterials.includes(material) ? "default" : "outline"}
-                      className={`cursor-pointer transition-all ${
-                        selectedMaterials.includes(material) 
-                          ? 'bg-blue-600 hover:bg-blue-700' 
-                          : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                      onClick={() => toggleMaterial(material)}
-                    >
-                      {material}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-              
-              {/* 特点选择 */}
-              <div className="mb-4">
-                <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">特点</div>
-                <div className="flex flex-wrap gap-2">
-                  {FEATURE_OPTIONS.map(feature => (
-                    <Badge
-                      key={feature}
-                      variant={selectedFeatures.includes(feature) ? "default" : "outline"}
-                      className={`cursor-pointer transition-all ${
-                        selectedFeatures.includes(feature) 
-                          ? 'bg-purple-600 hover:bg-purple-700' 
-                          : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                      onClick={() => toggleFeature(feature)}
-                    >
-                      {feature}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-              
-              {/* AI建议的卖点 */}
-              {aiSuggestedPoints.length > 0 && (
-                <div className="mb-4 p-3 bg-gradient-to-r from-green-50 to-teal-50 dark:from-green-900/20 dark:to-teal-900/20 rounded-lg">
-                  <div className="text-xs font-medium text-green-700 dark:text-green-300 mb-2">
-                    ✨ AI建议卖点（点击添加）
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {aiSuggestedPoints.map((point, index) => (
-                      <Badge
-                        key={index}
-                        variant="outline"
-                        className="cursor-pointer bg-white dark:bg-gray-800 border-green-300 dark:border-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 text-green-700 dark:text-green-300"
-                        onClick={() => addAiSuggestedPoint(point)}
-                      >
-                        <Plus className="w-3 h-3 mr-1" />
-                        {point}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {/* 自定义卖点输入 */}
-              <div className="mb-3">
-                <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">其他卖点（自定义）</div>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="输入其他卖点，如：支持无线充电"
-                    value={customPointInput}
-                    onChange={(e) => setCustomPointInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && addCustomPoint()}
-                    disabled={isGeneratingScript || isGeneratingVideo}
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={addCustomPoint}
-                    disabled={!customPointInput.trim() || isGeneratingScript || isGeneratingVideo}
-                  >
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-              
-              {/* 已添加的自定义卖点 */}
-              {customSellingPoints.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {customSellingPoints.map((point, index) => (
-                    <Badge
-                      key={index}
-                      variant="secondary"
-                      className="bg-gray-100 dark:bg-gray-700"
-                    >
-                      {point}
-                      <X
-                        className="w-3 h-3 ml-1 cursor-pointer"
-                        onClick={() => removeCustomPoint(index)}
-                      />
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Generate Script Button */}
-            <Button
-              onClick={handleGenerateScript}
-              disabled={isGeneratingScript || isGeneratingVideo || !productName.trim() || (!selectedMaterials.length && !selectedFeatures.length && !customSellingPoints.length)}
-              className="w-full h-12 text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg"
-              size="lg"
+          <CardContent>
+            <div 
+              className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 transition-colors"
+              onClick={() => fileInputRef.current?.click()}
             >
-              {isGeneratingScript ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  文案生成中...
-                </>
+              {productImagePreview ? (
+                <div className="relative inline-block">
+                  <img src={productImagePreview} alt="商品图片" className="max-h-48 mx-auto rounded" />
+                  <button
+                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setProductImage(null);
+                      setProductImagePreview('');
+                    }}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               ) : (
                 <>
-                  <Sparkles className="w-5 h-5 mr-2" />
-                  生成带货文案
+                  <Upload className="w-12 h-12 mx-auto text-gray-400 mb-2" />
+                  <p className="text-gray-500">点击上传，支持高清商品实拍图</p>
+                  <p className="text-xs text-gray-400 mt-1">自动识别物体/可进行手动抠图</p>
                 </>
               )}
-            </Button>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
           </CardContent>
         </Card>
 
-        {/* Script Generation Progress */}
+        {/* 商品名称 */}
+        <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              📦 商品名称
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Input
+              value={productName}
+              onChange={(e) => setProductName(e.target.value)}
+              placeholder="请输入商品名称"
+              className="w-full"
+            />
+          </CardContent>
+        </Card>
+
+        {/* 核心卖点 */}
+        <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              🔥 核心卖点
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* 材质选择 */}
+            <div>
+              <label className="block text-sm font-medium mb-2">材质</label>
+              <div className="flex flex-wrap gap-2">
+                {MATERIAL_OPTIONS.map(material => (
+                  <Badge
+                    key={material}
+                    variant={selectedMaterials.includes(material) ? "default" : "outline"}
+                    className={`cursor-pointer transition-all ${
+                      selectedMaterials.includes(material) 
+                        ? 'bg-blue-600 hover:bg-blue-700' 
+                        : 'hover:bg-gray-100'
+                    }`}
+                    onClick={() => toggleMaterial(material)}
+                  >
+                    {material}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            {/* 特点选择 */}
+            <div>
+              <label className="block text-sm font-medium mb-2">特点</label>
+              <div className="flex flex-wrap gap-2">
+                {FEATURE_OPTIONS.map(feature => (
+                  <Badge
+                    key={feature}
+                    variant={selectedFeatures.includes(feature) ? "default" : "outline"}
+                    className={`cursor-pointer transition-all ${
+                      selectedFeatures.includes(feature) 
+                        ? 'bg-blue-600 hover:bg-blue-700' 
+                        : 'hover:bg-gray-100'
+                    }`}
+                    onClick={() => toggleFeature(feature)}
+                  >
+                    {feature}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            {/* 自定义卖点 */}
+            <div>
+              <label className="block text-sm font-medium mb-2">其他卖点（可选）</label>
+              <Textarea
+                value={customSellingPoints}
+                onChange={(e) => setCustomSellingPoints(e.target.value)}
+                placeholder="输入其他卖点，多个卖点用分号分隔"
+                rows={2}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 生成带货文案按钮 */}
+        <Button
+          onClick={handleGenerateScript}
+          disabled={!productName.trim() || isGeneratingScript}
+          className="w-full h-12 text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg mb-6"
+          size="lg"
+        >
+          {isGeneratingScript ? (
+            <>
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              文案生成中...
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-5 h-5 mr-2" />
+              生成带货文案
+            </>
+          )}
+        </Button>
+
+        {/* 文案生成进度 */}
         {isGeneratingScript && (
           <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
             <CardHeader>
@@ -821,7 +750,6 @@ export default function Home() {
                 ))}
               </div>
               
-              {/* 分段进度 */}
               {currentSegmentIndex >= 0 && (
                 <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                   <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
@@ -836,7 +764,7 @@ export default function Home() {
           </Card>
         )}
 
-        {/* Segmented Script Editor */}
+        {/* 分段文案编辑 */}
         {scriptSegments.length > 0 && !isGeneratingScript && (
           <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
             <CardHeader>
@@ -844,7 +772,7 @@ export default function Home() {
                 <Edit3 className="w-5 h-5 text-blue-600" />
                 分段文案编辑
                 <Badge variant="secondary" className="ml-2">
-                  {scriptSegments.length} 段 · 总时长约 {scriptSegments.reduce((sum, s) => sum + s.duration, 0)} 秒
+                  {scriptSegments.length} 段
                 </Badge>
               </CardTitle>
             </CardHeader>
@@ -859,7 +787,6 @@ export default function Home() {
                     <span className="text-xs text-gray-500">约 {segment.duration} 秒</span>
                   </div>
                   
-                  {/* 口播文案 */}
                   <div>
                     <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
                       🎤 口播文案
@@ -869,11 +796,10 @@ export default function Home() {
                       onChange={(e) => updateSegment(index, 'script', e.target.value)}
                       rows={2}
                       className="text-sm border-gray-300 dark:border-gray-600"
-                      disabled={isGeneratingVideo}
+                      disabled={isGeneratingSegments}
                     />
                   </div>
                   
-                  {/* 视频Prompt */}
                   <div>
                     <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">
                       🎥 视频镜头描述
@@ -883,20 +809,20 @@ export default function Home() {
                       onChange={(e) => updateSegment(index, 'prompt', e.target.value)}
                       rows={2}
                       className="text-sm border-gray-300 dark:border-gray-600"
-                      disabled={isGeneratingVideo}
+                      disabled={isGeneratingSegments}
                     />
                   </div>
                 </div>
               ))}
 
-              {/* Generate Video Button */}
+              {/* 生成视频片段按钮 */}
               <Button
                 onClick={handleGenerateVideo}
                 disabled={!canGenerateVideo}
                 className="w-full h-12 text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg"
                 size="lg"
               >
-                {isGeneratingVideo ? (
+                {isGeneratingSegments ? (
                   <>
                     <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                     视频生成中...
@@ -912,8 +838,8 @@ export default function Home() {
           </Card>
         )}
 
-        {/* Video Generation Progress */}
-        {isGeneratingVideo && (
+        {/* 视频片段生成进度 */}
+        {isGeneratingSegments && (
           <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -922,161 +848,150 @@ export default function Home() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="mb-4">
-                <Progress value={videoProgress} className="h-2" />
-              </div>
               <div className="space-y-3">
-                {videoSteps.map((step) => (
-                  <div key={step.id} className="flex items-center gap-3">
-                    {step.status === 'completed' ? (
-                      <CheckCircle2 className="w-5 h-5 text-green-600" />
-                    ) : step.status === 'in_progress' ? (
-                      <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-                    ) : (
-                      <Circle className="w-5 h-5 text-gray-400" />
-                    )}
-                    <span className="text-gray-700 dark:text-gray-300">{step.title}</span>
-                  </div>
-                ))}
-              </div>
-              
-              {/* 分段生成进度 */}
-              {segmentProgress.total > 0 && (
-                <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
-                    <Scissors className="w-4 h-4" />
-                    <span>
-                      {progressType === 'tts' 
-                        ? `正在生成第 ${segmentProgress.current} 段配音 / 共 ${segmentProgress.total} 段`
-                        : `已生成 ${segmentProgress.current} / ${segmentProgress.total} 个视频片段`}
-                    </span>
-                  </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span>配音生成</span>
+                  <span>{segmentProgress.audio} / {segmentProgress.total}</span>
                 </div>
-              )}
+                <Progress value={(segmentProgress.audio / segmentProgress.total) * 100} className="h-2" />
+                
+                <div className="flex items-center justify-between text-sm mt-4">
+                  <span>视频生成</span>
+                  <span>{segmentProgress.video} / {segmentProgress.total}</span>
+                </div>
+                <Progress value={(segmentProgress.video / segmentProgress.total) * 100} className="h-2" />
+              </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Video Result */}
-        {videoUrl && (
-          <Card className="shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
+        {/* 视频片段展示 */}
+        {videoSegments.length > 0 && !isGeneratingSegments && (
+          <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Play className="w-5 h-5 text-blue-600" />
-                生成结果
-                {isSegmented && (
-                  <Badge variant="secondary" className="ml-2">
-                    分段视频 ({segmentVideos.length}段)
-                  </Badge>
-                )}
+                <Film className="w-5 h-5 text-blue-600" />
+                视频片段
+                <Badge variant="secondary" className="ml-2">
+                  {videoSegments.filter(s => s.isSelected).length} / {videoSegments.length} 已选中
+                </Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              {/* 分段视频模式 */}
-              {isSegmented && segmentVideos.length > 0 ? (
-                <div className="space-y-4">
-                  {segmentVideos.map((seg, index) => (
-                    <div key={seg.id} className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30">
-                      <div className="flex items-center justify-between mb-2">
+            <CardContent className="space-y-4">
+              {videoSegments.map((segment, index) => (
+                <div key={segment.id} className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30">
+                  <div className="flex items-center gap-4 mb-3">
+                    {/* 勾选框 */}
+                    <Checkbox
+                      checked={segment.isSelected}
+                      onCheckedChange={() => toggleSegmentSelection(segment.id)}
+                      className="data-[state=checked]:bg-blue-600"
+                    />
+                    
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
                         <Badge variant="outline">第 {index + 1} 段</Badge>
-                        <span className="text-sm text-gray-500">{seg.duration}秒</span>
+                        <span className="text-sm text-gray-500">{segment.videoDuration.toFixed(1)}秒</span>
                       </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">
-                        {seg.script}
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
+                        {segment.script}
                       </p>
-                      <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-                        <video
-                          src={seg.videoUrl}
-                          controls
-                          className="w-full h-full object-contain"
-                          poster={productImagePreview}
-                        >
-                          您的浏览器不支持视频播放
-                        </video>
-                      </div>
-                      <Button
-                        onClick={() => {
-                          const proxyUrl = `/api/download-video?url=${encodeURIComponent(seg.videoUrl)}&filename=${encodeURIComponent(`${productName}_第${index + 1}段.mp4`)}`;
-                          const link = document.createElement('a');
-                          link.href = proxyUrl;
-                          link.download = `${productName}_第${index + 1}段.mp4`;
-                          document.body.appendChild(link);
-                          link.click();
-                          document.body.removeChild(link);
-                        }}
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                      >
-                        <Download className="w-3 h-3 mr-1" />
-                        下载此段
-                      </Button>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                /* 单个视频模式 */
-                <>
-                  <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-4">
+
+                    {/* 重新生成按钮 */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRegenerateSegment(segment.id)}
+                      disabled={segment.isGenerating}
+                      className="flex items-center gap-1"
+                    >
+                      {segment.isGenerating ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          生成中...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-4 h-4" />
+                          重新生成
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* 视频播放器 */}
+                  <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
                     <video
-                      ref={videoRef}
-                      src={videoUrl}
+                      src={segment.videoUrl}
                       controls
                       className="w-full h-full object-contain"
                       poster={productImagePreview}
                     >
                       您的浏览器不支持视频播放
                     </video>
-                    {/* Subtitle Overlay */}
-                    {currentSubtitle && (
-                      <div className="absolute bottom-12 left-0 right-0 flex justify-center pointer-events-none">
-                        <div className="bg-black/70 text-white px-4 py-2 rounded-lg max-w-[80%] text-center">
-                          {currentSubtitle}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={handleDownload}
-                      className="flex-1 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700"
-                      size="lg"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      下载视频
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowSubtitleEditor(!showSubtitleEditor)}
-                      disabled={subtitles.length === 0}
-                    >
-                      字幕 {subtitles.length > 0 && `(${subtitles.length}条)`}
-                    </Button>
-                  </div>
-                </>
-              )}
-
-              {/* Subtitle List */}
-              {showSubtitleEditor && subtitles.length > 0 && (
-                <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg max-h-60 overflow-y-auto">
-                  <h4 className="font-medium mb-2 text-sm">字幕列表</h4>
-                  <div className="space-y-2">
-                    {subtitles.map((sub, index) => (
-                      <div key={index} className="flex items-center gap-2 text-sm">
-                        <span className="text-gray-500 dark:text-gray-400 w-20">
-                          {sub.start.toFixed(1)}s - {sub.end.toFixed(1)}s
-                        </span>
-                        <span className="text-gray-700 dark:text-gray-300">{sub.text}</span>
-                      </div>
-                    ))}
                   </div>
                 </div>
-              )}
+              ))}
+
+              {/* 合成最终视频按钮 */}
+              <Button
+                onClick={handleComposeVideo}
+                disabled={videoSegments.filter(s => s.isSelected).length === 0 || isComposing}
+                className="w-full h-12 text-lg font-semibold bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 transition-all shadow-lg"
+                size="lg"
+              >
+                {isComposing ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    合成中...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-5 h-5 mr-2" />
+                    合成最终视频 ({videoSegments.filter(s => s.isSelected).length}段)
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* 最终视频展示 */}
+        {finalVideoUrl && (
+          <Card className="shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Play className="w-5 h-5 text-blue-600" />
+                最终视频
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-4">
+                <video
+                  ref={videoRef}
+                  src={finalVideoUrl}
+                  controls
+                  className="w-full h-full object-contain"
+                  poster={productImagePreview}
+                >
+                  您的浏览器不支持视频播放
+                </video>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => handleDownload(finalVideoUrl, `${productName || '视频'}_最终版.mp4`)}
+                  className="flex-1 h-11 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700"
+                >
+                  <Download className="w-5 h-5 mr-2" />
+                  下载视频
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
       </div>
-    </div>
+    </main>
   );
 }
