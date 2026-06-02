@@ -102,7 +102,7 @@ export default function Home() {
   const [totalSegments, setTotalSegments] = useState(0);
 
   // 视频任务状态
-  const [taskFolder, setTaskFolder] = useState<string>('');
+  const [taskFolder, setTaskFolder] = useState<{ folderPath: string; folderName: string } | null>(null);
   const [videoSegments, setVideoSegments] = useState<VideoSegment[]>([]);
   const [isGeneratingSegments, setIsGeneratingSegments] = useState(false);
   const [segmentProgress, setSegmentProgress] = useState({ audio: 0, video: 0, total: 0 });
@@ -573,8 +573,12 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          folder: taskFolder,
-          segments: selectedSegments,
+          folderPath: taskFolder?.folderPath,
+          segments: selectedSegments.map(seg => ({
+            audioPath: seg.audioLocalPath,
+            videoPath: seg.videoLocalPath,
+            script: seg.script,
+          })),
         }),
       });
 
@@ -606,13 +610,21 @@ export default function Home() {
               const parsed = JSON.parse(data);
               
               if (parsed.type === 'complete') {
+                console.log('合成完成:', parsed.content);
                 setFinalVideoUrl(parsed.content.videoUrl);
                 setFinalSubtitles(parsed.content.subtitles || []);
               } else if (parsed.type === 'error') {
+                console.error('合成错误:', parsed.content);
                 throw new Error(parsed.content);
               }
-            } catch {
-              // Ignore parse errors
+            } catch (parseError) {
+              // 只有真正的解析错误才忽略
+              if (parseError instanceof SyntaxError) {
+                console.warn('JSON解析错误:', parseError);
+              } else {
+                // 重新抛出其他错误
+                throw parseError;
+              }
             }
           }
         }
