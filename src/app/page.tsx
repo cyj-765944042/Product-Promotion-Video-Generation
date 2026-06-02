@@ -81,6 +81,10 @@ export default function Home() {
   const [productImagePreview, setProductImagePreview] = useState<string>('');
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string>('');
   
+  // 图片分析状态
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+  const [analyzedFeatures, setAnalyzedFeatures] = useState<string[]>([]);
+  
   // 核心卖点
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
@@ -133,13 +137,58 @@ export default function Home() {
   };
 
   // 处理图片上传
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setProductImage(file);
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setProductImagePreview(e.target?.result as string);
+      reader.onload = async (e) => {
+        const preview = e.target?.result as string;
+        setProductImagePreview(preview);
+        
+        // 自动分析图片
+        setIsAnalyzingImage(true);
+        try {
+          // 先上传图片到对象存储
+          const formData = new FormData();
+          formData.append('file', file);
+          
+          const uploadResponse = await fetch('/api/upload-image', {
+            method: 'POST',
+            body: formData
+          });
+          
+          if (uploadResponse.ok) {
+            const uploadData = await uploadResponse.json();
+            const imageUrl = uploadData.url;
+            setUploadedImageUrl(imageUrl);
+            
+            // 调用图片分析API
+            const analyzeResponse = await fetch('/api/analyze-image', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ imageUrl })
+            });
+            
+            if (analyzeResponse.ok) {
+              const analyzeData = await analyzeResponse.json();
+              // 设置商品名称
+              if (analyzeData.productName) {
+                setProductName(analyzeData.productName);
+              }
+              // 设置分析出的特点
+              if (analyzeData.features && analyzeData.features.length > 0) {
+                setAnalyzedFeatures(analyzeData.features);
+                // 自动选中前3个特点
+                setSelectedFeatures(analyzeData.features.slice(0, 3));
+              }
+            }
+          }
+        } catch (error) {
+          console.error('图片分析失败:', error);
+        } finally {
+          setIsAnalyzingImage(false);
+        }
       };
       reader.readAsDataURL(file);
     }
