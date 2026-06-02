@@ -766,29 +766,15 @@ export default function Home() {
           </h1>
         </div>
 
-        {/* Step 1: 商品信息 */}
+        {/* Step 1: 商品信息与核心卖点 */}
         <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <span className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold">1</span>
-              商品信息
+              商品信息与核心卖点
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* 商品名称 */}
-            <div>
-              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                📦 商品名称
-              </label>
-              <Input
-                placeholder="请输入商品名称，如：智能保温杯"
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
-                disabled={isGeneratingScript || isGeneratingSegments}
-                className="border-gray-300 dark:border-gray-600"
-              />
-            </div>
-
             {/* 上传商品图片 */}
             <div>
               <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
@@ -837,6 +823,7 @@ export default function Home() {
                           setSelectedFeatures([]);
                           setCustomSellingPoints([]);
                           setAiSuggestedPoints([]);
+                          setProductName('');
                         }}
                         disabled={isGeneratingScript || isGeneratingSegments}
                       >
@@ -864,21 +851,24 @@ export default function Home() {
                 <p className="text-xs text-gray-500">支持高清商品实拍图，AI将自动识别商品主体并生成卖点建议</p>
               </div>
             </div>
-          </CardContent>
-        </Card>
 
-        {/* 2. 核心卖点 */}
-        <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold">2</span>
-              🔥 核心卖点
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            {/* 商品名称 */}
+            <div>
+              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                📦 商品名称
+              </label>
+              <Input
+                placeholder="请输入商品名称，如：智能保温杯"
+                value={productName}
+                onChange={(e) => setProductName(e.target.value)}
+                disabled={isGeneratingScript || isGeneratingSegments}
+                className="border-gray-300 dark:border-gray-600"
+              />
+            </div>
+
             {/* 材质选项 */}
             <div>
-              <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">材质</div>
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">🔧 材质</div>
               <div className="flex flex-wrap gap-2">
                 {MATERIAL_OPTIONS.map(material => (
                   <Badge
@@ -899,7 +889,7 @@ export default function Home() {
             
             {/* 特点选项 */}
             <div>
-              <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">特点</div>
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">✨ 特点</div>
               <div className="flex flex-wrap gap-2">
                 {FEATURE_OPTIONS.map(feature => (
                   <Badge
@@ -942,7 +932,7 @@ export default function Home() {
             
             {/* 自定义卖点输入 */}
             <div>
-              <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">其他卖点（自定义）</div>
+              <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">💡 其他卖点（自定义）</div>
               <div className="flex gap-2">
                 <Input
                   placeholder="输入其他卖点，如：支持无线充电"
