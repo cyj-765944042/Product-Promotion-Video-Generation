@@ -61,27 +61,36 @@ interface Subtitle {
   text: string;
 }
 
+// 材质选项
+const MATERIAL_OPTIONS = [
+  '304不锈钢', '316不锈钢', '玻璃', 'PP塑料', 'ABS塑料', 
+  '硅胶', '陶瓷', '铝合金', '铜', '实木', '竹材', '皮革'
+];
+
+// 特点选项
+const FEATURE_OPTIONS = [
+  '便携轻便', '美观时尚', '防水防尘', '保温保冷', '易清洗',
+  '耐磨耐用', '环保健康', '智能科技', '多功能', '折叠收纳',
+  '防滑设计', '静音降噪'
+];
+
 export default function Home() {
   // 商品信息
   const [productName, setProductName] = useState('');
   const [productImage, setProductImage] = useState<File | null>(null);
   const [productImagePreview, setProductImagePreview] = useState<string>('');
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string>('');
-  
-  // 图片分析状态
-  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
-  const [analyzedFeatures, setAnalyzedFeatures] = useState<string[]>([]);
+  const [isIdentifyingImage, setIsIdentifyingImage] = useState(false);
   const [identifiedProduct, setIdentifiedProduct] = useState<string>('');
   
-  // 核心卖点 - 动态可编辑
-  const [materials, setMaterials] = useState<string[]>([]); // 材质列表
-  const [features, setFeatures] = useState<string[]>([]); // 特点列表
-  const [otherPoints, setOtherPoints] = useState<string[]>([]); // 其他卖点列表
+  // 核心卖点 - 结构化
+  const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
+  const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+  const [customSellingPoints, setCustomSellingPoints] = useState<string[]>([]);
+  const [customPointInput, setCustomPointInput] = useState('');
   
-  // 输入框状态
-  const [newMaterial, setNewMaterial] = useState('');
-  const [newFeature, setNewFeature] = useState('');
-  const [newOtherPoint, setNewOtherPoint] = useState('');
+  // AI建议的卖点
+  const [aiSuggestedPoints, setAiSuggestedPoints] = useState<string[]>([]);
 
 
   // 文案生成状态
@@ -122,12 +131,65 @@ export default function Home() {
   };
 
   // 获取所有卖点
-  const getAllSellingPoints = () => {
+  const getAllSellingPoints = useCallback(() => {
     const points: string[] = [];
-    if (materials.length > 0) points.push(`材质：${materials.join('、')}`);
-    if (features.length > 0) points.push(`特点：${features.join('、')}`);
-    if (otherPoints.length > 0) points.push(otherPoints.join('、'));
-    return points.length > 0 ? points.join('；') : null;
+    if (selectedMaterials.length > 0) {
+      points.push(`材质：${selectedMaterials.join('、')}`);
+    }
+    if (selectedFeatures.length > 0) {
+      points.push(`特点：${selectedFeatures.join('、')}`);
+    }
+    if (customSellingPoints.length > 0) {
+      points.push(...customSellingPoints);
+    }
+    return points.join('；');
+  }, [selectedMaterials, selectedFeatures, customSellingPoints]);
+
+  // AI识别商品
+  const identifyProduct = async (file: File) => {
+    setIsIdentifyingImage(true);
+    setIdentifiedProduct('');
+    setAiSuggestedPoints([]);
+    
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch('/api/identify-product', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('识别失败');
+      }
+
+      const result = await response.json();
+      
+      if (result.productName && !productName) {
+        setProductName(result.productName);
+      }
+      
+      if (result.productType) {
+        setIdentifiedProduct(result.productType);
+      }
+      
+      if (result.suggestedPoints && result.suggestedPoints.length > 0) {
+        setAiSuggestedPoints(result.suggestedPoints);
+      }
+      
+      if (result.suggestedMaterials && result.suggestedMaterials.length > 0) {
+        setSelectedMaterials(prev => [...new Set([...prev, ...result.suggestedMaterials])]);
+      }
+      
+      if (result.suggestedFeatures && result.suggestedFeatures.length > 0) {
+        setSelectedFeatures(prev => [...new Set([...prev, ...result.suggestedFeatures])]);
+      }
+    } catch (error) {
+      console.error('识别失败:', error);
+    } finally {
+      setIsIdentifyingImage(false);
+    }
   };
 
   // 处理图片上传
@@ -136,103 +198,54 @@ export default function Home() {
     if (file) {
       setProductImage(file);
       const reader = new FileReader();
-      reader.onload = async (e) => {
-        const preview = e.target?.result as string;
-        setProductImagePreview(preview);
-        
-        // 自动分析图片
-        setIsAnalyzingImage(true);
-        try {
-          // 先上传图片到对象存储
-          const formData = new FormData();
-          formData.append('file', file);
-          
-          const uploadResponse = await fetch('/api/upload-image', {
-            method: 'POST',
-            body: formData
-          });
-          
-          if (uploadResponse.ok) {
-            const uploadData = await uploadResponse.json();
-            const imageUrl = uploadData.url;
-            setUploadedImageUrl(imageUrl);
-            
-            // 调用图片分析API
-            const analyzeResponse = await fetch('/api/analyze-image', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ imageUrl })
-            });
-            
-            if (analyzeResponse.ok) {
-              const analyzeData = await analyzeResponse.json();
-              // 设置商品名称
-              if (analyzeData.productName) {
-                setProductName(analyzeData.productName);
-              }
-              // 设置识别的商品类型
-              if (analyzeData.productType) {
-                setIdentifiedProduct(analyzeData.productType);
-              }
-              // 设置分析出的特点 - 自动添加到特点列表
-              if (analyzeData.features && analyzeData.features.length > 0) {
-                setAnalyzedFeatures(analyzeData.features);
-                // 自动添加所有识别的特点
-                setFeatures(analyzeData.features);
-              }
-              // 设置分析出的材质
-              if (analyzeData.materials && analyzeData.materials.length > 0) {
-                setMaterials(analyzeData.materials);
-              }
-            }
-          }
-        } catch (error) {
-          console.error('图片分析失败:', error);
-        } finally {
-          setIsAnalyzingImage(false);
-        }
+      reader.onloadend = () => {
+        setProductImagePreview(reader.result as string);
       };
       reader.readAsDataURL(file);
+      
+      // 自动识别商品
+      await identifyProduct(file);
     }
   };
 
-  // 添加材质
-  const addMaterial = () => {
-    if (newMaterial.trim() && !materials.includes(newMaterial.trim())) {
-      setMaterials(prev => [...prev, newMaterial.trim()]);
-      setNewMaterial('');
+  // 切换材质选择
+  const toggleMaterial = (material: string) => {
+    setSelectedMaterials(prev => 
+      prev.includes(material) 
+        ? prev.filter(m => m !== material)
+        : [...prev, material]
+    );
+  };
+
+  // 切换特点选择
+  const toggleFeature = (feature: string) => {
+    setSelectedFeatures(prev => 
+      prev.includes(feature) 
+        ? prev.filter(f => f !== feature)
+        : [...prev, feature]
+    );
+  };
+
+  // 添加自定义卖点
+  const addCustomPoint = () => {
+    if (customPointInput.trim() && !customSellingPoints.includes(customPointInput.trim())) {
+      setCustomSellingPoints(prev => [...prev, customPointInput.trim()]);
+      setCustomPointInput('');
     }
   };
 
-  // 删除材质
-  const removeMaterial = (material: string) => {
-    setMaterials(prev => prev.filter(m => m !== material));
+  // 删除自定义卖点
+  const removeCustomPoint = (index: number) => {
+    setCustomSellingPoints(prev => prev.filter((_, i) => i !== index));
   };
 
-  // 添加特点
-  const addFeature = () => {
-    if (newFeature.trim() && !features.includes(newFeature.trim())) {
-      setFeatures(prev => [...prev, newFeature.trim()]);
-      setNewFeature('');
+  // 添加AI建议的卖点
+  const addAiSuggestedPoint = (point: string) => {
+    if (!customSellingPoints.includes(point)) {
+      setCustomSellingPoints(prev => [...prev, point]);
     }
-  };
-
-  // 删除特点
-  const removeFeature = (feature: string) => {
-    setFeatures(prev => prev.filter(f => f !== feature));
-  };
-
-  // 添加其他卖点
-  const addOtherPoint = () => {
-    if (newOtherPoint.trim() && !otherPoints.includes(newOtherPoint.trim())) {
-      setOtherPoints(prev => [...prev, newOtherPoint.trim()]);
-      setNewOtherPoint('');
-    }
-  };
-
-  // 删除其他卖点
-  const removeOtherPoint = (point: string) => {
-    setOtherPoints(prev => prev.filter(p => p !== point));
+    // 从建议列表中移除
+    setAiSuggestedPoints(prev => prev.filter(p => p !== point));
   };
 
   // 更新文案段
@@ -820,16 +833,16 @@ export default function Home() {
                           setProductImagePreview('');
                           setUploadedImageUrl('');
                           setIdentifiedProduct('');
-                          setAnalyzedFeatures([]);
-                          setMaterials([]);
-                          setFeatures([]);
-                          setOtherPoints([]);
+                          setSelectedMaterials([]);
+                          setSelectedFeatures([]);
+                          setCustomSellingPoints([]);
+                          setAiSuggestedPoints([]);
                         }}
                         disabled={isGeneratingScript || isGeneratingSegments}
                       >
                         <X className="w-3 h-3" />
                       </Button>
-                      {isAnalyzingImage && (
+                      {isIdentifyingImage && (
                         <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg">
                           <Loader2 className="w-6 h-6 text-white animate-spin" />
                         </div>
@@ -854,33 +867,7 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        {/* 2. AI识别结果 */}
-        {analyzedFeatures.length > 0 && (
-          <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-purple-600" />
-                ✨ AI识别结果
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-600 mb-2">已自动识别商品特征，已添加到核心卖点中</p>
-              <div className="flex flex-wrap gap-2">
-                {analyzedFeatures.map((feature, index) => (
-                  <Badge
-                    key={index}
-                    variant="outline"
-                    className="bg-purple-50 text-purple-700 border-purple-300"
-                  >
-                    {feature}
-                  </Badge>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* 3. 核心卖点 */}
+        {/* 2. 核心卖点 */}
         <Card className="mb-6 shadow-lg border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -888,130 +875,134 @@ export default function Home() {
               🔥 核心卖点
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {/* 材质 */}
+          <CardContent className="space-y-4">
+            {/* 材质选项 */}
             <div>
-              <label className="block text-sm font-medium mb-2">材质（如：304不锈钢、玻璃、PP塑料等）</label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {materials.map(material => (
+              <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">材质</div>
+              <div className="flex flex-wrap gap-2">
+                {MATERIAL_OPTIONS.map(material => (
                   <Badge
                     key={material}
-                    className="bg-blue-600 hover:bg-blue-700 text-white pr-1 flex items-center gap-1"
+                    variant={selectedMaterials.includes(material) ? "default" : "outline"}
+                    className={`cursor-pointer transition-all ${
+                      selectedMaterials.includes(material) 
+                        ? 'bg-blue-600 hover:bg-blue-700' 
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                    onClick={() => toggleMaterial(material)}
                   >
                     {material}
-                    <button
-                      onClick={() => removeMaterial(material)}
-                      className="ml-1 hover:bg-blue-800 rounded-full p-0.5"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
                   </Badge>
                 ))}
               </div>
-              <div className="flex gap-2">
-                <Input
-                  value={newMaterial}
-                  onChange={(e) => setNewMaterial(e.target.value)}
-                  placeholder="输入材质名称"
-                  className="flex-1"
-                  onKeyDown={(e) => e.key === 'Enter' && addMaterial()}
-                />
-                <Button onClick={addMaterial} variant="outline" size="sm">
-                  <Plus className="w-4 h-4 mr-1" />
-                  添加
-                </Button>
-              </div>
             </div>
-
-            {/* 特点 */}
+            
+            {/* 特点选项 */}
             <div>
-              <label className="block text-sm font-medium mb-2">特点（如：便携轻便、美观时尚、防水防尘等）</label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {features.map(feature => (
+              <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">特点</div>
+              <div className="flex flex-wrap gap-2">
+                {FEATURE_OPTIONS.map(feature => (
                   <Badge
                     key={feature}
-                    className="bg-purple-600 hover:bg-purple-700 text-white pr-1 flex items-center gap-1"
+                    variant={selectedFeatures.includes(feature) ? "default" : "outline"}
+                    className={`cursor-pointer transition-all ${
+                      selectedFeatures.includes(feature) 
+                        ? 'bg-purple-600 hover:bg-purple-700' 
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                    onClick={() => toggleFeature(feature)}
                   >
                     {feature}
-                    <button
-                      onClick={() => removeFeature(feature)}
-                      className="ml-1 hover:bg-purple-800 rounded-full p-0.5"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
                   </Badge>
                 ))}
               </div>
+            </div>
+            
+            {/* AI建议的卖点 */}
+            {aiSuggestedPoints.length > 0 && (
+              <div className="p-3 bg-gradient-to-r from-green-50 to-teal-50 dark:from-green-900/20 dark:to-teal-900/20 rounded-lg">
+                <div className="text-xs font-medium text-green-700 dark:text-green-300 mb-2">
+                  ✨ AI建议卖点（点击添加）
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {aiSuggestedPoints.map((point, index) => (
+                    <Badge
+                      key={index}
+                      variant="outline"
+                      className="cursor-pointer bg-white dark:bg-gray-800 border-green-300 dark:border-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 text-green-700 dark:text-green-300"
+                      onClick={() => addAiSuggestedPoint(point)}
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      {point}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* 自定义卖点输入 */}
+            <div>
+              <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">其他卖点（自定义）</div>
               <div className="flex gap-2">
                 <Input
-                  value={newFeature}
-                  onChange={(e) => setNewFeature(e.target.value)}
-                  placeholder="输入特点名称"
+                  placeholder="输入其他卖点，如：支持无线充电"
+                  value={customPointInput}
+                  onChange={(e) => setCustomPointInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && addCustomPoint()}
+                  disabled={isGeneratingScript || isGeneratingSegments}
                   className="flex-1"
-                  onKeyDown={(e) => e.key === 'Enter' && addFeature()}
                 />
-                <Button onClick={addFeature} variant="outline" size="sm">
-                  <Plus className="w-4 h-4 mr-1" />
-                  添加
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={addCustomPoint}
+                  disabled={!customPointInput.trim() || isGeneratingScript || isGeneratingSegments}
+                >
+                  <Plus className="w-4 h-4" />
                 </Button>
               </div>
             </div>
-
-            {/* 其他卖点 */}
-            <div>
-              <label className="block text-sm font-medium mb-2">其他卖点</label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {otherPoints.map(point => (
+            
+            {/* 已添加的自定义卖点 */}
+            {customSellingPoints.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {customSellingPoints.map((point, index) => (
                   <Badge
-                    key={point}
-                    className="bg-green-600 hover:bg-green-700 text-white pr-1 flex items-center gap-1"
+                    key={index}
+                    variant="secondary"
+                    className="bg-gray-100 dark:bg-gray-700"
                   >
                     {point}
-                    <button
-                      onClick={() => removeOtherPoint(point)}
-                      className="ml-1 hover:bg-green-800 rounded-full p-0.5"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                    <X
+                      className="w-3 h-3 ml-1 cursor-pointer"
+                      onClick={() => removeCustomPoint(index)}
+                    />
                   </Badge>
                 ))}
               </div>
-              <div className="flex gap-2">
-                <Input
-                  value={newOtherPoint}
-                  onChange={(e) => setNewOtherPoint(e.target.value)}
-                  placeholder="输入其他卖点"
-                  className="flex-1"
-                  onKeyDown={(e) => e.key === 'Enter' && addOtherPoint()}
-                />
-                <Button onClick={addOtherPoint} variant="outline" size="sm">
-                  <Plus className="w-4 h-4 mr-1" />
-                  添加
-                </Button>
-              </div>
-            </div>
+            )}
+
+            {/* 生成带货文案按钮 */}
+            <Button
+              onClick={handleGenerateScript}
+              disabled={isGeneratingScript || isGeneratingSegments || !productName.trim() || (!selectedMaterials.length && !selectedFeatures.length && !customSellingPoints.length)}
+              className="w-full h-12 text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg"
+              size="lg"
+            >
+              {isGeneratingScript ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  文案生成中...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  生成带货文案
+                </>
+              )}
+            </Button>
           </CardContent>
         </Card>
-
-        {/* 生成带货文案按钮 */}
-        <Button
-          onClick={handleGenerateScript}
-          disabled={!productName.trim() || isGeneratingScript || (materials.length === 0 && features.length === 0 && otherPoints.length === 0)}
-          className="w-full h-14 text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg mb-6"
-          size="lg"
-        >
-          {isGeneratingScript ? (
-            <>
-              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-              文案生成中...
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-5 h-5 mr-2" />
-              生成带货文案
-            </>
-          )}
-        </Button>
 
         {/* 文案生成进度 */}
         {isGeneratingScript && (
