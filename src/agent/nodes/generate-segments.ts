@@ -178,6 +178,13 @@ export async function generateSegmentsNode(state: AgentStateType): Promise<Parti
   
   const segments = state.segments || [];
   
+  console.log(`[Agent] 当前 segments 状态:`, segments.map(s => ({
+    id: s.id,
+    script: s.script?.substring(0, 20),
+    isSelected: s.isSelected,
+    hasVideo: !!s.videoLocalPath,
+  })));
+  
   if (segments.length === 0) {
     return {
       errors: [...state.errors, "没有脚本片段需要生成"],
@@ -198,6 +205,23 @@ export async function generateSegmentsNode(state: AgentStateType): Promise<Parti
   }
   
   console.log(`[Agent] 所有片段生成完成`);
+  
+  console.log(`[Agent] 生成后的 segments 状态:`, updatedSegments.map(s => ({
+    id: s.id,
+    hasVideo: !!s.videoLocalPath,
+    hasAudio: !!s.audioLocalPath,
+    videoPath: s.videoLocalPath,
+    error: s.error,
+  })));
+  
+  // 检查是否有成功的片段
+  const successCount = updatedSegments.filter(s => s.videoLocalPath).length;
+  if (successCount === 0) {
+    return {
+      errors: [...state.errors, "所有视频片段生成失败"],
+      currentStep: Step.ERROR,
+    };
+  }
   
   return {
     segments: updatedSegments,

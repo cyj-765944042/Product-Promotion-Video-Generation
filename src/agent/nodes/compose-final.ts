@@ -31,9 +31,31 @@ export async function composeFinalNode(state: AgentStateType): Promise<Partial<A
   }
   
   // 检查片段是否都有音频和视频
+  console.log(`[Agent] 检查片段状态: ${selectedSegments.length} 个选中片段`);
+  console.log(`[Agent] 片段详情:`, selectedSegments.map(s => ({
+    id: s.id,
+    hasVideo: !!s.videoLocalPath,
+    hasAudio: !!s.audioLocalPath,
+    videoPath: s.videoLocalPath,
+    audioPath: s.audioLocalPath,
+    error: s.error,
+  })));
+  
   const invalidSegments = selectedSegments.filter(
     seg => !seg.audioLocalPath || !seg.videoLocalPath
   );
+  
+  // 检查是否有任何片段成功生成
+  const validSegments = selectedSegments.filter(
+    seg => seg.videoLocalPath && fs.existsSync(seg.videoLocalPath)
+  );
+  
+  if (validSegments.length === 0) {
+    return {
+      errors: [...state.errors, "所有视频片段生成失败，无法合成"],
+      currentStep: Step.ERROR,
+    };
+  }
   
   if (invalidSegments.length > 0) {
     // 尝试从视频路径推导音频路径
