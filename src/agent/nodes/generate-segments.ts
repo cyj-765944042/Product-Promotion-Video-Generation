@@ -6,203 +6,269 @@
 import { AgentStateType, Step, VideoSegment } from "../state";
 import fs from "fs";
 import path from "path";
-import axios from "axios";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { LLMClient, Config } from "coze-coding-dev-sdk";
+import { TTSClient, VideoGenerationClient, Config, S3Storage } from "coze-coding-dev-sdk";
+import https from "https";
+import http from "http";
 
 const execAsync = promisify(exec);
 
 // 视频生成 API 配置
-const VIDEO_API_URL = "https://ark.cn-beijing.volces.com/api/v3/videos/generations";
-const VIDEO_MODEL = "Doubao-Seedance-1.5-pro";
-const VIDEO_EP = "ep-20260514120705-pqv86";
-const VIDEO_API_KEY = "ark-1249de72-68c5-4737-8777-789f626d0a3b-c7bc9";
-
-// TTS API 配置
-const TTS_API_URL = "https://ark.cn-beijing.volces.com/api/v3/tts";
-const TTS_MODEL = "doubao_tts_1";
-const TTS_EP = "ep-2025051401";
-
-// 任务缓存（避免重复创建）
-const taskCache = new Map<string, { taskId: string; createdAt: number }>();
+const VIDEO_MODEL_EP = "ep-20260514120705-pqv86";
 
 /**
- * 生成单个片段的音频和视频
+ * 下载文件到本地
  */
-async function generateSegment(
-  segment: VideoSegment,
-  index: number,
-  state: AgentStateType
-): Promise<VideoSegment> {
-  const workDir = state.workDir;
-  const imageUrl = state.productImageUrl;
-  
-  console.log(`[Agent] 开始生成片段 ${index + 1}: ${segment.script}`);
-  
-  try {
-    // 1. 生成 TTS 音频
-    console.log(`[Agent] 片段 ${index + 1}: 开始生成 TTS`);
+function downloadFile(url: string, localPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https') ? https : http;
+    const file = fs.createWriteStream(localPath);
     
-    const ttsResponse = await axios.post(
-      `${TTS_API_URL}?model=${TTS_MODEL}&endpoint_id=${TTS_EP}`,
-      {
-        text: segment.script,
-        voice_type: "zh_female_qingxinwenrou",
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${VIDEO_API_KEY}`,
-        },
-        responseType: "arraybuffer",
+    protocol.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`下载失败: HTTP ${response.statusCode}`));
+        return;
       }
-    );
-    
-    const audioFileName = `audio_${index + 1}_${Date.now()}.mp3`;
-    const audioPath = path.join(workDir, "audio", audioFileName);
-    fs.writeFileSync(audioPath, ttsResponse.data);
-    
-    // 获取音频时长
+      
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close();
+        resolve();
+      });
+    }).on('error', (err) => {
+      fs.unlink(localPath, () => {});
+      reject(err);
+    });
+  });
+}
+
+/**
+ * 获取音频时长
+ */
+async function getAudioDuration(audioPath: string): Promise<number> {
+  try {
     const { stdout } = await execAsync(
       `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`
     );
-    const audioDuration = parseFloat(stdout.trim()) || 5;
+    return parseFloat(stdout.trim()) || 5;
+  } catch {
+    return 5;
+  }
+}
+
+/**
+ * 重试机制
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  delay: number = 2000
+): Promise<T> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      console.log(`[Agent] 重试 ${i + 1}/${maxRetries}...`);
+      await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+    }
+  }
+  throw new Error("重试次数耗尽");
+}
+
+/**
+ * 生成单个片段（TTS + 视频）
+ */
+async function generateSegment(
+  segment: VideoSegment,
+  folderPath: string,
+  productImageUrl: string,
+  index: number
+): Promise<Partial<VideoSegment>> {
+  try {
+    console.log(`[Agent] 片段 ${index + 1}: 开始生成 TTS`);
     
-    console.log(`[Agent] 片段 ${index + 1}: TTS 完成，时长 ${audioDuration}s`);
+    // SDK 配置
+    const config = new Config({ timeout: 180000 });
+    const ttsClient = new TTSClient(config);
+    const videoClient = new VideoGenerationClient(config);
+    const storage = new S3Storage();
     
-    // 2. 创建视频生成任务
-    console.log(`[Agent] 片段 ${index + 1}: 开始创建视频任务`);
+    // 文件路径
+    const audioDir = path.join(folderPath, 'audio');
+    const videoDir = path.join(folderPath, 'video');
+    const audioFileName = `audio_${segment.id}_${Date.now()}.mp3`;
+    const videoFileName = `video_${segment.id}_${Date.now()}.mp4`;
+    const audioPath = path.join(audioDir, audioFileName);
+    const videoPath = path.join(videoDir, videoFileName);
     
-    // 检查缓存
-    const cacheKey = `${state.taskId}_${index}`;
-    let videoTaskId: string;
+    // Step 1: 生成 TTS 音频
+    const ttsResult = await ttsClient.synthesize({
+      uid: `segment_${segment.id}`,
+      text: segment.script,
+      speaker: 'zh_female_mizai_saturn_bigtts',
+      audioFormat: 'mp3',
+    });
     
-    if (taskCache.has(cacheKey)) {
-      videoTaskId = taskCache.get(cacheKey)!.taskId;
-    } else {
-      const videoResponse = await axios.post(
-        VIDEO_API_URL,
-        {
-          model: VIDEO_MODEL,
-          endpoint_id: VIDEO_EP,
-          content: [
-            { type: "text", text: segment.prompt },
-            { type: "image_url", image_url: { url: imageUrl } },
-          ],
-          disable_watermark: true,
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${VIDEO_API_KEY}`,
-          },
-        }
-      );
-      
-      videoTaskId = videoResponse.data.data.task_id;
-      taskCache.set(cacheKey, { taskId: videoTaskId, createdAt: Date.now() });
+    if (!ttsResult.audioUri) {
+      throw new Error("TTS 生成失败：没有返回音频 URL");
     }
     
-    // 3. 等待视频生成完成（带重试）
-    console.log(`[Agent] 片段 ${index + 1}: 等待视频生成`);
+    console.log(`[Agent] 片段 ${index + 1}: TTS 完成，下载音频`);
     
-    let videoUrl: string | null = null;
-    let retryCount = 0;
-    const maxRetries = 60; // 最多等待 5 分钟
-    const retryDelay = 5000; // 每次等待 5 秒
+    // 下载音频
+    await downloadFile(ttsResult.audioUri, audioPath);
+    const audioDuration = await getAudioDuration(audioPath);
     
-    while (!videoUrl && retryCount < maxRetries) {
-      const statusResponse = await axios.get(
-        `${VIDEO_API_URL}/${videoTaskId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${VIDEO_API_KEY}`,
-          },
-        }
-      );
-      
-      const status = statusResponse.data.data.status;
-      
-      if (status === "SUCCESS") {
-        videoUrl = statusResponse.data.data.video_url;
-        break;
-      } else if (status === "FAILED") {
-        throw new Error(`视频生成失败: ${statusResponse.data.data.error}`);
+    console.log(`[Agent] 片段 ${index + 1}: 开始生成视频`);
+    
+    // 上传商品图片到对象存储
+    let accessibleImageUrl = productImageUrl;
+    if (productImageUrl) {
+      try {
+        const imageKey = await storage.uploadFromUrl({
+          url: productImageUrl,
+          timeout: 30000,
+        });
+        accessibleImageUrl = await storage.generatePresignedUrl({
+          key: imageKey,
+          expireTime: 3600,
+        });
+        console.log(`[Agent] 片段 ${index + 1}: 图片上传成功`);
+      } catch (uploadError) {
+        console.error(`[Agent] 片段 ${index + 1}: 图片上传失败，使用原始URL`, uploadError);
       }
-      
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-      retryCount++;
     }
     
-    if (!videoUrl) {
-      throw new Error("视频生成超时");
+    if (!accessibleImageUrl) {
+      throw new Error("没有商品图片 URL");
     }
     
-    // 4. 下载视频
-    console.log(`[Agent] 片段 ${index + 1}: 下载视频`);
+    // 构建视频生成参数
+    const content: Array<
+      | { type: 'text'; text: string }
+      | { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' }
+    > = [];
     
-    const videoResponse = await axios.get(videoUrl, { responseType: "arraybuffer" });
-    const videoFileName = `video_${index + 1}_${Date.now()}.mp4`;
-    const videoPath = path.join(workDir, "video", videoFileName);
-    fs.writeFileSync(videoPath, videoResponse.data);
+    content.push({
+      type: 'image_url' as const,
+      image_url: { url: accessibleImageUrl },
+      role: 'first_frame' as const,
+    });
     
-    console.log(`[Agent] 片段 ${index + 1}: 生成完成`);
+    content.push({
+      type: 'text' as const,
+      text: segment.prompt || segment.script,
+    });
+    
+    const videoDuration = Math.max(5, audioDuration);
+    
+    // 生成视频（带重试）
+    const generateVideo = async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return await videoClient.videoGeneration(content as any, {
+        model: VIDEO_MODEL_EP,
+        duration: videoDuration,
+        ratio: '16:9',
+        resolution: '720p',
+        generateAudio: false,
+        watermark: false,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+    };
+    
+    const videoResult = await withRetry(generateVideo, 3, 2000);
+    
+    if (!videoResult.videoUrl) {
+      throw new Error("视频生成失败：没有返回视频 URL");
+    }
+    
+    console.log(`[Agent] 片段 ${index + 1}: 视频生成完成，下载视频`);
+    
+    // 下载视频
+    await downloadFile(videoResult.videoUrl, videoPath);
+    
+    // 获取视频时长
+    let videoDurationActual = videoDuration;
+    try {
+      const { stdout } = await execAsync(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`
+      );
+      videoDurationActual = parseFloat(stdout.trim()) || videoDuration;
+    } catch {}
+    
+    console.log(`[Agent] 片段 ${index + 1}: 完成`);
     
     return {
-      ...segment,
-      audioUrl: `/api/file?path=${audioPath}`,
+      id: segment.id,
+      script: segment.script,
+      prompt: segment.prompt,
+      audioUrl: ttsResult.audioUri,
       audioLocalPath: audioPath,
-      audioDuration,
-      videoUrl: `/api/file?path=${videoPath}`,
+      audioDuration: audioDuration,
+      videoUrl: videoResult.videoUrl,
       videoLocalPath: videoPath,
-      videoDuration: audioDuration,
+      videoDuration: videoDurationActual,
       isGenerating: false,
+      isSelected: true,
     };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`[Agent] 片段 ${index + 1}: 生成失败`, error);
+    
     return {
-      ...segment,
+      id: segment.id,
+      script: segment.script,
+      prompt: segment.prompt,
       isGenerating: false,
-      error: String(error),
+      isSelected: true,
+      error: errorMessage,
     };
   }
 }
 
 /**
  * 视频片段生成节点
- * 并发生成所有片段
  */
 export async function generateSegmentsNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
-  console.log("[Agent] 视频片段生成节点开始执行");
-  
-  const segments = state.segments || [];
-  
-  console.log(`[Agent] 当前 segments 状态:`, segments.map(s => ({
+  console.log(`[Agent] 进入 generateSegments 节点`);
+  console.log(`[Agent] 当前 segments 数量: ${state.segments?.length || 0}`);
+  console.log(`[Agent] 输入的 segments 状态:`, state.segments?.map(s => ({
     id: s.id,
-    script: s.script?.substring(0, 20),
-    isSelected: s.isSelected,
-    hasVideo: !!s.videoLocalPath,
+    hasScript: !!s.script,
+    hasPrompt: !!s.prompt,
   })));
   
-  if (segments.length === 0) {
+  if (!state.segments || state.segments.length === 0) {
     return {
-      errors: [...state.errors, "没有脚本片段需要生成"],
+      errors: [...state.errors, "没有视频片段需要生成"],
       currentStep: Step.ERROR,
     };
   }
   
-  // 并发生成所有片段（最多5个并发）
-  const batchSize = 5;
-  const updatedSegments: VideoSegment[] = [];
-  
-  for (let i = 0; i < segments.length; i += batchSize) {
-    const batch = segments.slice(i, i + batchSize);
-    const results = await Promise.all(
-      batch.map((seg, idx) => generateSegment(seg, i + idx, state))
-    );
-    updatedSegments.push(...results);
+  if (!state.workDir) {
+    return {
+      errors: [...state.errors, "没有工作目录"],
+      currentStep: Step.ERROR,
+    };
   }
+  
+  // 并发生成所有片段
+  const results = await Promise.all(
+    state.segments.map((segment, index) =>
+      generateSegment(segment, state.workDir!, state.productImageUrl!, index)
+    )
+  );
+  
+  // 合并结果
+  const updatedSegments: VideoSegment[] = state.segments.map((original, index) => {
+    const result = results[index];
+    return {
+      ...original,
+      ...result,
+    } as VideoSegment;
+  });
   
   console.log(`[Agent] 所有片段生成完成`);
   
