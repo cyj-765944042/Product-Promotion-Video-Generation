@@ -14,8 +14,10 @@ import http from "http";
 
 const execAsync = promisify(exec);
 
-// 视频生成 API 配置
-const VIDEO_MODEL_EP = "ep-20260514120705-pqv86";
+// 视频生成 API 配置 - 从环境变量获取
+const VIDEO_MODEL_EP = process.env.VIDEO_MODEL_EP || "ep-20260514120705-pqv86";
+const ARK_API_KEY = process.env.ARK_API_KEY;
+const ARK_BASE_URL = process.env.ARK_BASE_URL || "https://ark.cn-beijing.volces.com";
 
 /**
  * 下载文件到本地
@@ -90,9 +92,17 @@ async function generateSegment(
     console.log(`[Agent] 片段 ${index + 1}: 开始生成 TTS`);
     
     // SDK 配置
-    const config = new Config({ timeout: 180000 });
-    const ttsClient = new TTSClient(config);
-    const videoClient = new VideoGenerationClient(config);
+    const defaultConfig = new Config({ timeout: 180000 });
+    const ttsClient = new TTSClient(defaultConfig);
+    
+    // 视频生成客户端使用火山方舟配置（如果有 API Key）
+    const videoGenConfig = ARK_API_KEY ? new Config({
+      apiKey: ARK_API_KEY,
+      baseUrl: ARK_BASE_URL,
+      timeout: 180000,
+    }) : new Config({ timeout: 180000 });
+    const videoClient = new VideoGenerationClient(videoGenConfig);
+    
     const storage = new S3Storage();
     
     // 文件路径
