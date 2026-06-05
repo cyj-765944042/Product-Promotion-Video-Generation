@@ -707,7 +707,36 @@ export default function Home() {
                 console.error('Agent 错误:', parsed.message);
                 throw new Error(parsed.message);
               } else if (parsed.type === 'complete') {
-                console.log('Agent 流程完成');
+                console.log('Agent 流程完成:', parsed.data);
+                // 从 complete 事件中获取最终数据
+                if (parsed.data) {
+                  if (parsed.data.finalVideoUrl) {
+                    console.log('设置 finalVideoUrl:', parsed.data.finalVideoUrl);
+                    setFinalVideoUrl(parsed.data.finalVideoUrl);
+                  }
+                  if (parsed.data.finalVideoLocalPath) {
+                    setFinalVideoLocalPath(parsed.data.finalVideoLocalPath);
+                  }
+                  if (parsed.data.finalSubtitles || parsed.data.subtitles) {
+                    setFinalSubtitles(parsed.data.finalSubtitles || parsed.data.subtitles);
+                  }
+                  if (parsed.data.segments) {
+                    const segments = parsed.data.segments.map((seg: any) => ({
+                      id: seg.id,
+                      script: seg.script || '',
+                      prompt: seg.prompt || '',
+                      audioUrl: seg.audioUrl || '',
+                      audioLocalPath: seg.audioLocalPath || '',
+                      audioDuration: seg.audioDuration || 0,
+                      videoUrl: seg.videoUrl || '',
+                      videoLocalPath: seg.videoLocalPath || '',
+                      videoDuration: seg.videoDuration || 0,
+                      isGenerating: false,
+                      isSelected: true
+                    } as VideoSegment));
+                    setVideoSegments(segments);
+                  }
+                }
               }
             } catch (parseError) {
               // 忽略解析错误
