@@ -28,7 +28,7 @@ function routeAfterInit(state: GraphState): string {
   
   // 如果已有 scripts 和 prompts（video 模式），跳过 identify 和 scripts 节点
   if (state.scripts && state.scripts.length > 0 && state.prompts && state.prompts.length > 0) {
-    return "segments";
+    return "generateSegments";
   }
   
   // 如果有图片URL，进行商品识别
@@ -37,21 +37,21 @@ function routeAfterInit(state: GraphState): string {
   }
   
   // 否则直接生成脚本（用户已提供商品信息）
-  return "scripts";
+  return "generateScripts";
 }
 
 function routeAfterIdentify(state: GraphState): string {
   if (state.errors && state.errors.length > 0) {
     return "end";
   }
-  return "scripts";
+  return "generateScripts";
 }
 
 function routeAfterScripts(state: GraphState): string {
   if (state.errors && state.errors.length > 0) {
     return "end";
   }
-  return "segments";
+  return "generateSegments";
 }
 
 function routeAfterSegments(state: GraphState): string {
@@ -71,31 +71,32 @@ function routeAfterCompose(state: GraphState): string {
  */
 export function createVideoAgentGraph() {
   // 创建状态图
+  // 注意：节点名称不能与状态属性名称相同
   const workflow = new StateGraph(AgentState)
     // 添加节点
     .addNode("init", initNode)
     .addNode("identify", identifyProductNode)
-    .addNode("scripts", generateScriptsNode)
-    .addNode("segments", generateSegmentsNode)
+    .addNode("generateScripts", generateScriptsNode)
+    .addNode("generateSegments", generateSegmentsNode)
     .addNode("compose", composeFinalNode)
     
     // 添加边
     .addEdge(START, "init")
     .addConditionalEdges("init", routeAfterInit, {
       identify: "identify",
-      scripts: "scripts",
-      segments: "segments",
+      generateScripts: "generateScripts",
+      generateSegments: "generateSegments",
       end: END,
     })
     .addConditionalEdges("identify", routeAfterIdentify, {
-      scripts: "scripts",
+      generateScripts: "generateScripts",
       end: END,
     })
-    .addConditionalEdges("scripts", routeAfterScripts, {
-      segments: "segments",
+    .addConditionalEdges("generateScripts", routeAfterScripts, {
+      generateSegments: "generateSegments",
       end: END,
     })
-    .addConditionalEdges("segments", routeAfterSegments, {
+    .addConditionalEdges("generateSegments", routeAfterSegments, {
       compose: "compose",
       end: END,
     })
