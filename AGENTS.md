@@ -19,10 +19,24 @@
 │   └── start.sh            # 生产环境启动脚本
 ├── src/
 │   ├── app/                # 页面路由与布局
+│   │   ├── page.tsx        # 对话式 Agent 主页面
+│   │   └── api/            # API 路由
+│   │       ├── chat-agent/ # 对话式 Agent API (SSE 流式)
+│   │       ├── agent/      # LangGraph 工作流 Agent API
+│   │       └── upload-image/ # 图片上传 API
+│   ├── agent/              # Agent 核心逻辑
+│   │   ├── chat-node.ts    # 对话式 Agent 节点
+│   │   ├── chat-state.ts   # 对话式 Agent 状态定义
+│   │   ├── tools.ts        # Agent 工具函数
+│   │   ├── graph.ts        # LangGraph 工作流图
+│   │   ├── state.ts        # LangGraph 状态定义
+│   │   ├── nodes/          # LangGraph 节点函数
+│   │   └── index.ts        # Agent 入口
 │   ├── components/ui/      # Shadcn UI 组件库
 │   ├── hooks/              # 自定义 Hooks
 │   ├── lib/                # 工具库
 │   │   └── utils.ts        # 通用工具函数 (cn)
+│   │   └── storage.ts      # 对象存储工具
 │   └── server.ts           # 自定义服务端入口
 ├── next.config.ts          # Next.js 配置
 ├── package.json            # 项目依赖管理
@@ -30,6 +44,56 @@
 ```
 
 - 项目文件（如 app 目录、pages 目录、components 等）默认初始化到 `src/` 目录下。
+
+## Agent 架构说明
+
+本项目采用**问答式 Agent**架构，专精于带货视频生成。
+
+### 核心组件
+
+1. **对话节点 (`chat-node.ts`)**：
+   - 使用 `doubao-seed-2-0-pro` 大模型进行对话
+   - 理解用户意图，决定调用哪个工具
+   - 支持多轮对话和上下文记忆
+
+2. **工具函数 (`tools.ts`)**：
+   - `uploadImage`: 上传商品图片到对象存储
+   - `identifyProduct`: 使用多模态 LLM 识别商品信息
+   - `generateScripts`: 使用 LLM 生成带货文案
+   - `generateSegmentVideo`: 生成视频片段（TTS + 视频生成）
+   - `composeFinalVideo`: 使用 FFmpeg 合成最终视频
+
+3. **状态管理 (`chat-state.ts`)**：
+   - `productName`: 商品名称
+   - `productImageUrl`: 商品图片 URL
+   - `features`: 核心卖点列表
+   - `scripts`: 带货文案列表
+   - `videoSegments`: 视频片段列表
+   - `finalVideoUrl`: 最终视频 URL
+
+### 对话流程
+
+```
+用户消息 → LLM 理解意图 → 决定调用工具 → 执行工具 → 返回结果 → 继续对话
+```
+
+典型对话场景：
+1. 用户上传图片 → Agent 识别商品 → 生成卖点
+2. 用户确认卖点 → Agent 生成带货文案
+3. 用户选择文案 → Agent 生成视频片段
+4. 用户选择片段 → Agent 合成最终视频
+
+### API 调用
+
+- **对话式 Agent**: `/api/chat-agent` (SSE 流式输出)
+- **工作流 Agent**: `/api/agent?mode=video` (LangGraph 工作流)
+
+### 依赖的火山引擎服务
+
+- **LLM**: `doubao-seed-2-0-pro` (多模态对话)
+- **TTS**: `zh_female_shuangkuaisisi_moon_bigtts` (语音合成)
+- **视频生成**: `ep-20260514120705-pqv86` (视频生成模型)
+- **对象存储**: S3 兼容存储服务
 
 ## 包管理规范
 
