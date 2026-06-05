@@ -94,7 +94,11 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ...result,
+      imageUrl,
+      imageKey,
+    });
   } catch (error) {
     console.error('识别失败:', error);
     return NextResponse.json(

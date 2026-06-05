@@ -253,6 +253,7 @@ export default function Home() {
   const [productImage, setProductImage] = useState<File | null>(null);
   const [productImagePreview, setProductImagePreview] = useState<string>('');
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string>('');
+  const [uploadedImageLocalPath, setUploadedImageLocalPath] = useState<string>('');
   const [isIdentifyingImage, setIsIdentifyingImage] = useState(false);
   const [identifiedProduct, setIdentifiedProduct] = useState<string>('');
   
@@ -286,6 +287,7 @@ export default function Home() {
   // 最终视频状态
   const [isComposing, setIsComposing] = useState(false);
   const [finalVideoUrl, setFinalVideoUrl] = useState<string>('');
+  const [finalVideoLocalPath, setFinalVideoLocalPath] = useState<string>('');
   const [finalSubtitles, setFinalSubtitles] = useState<Subtitle[]>([]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -338,6 +340,14 @@ export default function Home() {
       }
 
       const result = await response.json();
+      
+      // 保存图片 URL 和 Key
+      if (result.imageUrl) {
+        setUploadedImageUrl(result.imageUrl);
+      }
+      if (result.imageKey) {
+        setUploadedImageLocalPath(result.imageKey);
+      }
       
       if (result.productName && !productName) {
         setProductName(result.productName);
@@ -561,134 +571,137 @@ export default function Home() {
     setFinalSubtitles([]);
 
     try {
-      // 1. 初始化任务，创建文件夹
-      const initResponse = await fetch('/api/video-task/init', {
+      // 使用 LangGraph Agent API 生成视频
+      const response = await fetch('/api/agent?mode=video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
+          productImageUrl: uploadedImageUrl,
+          productImageLocalPath: uploadedImageLocalPath || '',
           productName,
-          segments: scriptSegments,
-          imageUrl: uploadedImageUrl 
+          scripts: scriptSegments.map(s => s.script),
+          prompts: scriptSegments.map(s => s.prompt || ''),
+          selectedMaterials,
+          selectedFeatures,
+          customSellingPoints,
         }),
       });
 
-      if (!initResponse.ok) {
-        const errorData = await initResponse.json().catch(() => ({}));
-        const errorMsg = errorData.error || '初始化任务失败';
-        console.error('初始化失败:', errorData);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMsg = errorData.error || 'Agent 任务失败';
+        console.error('Agent 失败:', errorData);
         throw new Error(errorMsg);
       }
 
-      const initData = await initResponse.json();
-      setTaskFolder(initData);
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
 
-      // 2. 并发生成所有视频片段
-      const tempSegments: VideoSegment[] = [];
-      let audioCount = 0;
-      let videoCount = 0;
+      if (!reader) {
+        throw new Error('无法读取响应');
+      }
 
-      const generatePromises = scriptSegments.map(async (segment, index) => {
-        try {
-          const response = await fetch('/api/video-task/generate-segment', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              segmentId: segment.id,
-              script: segment.script,
-              prompt: segment.prompt || '',
-              imageUrl: uploadedImageUrl,
-              folderPath: initData.folderPath,
-              productName: productName
-            }),
-          });
+      let buffer = '';
+      let accumulatedSegments: VideoSegment[] = [];
 
-          if (!response.ok) {
-            throw new Error(`片段 ${segment.id} 生成失败`);
-          }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-          const reader = response.body?.getReader();
-          const decoder = new TextDecoder();
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-          if (!reader) {
-            throw new Error('无法读取响应');
-          }
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            try {
+              const parsed = JSON.parse(data);
 
-          let buffer = '';
-          let segmentData: VideoSegment | null = null;
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6);
-                try {
-                  const parsed = JSON.parse(data);
-
-                  if (parsed.type === 'tts_complete') {
-                    audioCount++;
-                    setSegmentProgress(prev => ({ ...prev, audio: audioCount }));
-                  } else if (parsed.type === 'video_complete') {
-                    videoCount++;
-                    // video_complete 只包含视频信息，更新临时数据
-                    segmentData = {
+              if (parsed.type === 'node_start') {
+                console.log(`节点 ${parsed.node} 开始执行`);
+              } else if (parsed.type === 'node_progress') {
+                // 处理片段生成进度
+                if (parsed.node === 'segments' && parsed.data) {
+                  const { segmentIndex, status, audio, video } = parsed.data;
+                  const segment = scriptSegments[segmentIndex];
+                  
+                  if (status === 'tts_complete') {
+                    setSegmentProgress(prev => ({ ...prev, audio: prev.audio + 1 }));
+                  } else if (status === 'video_complete') {
+                    setSegmentProgress(prev => ({ ...prev, video: prev.video + 1 }));
+                    
+                    // 更新片段数据
+                    const segmentData: VideoSegment = {
                       id: segment.id,
                       script: segment.script,
                       prompt: segment.prompt || '',
-                      audioUrl: '',
-                      audioLocalPath: '',
-                      audioDuration: 0,
-                      videoUrl: parsed.content.videoUrl || '',
-                      videoLocalPath: parsed.content.videoLocalPath || '',
-                      videoDuration: parsed.content.duration || 0,
+                      audioUrl: audio?.url || '',
+                      audioLocalPath: audio?.localPath || '',
+                      audioDuration: audio?.duration || 0,
+                      videoUrl: video?.url || '',
+                      videoLocalPath: video?.localPath || '',
+                      videoDuration: video?.duration || 0,
                       isGenerating: false,
                       isSelected: true
                     };
-                    setSegmentProgress(prev => ({ ...prev, video: videoCount }));
-                  } else if (parsed.type === 'done') {
-                    // done 事件包含完整的音频和视频信息
-                    const audioInfo = parsed.content.audio;
-                    const videoInfo = parsed.content.video;
-                    console.log('收到 done 事件:', { segmentId: segment.id, audioInfo, videoInfo });
-                    segmentData = {
-                      id: segment.id,
-                      script: segment.script,
-                      prompt: segment.prompt || '',
-                      audioUrl: audioInfo?.url || '',
-                      audioLocalPath: audioInfo?.localPath || '',
-                      audioDuration: audioInfo?.duration || 0,
-                      videoUrl: videoInfo?.url || '',
-                      videoLocalPath: videoInfo?.localPath || '',
-                      videoDuration: videoInfo?.duration || 0,
-                      isGenerating: false,
-                      isSelected: true
-                    };
-                    console.log('片段数据已设置:', segmentData);
+                    
+                    // 添加或更新片段
+                    const existingIndex = accumulatedSegments.findIndex(s => s.id === segment.id);
+                    if (existingIndex >= 0) {
+                      accumulatedSegments[existingIndex] = segmentData;
+                    } else {
+                      accumulatedSegments.push(segmentData);
+                    }
+                    setVideoSegments([...accumulatedSegments]);
                   }
-                } catch {
-                  // Ignore parse errors
                 }
+              } else if (parsed.type === 'node_complete') {
+                console.log(`节点 ${parsed.node} 完成`);
+                if (parsed.node === 'init' && parsed.data) {
+                  setTaskFolder(parsed.data);
+                } else if (parsed.node === 'segments' && parsed.data?.segments) {
+                  // 最终片段数据
+                  const segments = parsed.data.segments.map((seg: any, index: number) => {
+                    const scriptSeg = scriptSegments[index];
+                    return {
+                      id: scriptSeg.id,
+                      script: scriptSeg.script,
+                      prompt: scriptSeg.prompt || '',
+                      audioUrl: seg.audio?.url || '',
+                      audioLocalPath: seg.audio?.localPath || '',
+                      audioDuration: seg.audio?.duration || 0,
+                      videoUrl: seg.video?.url || '',
+                      videoLocalPath: seg.video?.localPath || '',
+                      videoDuration: seg.video?.duration || 0,
+                      isGenerating: false,
+                      isSelected: true
+                    } as VideoSegment;
+                  });
+                  accumulatedSegments = segments;
+                  setVideoSegments(segments);
+                } else if (parsed.node === 'compose' && parsed.data) {
+                  setFinalVideoUrl(parsed.data.finalVideoUrl || '');
+                  setFinalVideoLocalPath(parsed.data.finalVideoLocalPath || '');
+                  setFinalSubtitles(parsed.data.subtitles || []);
+                }
+              } else if (parsed.type === 'error') {
+                console.error('Agent 错误:', parsed.message);
+                throw new Error(parsed.message);
+              } else if (parsed.type === 'complete') {
+                console.log('Agent 流程完成');
               }
+            } catch (parseError) {
+              // 忽略解析错误
             }
           }
-
-          return segmentData;
-        } catch (error) {
-          console.error(`片段 ${segment.id} 生成错误:`, error);
-          return null;
         }
-      });
+      }
 
-      const results = await Promise.all(generatePromises);
-
-      // 过滤掉失败的结果并更新状态
-      const validSegments = results.filter((s): s is VideoSegment => s !== null);
-      setVideoSegments(validSegments);
+      // 确保最终状态正确
+      if (accumulatedSegments.length > 0) {
+        setVideoSegments(accumulatedSegments);
+      }
     } catch (error) {
       console.error('生成失败:', error);
       alert(error instanceof Error ? error.message : '生成失败，请重试');
@@ -707,7 +720,7 @@ export default function Home() {
   // 重新生成单个视频片段
   const handleRegenerateSegment = async (segmentId: number) => {
     const segment = videoSegments.find(s => s.id === segmentId);
-    if (!segment || !taskFolder) return;
+    if (!segment) return;
 
     // 设置为生成中
     setVideoSegments(prev => prev.map(seg => 
@@ -715,7 +728,7 @@ export default function Home() {
     ));
 
     try {
-      const response = await fetch('/api/video-task/generate-segment', {
+      const response = await fetch('/api/agent/regenerate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -723,7 +736,7 @@ export default function Home() {
           script: segment.script, 
           prompt: segment.prompt, 
           imageUrl: uploadedImageUrl,
-          folderPath: taskFolder.folderPath,
+          workDir: taskFolder?.folderPath || '',
           productName: productName
         }),
       });
