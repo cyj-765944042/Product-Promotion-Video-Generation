@@ -166,16 +166,32 @@ async function generateSegment(
     
     // 生成视频（带重试）
     const generateVideo = async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return await videoClient.videoGeneration(content as any, {
+      console.log(`[Agent] 片段 ${index + 1}: 视频参数`, {
         model: VIDEO_MODEL_EP,
         duration: videoDuration,
-        ratio: '16:9',
-        resolution: '720p',
-        generateAudio: false,
-        watermark: false,
+        promptLength: segment.prompt?.length || 0,
+        imageUrl: accessibleImageUrl?.substring(0, 50) + '...',
+      });
+      
+      try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
+        return await videoClient.videoGeneration(content as any, {
+          model: VIDEO_MODEL_EP,
+          duration: videoDuration,
+          ratio: '16:9',
+          resolution: '720p',
+          generateAudio: false,
+          watermark: false,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any);
+      } catch (err: any) {
+        console.error(`[Agent] 片段 ${index + 1}: 视频生成错误详情`, {
+          message: err.message,
+          statusCode: err.statusCode,
+          response: err.response?.data || err.response?.body || 'no response data',
+        });
+        throw err;
+      }
     };
     
     const videoResult = await withRetry(generateVideo, 3, 2000);
