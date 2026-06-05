@@ -135,6 +135,8 @@ export async function POST(request: NextRequest) {
           eventData.finalSubtitles = state.finalSubtitles || eventData.finalSubtitles;
           eventData.errors = state.errors || eventData.errors;
           
+          console.log(`[Agent API] 节点 ${node} 返回数据:`, JSON.stringify(state, null, 2));
+          
           // 发送节点完成事件
           sendEvent("node_complete", {
             node,
