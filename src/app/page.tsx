@@ -681,9 +681,27 @@ export default function Home() {
                   accumulatedSegments = segments;
                   setVideoSegments(segments);
                 } else if (parsed.node === 'compose' && parsed.data) {
+                  console.log('[前端] 收到 compose 完成事件:', parsed.data);
                   setFinalVideoUrl(parsed.data.finalVideoUrl || '');
                   setFinalVideoLocalPath(parsed.data.finalVideoLocalPath || '');
-                  setFinalSubtitles(parsed.data.subtitles || []);
+                  setFinalSubtitles(parsed.data.finalSubtitles || parsed.data.subtitles || []);
+                  // 如果有 segments 数据，也更新片段状态
+                  if (parsed.data.segments && parsed.data.segments.length > 0) {
+                    const segments = parsed.data.segments.map((seg: any) => ({
+                      id: seg.id,
+                      script: seg.script || '',
+                      prompt: seg.prompt || '',
+                      audioUrl: seg.audioUrl || '',
+                      audioLocalPath: seg.audioLocalPath || '',
+                      audioDuration: seg.audioDuration || 0,
+                      videoUrl: seg.videoUrl || '',
+                      videoLocalPath: seg.videoLocalPath || '',
+                      videoDuration: seg.videoDuration || 0,
+                      isGenerating: false,
+                      isSelected: true
+                    } as VideoSegment));
+                    setVideoSegments(segments);
+                  }
                 }
               } else if (parsed.type === 'error') {
                 console.error('Agent 错误:', parsed.message);
