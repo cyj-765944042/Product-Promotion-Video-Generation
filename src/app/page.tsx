@@ -136,17 +136,23 @@ function VideoPlayer({
 
   return (
     <div className="relative bg-black rounded-lg overflow-hidden">
-      <video
-        ref={videoRef}
-        src={accessibleVideoUrl}
-        className="w-full aspect-video object-contain"
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        onEnded={handleEnded}
-        onClick={togglePlay}
-        playsInline
-      />
-      <audio ref={audioRef} src={accessibleAudioUrl} />
+      {accessibleVideoUrl ? (
+        <video
+          ref={videoRef}
+          src={accessibleVideoUrl}
+          className="w-full aspect-video object-contain"
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onEnded={handleEnded}
+          onClick={togglePlay}
+          playsInline
+        />
+      ) : (
+        <div className="w-full aspect-video bg-gray-800 flex items-center justify-center">
+          <p className="text-gray-400 text-sm">视频生成中...</p>
+        </div>
+      )}
+      {accessibleAudioUrl && <audio ref={audioRef} src={accessibleAudioUrl} />}
 
       {/* 字幕 */}
       <div className="absolute bottom-12 left-0 right-0 flex justify-center pointer-events-none">
@@ -438,8 +444,8 @@ export default function ChatAgentPage() {
         <div className="space-y-3">
           <p className="text-sm">{message.content}</p>
           <div className="grid grid-cols-2 gap-2">
-            {sessionState.segments.map(segment => (
-              <Card key={segment.id} className="p-2">
+            {sessionState.segments.map((segment, index) => (
+              <Card key={`segment-${segment.id}-${index}`} className="p-2">
                 <Badge variant="outline" className="mb-2">片段 {segment.id}</Badge>
                 <VideoPlayer
                   videoUrl={segment.videoUrl}

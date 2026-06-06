@@ -279,17 +279,23 @@ export default function ChatAgentPage() {
         <div className="space-y-4">
           <p className="text-sm">{message.content}</p>
           <div className="grid grid-cols-2 gap-4">
-            {sessionState.segments.map(segment => (
-              <Card key={segment.id} className="p-3">
+            {sessionState.segments.map((segment, index) => (
+              <Card key={`segment-${segment.id}-${index}`} className="p-3">
                 <div className="flex items-center gap-2 mb-2">
                   <Badge variant="outline">片段 {segment.id}</Badge>
                   <span className="text-xs text-gray-500">{segment.duration}秒</span>
                 </div>
-                <video
-                  src={segment.videoUrl}
-                  controls
-                  className="w-full rounded-lg mb-2"
-                />
+                {segment.videoUrl ? (
+                  <video
+                    src={segment.videoUrl}
+                    controls
+                    className="w-full rounded-lg mb-2"
+                  />
+                ) : (
+                  <div className="w-full aspect-video bg-gray-800 rounded-lg mb-2 flex items-center justify-center">
+                    <p className="text-gray-400 text-sm">视频生成中...</p>
+                  </div>
+                )}
                 <p className="text-xs text-gray-600">{segment.script}</p>
               </Card>
             ))}
