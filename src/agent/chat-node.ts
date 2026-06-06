@@ -104,12 +104,13 @@ async function executeTool(
       return await generateScripts(
         input.productName as string,
         input.features as string[],
+        input.productImageUrl as string | undefined,
         customHeaders
       );
     
     case "generateVideoSegments":
       return await generateVideoSegments(
-        state.scripts,
+        state.scripts || input.scripts,
         input.productImageUrl as string,
         input.productName as string,
         customHeaders
@@ -117,25 +118,27 @@ async function executeTool(
     
     case "composeFinalVideo":
       return await composeFinalVideo(
-        input.segments as Array<{ id: number; audioPath: string; videoPath: string; duration: number }>,
-        input.outputDir as string,
-        input.productName as string
+        input.segments as Array<{ id: number; script: string; videoPath?: string; audioPath?: string }>,
+        input.productName as string,
+        customHeaders
       );
     
     case "modifyScript":
       return modifyScript(
-        input.scripts as Array<{ id: number; script: string; feature: string }>,
         input.scriptId as number,
-        input.newScript as string
+        input.newScript as string,
+        input.productName as string,
+        input.features as string[],
+        customHeaders
       );
     
     case "regenerateSegment":
       return await regenerateSegment(
+        input.segmentId as number,
         input.script as string,
         input.productImageUrl as string,
         input.productName as string,
-        input.outputDir as string,
-        input.segmentId as number
+        customHeaders
       );
     
     default:
