@@ -5,9 +5,19 @@
 
 import axios from 'axios';
 
-const BASE_URL = process.env.COZE_PROJECT_DOMAIN_DEFAULT 
-  ? `https://${process.env.COZE_PROJECT_DOMAIN_DEFAULT}`
-  : 'http://localhost:5000';
+const getBaseUrl = () => {
+  const domain = process.env.COZE_PROJECT_DOMAIN_DEFAULT;
+  if (domain) {
+    // 如果已经包含协议，直接使用
+    if (domain.startsWith('http://') || domain.startsWith('https://')) {
+      return domain;
+    }
+    // 否则添加 https 前缀
+    return `https://${domain}`;
+  }
+  return 'http://localhost:5000';
+};
+const BASE_URL = getBaseUrl();
 
 // 工具结果类型
 export interface ToolResult {
