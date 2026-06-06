@@ -69,7 +69,8 @@ interface SessionState {
   finalVideoUrl?: string;
   finalVideoLocalPath?: string;
   finalDuration?: number;
-  currentStage?: 'chat' | 'upload' | 'scripts' | 'segments' | 'compose' | 'done';
+  subtitleUrl?: string;
+  currentStage?: 'idle' | 'identifying' | 'product_identified' | 'script_generated' | 'video_generated' | 'composing' | 'done';
 }
 
 // 视频播放器组件
@@ -284,15 +285,39 @@ export default function ChatAgentPage() {
                   break;
 
                 case 'tool_result':
-                  // 不显示工具结果细节，仅用于内部状态
+                  // 更新状态
+                  if (eventData.data) {
+                    setSessionState(prev => ({
+                      ...prev,
+                      ...eventData.data,
+                    }));
+                  }
                   break;
 
                 case 'state_update':
                   setSessionId(eventData.sessionId);
                   setSessionState(prev => ({
                     ...prev,
-                    ...eventData.state,
+                    ...eventData.data,
                   }));
+                  break;
+
+                case 'wait_feedback':
+                  // 等待用户反馈阶段，更新状态并停止加载
+                  if (eventData.data?.state) {
+                    setSessionState(prev => ({
+                      ...prev,
+                      ...eventData.data.state,
+                    }));
+                  }
+                  setMessages(prev =>
+                    prev.map(m =>
+                      m.id === assistantMessage.id
+                        ? { ...m, isStreaming: false }
+                        : m
+                    )
+                  );
+                  setIsLoading(false);
                   break;
 
                 case 'complete':
@@ -587,12 +612,14 @@ export default function ChatAgentPage() {
   // 当前阶段提示
   const getStageHint = () => {
     switch (sessionState.currentStage) {
-      case 'upload':
-        return '已识别商品，可确认信息后生成文案';
-      case 'scripts':
-        return '已生成文案，可修改后生成视频';
-      case 'segments':
-        return '已生成视频片段，可确认后合成最终视频';
+      case 'product_identified':
+        return '已识别商品，正在生成文案...';
+      case 'script_generated':
+        return '已生成文案，请确认后生成视频';
+      case 'video_generated':
+        return '已生成视频片段，请确认后合成最终视频';
+      case 'composing':
+        return '正在合成最终视频...';
       case 'done':
         return '视频已完成，可以下载使用';
       default:

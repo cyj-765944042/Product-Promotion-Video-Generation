@@ -52,45 +52,65 @@
 ### 核心组件
 
 1. **对话节点 (`chat-node.ts`)**：
-   - 使用 `doubao-seed-2-0-pro` 大模型进行对话
+   - 使用 `doubao-seed-1-8-251228` 大模型进行对话
    - 理解用户意图，决定调用哪个工具
-   - 支持多轮对话和上下文记忆
+   - 支持多轮工具调用和自动执行流程
+   - SSE 流式输出，实时推送进度
 
 2. **工具函数 (`tools.ts`)**：
-   - `uploadImage`: 上传商品图片到对象存储
-   - `identifyProduct`: 使用多模态 LLM 识别商品信息
-   - `generateScripts`: 使用 LLM 生成带货文案
-   - `generateSegmentVideo`: 生成视频片段（TTS + 视频生成）
-   - `composeFinalVideo`: 使用 FFmpeg 合成最终视频
+   - `uploadAndIdentifyProduct`: 上传图片并识别商品信息
+   - `generateScripts`: 生成带货文案 + 画面 Prompt
+   - `generateVideoSegments`: 生成视频片段（TTS + 视频生成）
+   - `composeFinalVideo`: 合成最终视频（支持 BGM、字幕）
+   - `regenerateSegment`: 重新生成单个视频片段
+   - `modifyScript`: 修改文案内容
 
 3. **状态管理 (`chat-state.ts`)**：
    - `productName`: 商品名称
    - `productImageUrl`: 商品图片 URL
    - `features`: 核心卖点列表
-   - `scripts`: 带货文案列表
-   - `videoSegments`: 视频片段列表
+   - `scripts`: 带货文案列表（含画面 Prompt）
+   - `segments`: 视频片段列表
    - `finalVideoUrl`: 最终视频 URL
+   - `currentStage`: 当前阶段
 
-### 对话流程
+### 工作流程（分阶段执行）
 
 ```
-用户消息 → LLM 理解意图 → 决定调用工具 → 执行工具 → 返回结果 → 继续对话
+用户输入 → 识别商品 → 自动执行
+识别成功 → 生成文案 → 自动执行
+文案生成 → 等待反馈 → 显示结果，等待用户确认/驳回
+确认文案 → 生成视频 → 自动执行
+视频片段 → 等待反馈 → 显示结果，等待用户选择/确认合成
+确认合成 → 输出成片 → 自动执行，显示下载链接
 ```
 
-典型对话场景：
-1. 用户上传图片 → Agent 识别商品 → 生成卖点
-2. 用户确认卖点 → Agent 生成带货文案
-3. 用户选择文案 → Agent 生成视频片段
-4. 用户选择片段 → Agent 合成最终视频
+**特殊规则**：
+- 如果用户明确表示"不需要反馈/直接生成/直接合成"，则跳过等待环节
+- 每个步骤的结果必须返回显示给用户
+- 使用 SSE 流式输出，实时推送进度和结果
+
+### 阶段定义
+
+- `idle`: 初始状态
+- `identifying`: 正在识别商品
+- `product_identified`: 商品已识别（自动进入下一阶段）
+- `script_generated`: 文案已生成（等待用户反馈）
+- `video_generated`: 视频片段已生成（等待用户反馈）
+- `composing`: 正在合成最终视频
+- `done`: 视频完成，可下载
 
 ### API 调用
 
 - **对话式 Agent**: `/api/chat-agent` (SSE 流式输出)
-- **工作流 Agent**: `/api/agent?mode=video` (LangGraph 工作流)
+  - POST: 发送消息，返回 SSE 流
+  - GET: 获取会话状态
+  - DELETE: 清除会话
 
 ### 依赖的火山引擎服务
 
-- **LLM**: `doubao-seed-2-0-pro` (多模态对话)
+- **LLM**: `doubao-seed-1-8-251228` (对话调度)
+- **多模态 LLM**: 商品识别
 - **TTS**: `zh_female_shuangkuaisisi_moon_bigtts` (语音合成)
 - **视频生成**: `ep-20260514120705-pqv86` (视频生成模型)
 - **对象存储**: S3 兼容存储服务

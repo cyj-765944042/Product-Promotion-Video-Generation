@@ -11,14 +11,15 @@ export interface ChatAgentState {
   category?: string;
   features: string[];
   
-  // 文案信息
-  scripts: Array<{ id: number; script: string; feature: string }>;
+  // 文案信息（包含画面 Prompt）
+  scripts: Array<{ id: number; script: string; feature: string; prompt?: string }>;
   
   // 视频片段
   segments: Array<{
     id: number;
     script: string;
     feature: string;
+    prompt?: string;
     audioPath?: string;
     audioUrl?: string;
     videoPath?: string;
@@ -33,9 +34,10 @@ export interface ChatAgentState {
   finalVideoUrl?: string;
   finalVideoPath?: string;
   finalDuration?: number;
+  subtitleUrl?: string;
   
-  // 当前阶段
-  currentStage: "chat" | "upload" | "scripts" | "segments" | "compose" | "done";
+  // 当前阶段（更细化的阶段划分）
+  currentStage: "idle" | "identifying" | "product_identified" | "script_generated" | "video_generated" | "composing" | "done";
   
   // 错误信息
   error?: string;
@@ -50,7 +52,7 @@ export interface ToolResult {
 
 // Agent 消息类型（用于 SSE）
 export interface AgentSSEMessage {
-  type: "text" | "tool_call" | "tool_result" | "progress" | "state_update" | "complete" | "error";
+  type: "text" | "tool_call" | "tool_result" | "progress" | "state_update" | "wait_feedback" | "complete" | "error";
   content: string;
   data?: Record<string, unknown>;
   sessionId?: string;
@@ -63,6 +65,6 @@ export function getDefaultState(): ChatAgentState {
     features: [],
     scripts: [],
     segments: [],
-    currentStage: "chat"
+    currentStage: "idle"
   };
 }

@@ -96,7 +96,8 @@ export async function uploadAndIdentifyProduct(
         productName: result.productName,
         productImageUrl: result.imageUrl || imageUrl,
         features: result.suggestedFeatures || result.features || [],
-        productType: result.productType
+        productType: result.productType,
+        currentStage: "product_identified"
       }
     };
   } catch (error) {
@@ -193,7 +194,10 @@ export async function generateScripts(
     return {
       success: true,
       message: `文案生成完成，共 ${scripts.length} 段（含画面Prompt）`,
-      data: { scripts }
+      data: { 
+        scripts,
+        currentStage: "script_generated"
+      }
     };
   } catch (error) {
     console.error('[Tool] generate-script 失败:', error);
@@ -294,7 +298,10 @@ export async function generateVideoSegments(
     return {
       success: true,
       message: `视频片段生成完成，共 ${segments.length} 个`,
-      data: { segments }
+      data: { 
+        segments,
+        currentStage: "video_generated"
+      }
     };
   } catch (error) {
     console.error('[Tool] generate-video 失败:', error);
@@ -353,7 +360,9 @@ export async function composeFinalVideo(
       data: {
         finalVideoUrl: result.finalVideoUrl,
         finalVideoLocalPath: result.finalVideoLocalPath,
-        finalSubtitles: result.finalSubtitles
+        finalSubtitles: result.finalSubtitles,
+        subtitleUrl: result.finalSubtitles,
+        currentStage: "done"
       }
     };
   } catch (error) {
