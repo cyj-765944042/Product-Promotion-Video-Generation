@@ -55,14 +55,14 @@ interface SessionState {
   productImageUrl?: string;
   productName?: string;
   features?: string[];
-  scripts?: Array<{ id: number; script: string; feature: string }>;
+  scripts?: Array<{ id: number; script: string; prompt: string }>;
   segments?: Array<{
     id: number;
     script: string;
-    feature: string;
-    audioUrl: string;
-    videoUrl: string;
-    duration: number;
+    prompt: string;
+    audioUrl?: string;
+    videoUrl?: string;
+    duration?: number;
     audioLocalPath?: string;
     videoLocalPath?: string;
   }>;
@@ -78,8 +78,8 @@ function VideoPlayer({
   audioUrl,
   script,
 }: {
-  videoUrl: string;
-  audioUrl: string;
+  videoUrl?: string;
+  audioUrl?: string;
   script: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -89,8 +89,8 @@ function VideoPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  const accessibleVideoUrl = getAccessibleUrl(videoUrl);
-  const accessibleAudioUrl = getAccessibleUrl(audioUrl);
+  const accessibleVideoUrl = videoUrl ? getAccessibleUrl(videoUrl) : '';
+  const accessibleAudioUrl = audioUrl ? getAccessibleUrl(audioUrl) : '';
 
   const togglePlay = useCallback(() => {
     if (!videoRef.current || !audioRef.current) return;
@@ -407,7 +407,7 @@ export default function ChatAgentPage() {
       );
     }
 
-    // 如果有视频片段，显示片段卡片
+    // 如果有视频片段，显示片段卡片 + 交互按钮
     if (sessionState.segments && sessionState.segments.length > 0) {
       return (
         <div className="space-y-3">
@@ -421,14 +421,43 @@ export default function ChatAgentPage() {
                   audioUrl={segment.audioUrl}
                   script={segment.script}
                 />
+                {/* 单片段重生成按钮 */}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="w-full mt-2 text-xs"
+                  onClick={() => sendMessage(`请重新生成片段 ${segment.id}`)}
+                >
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  重生成此片段
+                </Button>
               </Card>
             ))}
+          </div>
+          {/* 确认合成按钮 */}
+          <div className="flex gap-2 mt-3">
+            <Button
+              size="sm"
+              className="bg-gradient-to-r from-green-600 to-teal-600"
+              onClick={() => sendMessage("确认片段，请合成最终视频，添加背景音乐")}
+            >
+              <CheckCircle2 className="w-4 h-4 mr-1" />
+              确认合成
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => sendMessage("确认片段，请合成最终视频，不添加背景音乐")}
+            >
+              <Video className="w-4 h-4 mr-1" />
+              无BGM合成
+            </Button>
           </div>
         </div>
       );
     }
 
-    // 如果有文案列表，显示文案卡片
+    // 如果有文案列表，显示文案卡片 + 交互按钮
     if (sessionState.scripts && sessionState.scripts.length > 0) {
       return (
         <div className="space-y-3">
@@ -438,8 +467,30 @@ export default function ChatAgentPage() {
               <Card key={index} className="p-2">
                 <Badge variant="outline" className="mb-2">文案 {script.id || index + 1}</Badge>
                 <p className="text-sm">{script.script}</p>
+                {script.prompt && (
+                  <p className="text-xs text-muted-foreground mt-1">画面: {script.prompt}</p>
+                )}
               </Card>
             ))}
+          </div>
+          {/* 文案确认/驳回按钮 */}
+          <div className="flex gap-2 mt-3">
+            <Button
+              size="sm"
+              className="bg-gradient-to-r from-blue-600 to-purple-600"
+              onClick={() => sendMessage("确认文案，请生成视频片段")}
+            >
+              <CheckCircle2 className="w-4 h-4 mr-1" />
+              确认文案
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => sendMessage("驳回文案，请重新生成")}
+            >
+              <RefreshCw className="w-4 h-4 mr-1" />
+              重新生成
+            </Button>
           </div>
         </div>
       );
