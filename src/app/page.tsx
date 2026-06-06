@@ -48,15 +48,6 @@ interface ChatMessage {
   timestamp: string; // ISO string to avoid hydration issues
   imageUrl?: string; // 用户上传的图片 URL
   isStreaming?: boolean;
-  toolCall?: {
-    tool: string;
-    input: Record<string, unknown>;
-  };
-  toolResult?: {
-    success: boolean;
-    message: string;
-    data?: Record<string, unknown>;
-  };
 }
 
 // 会话状态
@@ -289,23 +280,11 @@ export default function ChatAgentPage() {
                   break;
 
                 case 'tool_call':
-                  setMessages(prev =>
-                    prev.map(m =>
-                      m.id === assistantMessage.id
-                        ? { ...m, toolCall: eventData.data }
-                        : m
-                    )
-                  );
+                  // 不显示工具调用细节，仅用于内部状态
                   break;
 
                 case 'tool_result':
-                  setMessages(prev =>
-                    prev.map(m =>
-                      m.id === assistantMessage.id
-                        ? { ...m, toolResult: eventData.data }
-                        : m
-                    )
-                  );
+                  // 不显示工具结果细节，仅用于内部状态
                   break;
 
                 case 'state_update':
@@ -542,30 +521,6 @@ export default function ChatAgentPage() {
               </div>
             ) : (
               renderAssistantContent(message)
-            )}
-
-            {/* 工具调用显示 */}
-            {message.toolCall && (
-              <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
-                <div className="flex items-center gap-1">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>正在调用 {message.toolCall.tool}...</span>
-                </div>
-              </div>
-            )}
-
-            {/* 工具结果显示 */}
-            {message.toolResult && (
-              <div className={`mt-2 p-2 rounded text-xs ${message.toolResult.success ? 'bg-green-50' : 'bg-red-50'}`}>
-                <div className="flex items-center gap-1">
-                  {message.toolResult.success ? (
-                    <CheckCircle2 className="w-3 h-3 text-green-600" />
-                  ) : (
-                    <RefreshCw className="w-3 h-3 text-red-600" />
-                  )}
-                  <span>{message.toolResult.message}</span>
-                </div>
-              </div>
             )}
 
             {/* 时间 - 仅在客户端渲染 */}
