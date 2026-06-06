@@ -118,6 +118,26 @@ function parseToolCall(content: string): { tool: string; input: Record<string, u
   }
 }
 
+// 获取工具执行进度提示消息
+function getToolProgressMessage(toolName: string): string {
+  switch (toolName) {
+    case "uploadAndIdentifyProduct":
+      return "🔍 正在识别商品信息...";
+    case "generateScripts":
+      return "✍️ 正在生成带货文案...";
+    case "generateVideoSegments":
+      return "🎬 正在生成视频片段...";
+    case "composeFinalVideo":
+      return "🎞️ 正在合成最终视频...";
+    case "regenerateSegment":
+      return "🔄 正在重新生成片段...";
+    case "modifyScript":
+      return "📝 正在修改文案...";
+    default:
+      return "⏳ 正在处理...";
+  }
+}
+
 // 执行工具
 async function executeTool(
   toolName: string,
@@ -241,14 +261,7 @@ export async function* chatNodeStream(
       content: SYSTEM_PROMPT + stateContext
     };
     
-    // 如果是第二轮及以上，先发送 progress 消息保持连接活跃
-    if (currentRound > 1) {
-      yield {
-        type: "progress",
-        content: `正在执行第 ${currentRound} 轮...`,
-        data: { round: currentRound }
-      };
-    }
+    // 第二轮及以上不再发送重复的进度消息，工具执行前已有进度提示
     
     // 流式调用 LLM
     console.log(`[Agent] 第 ${currentRound} 轮流式调用 LLM...`);
@@ -259,16 +272,28 @@ export async function* chatNodeStream(
     
     let fullContent = "";
     
+    // 收集 LLM 输出但不立即 yield（过滤工具调用格式）
     for await (const chunk of stream) {
       if (chunk.content) {
         const text = chunk.content.toString();
         fullContent += text;
-        yield { type: "text", content: text };
       }
     }
     
     // 检查是否有工具调用
     const toolCall = parseToolCall(fullContent);
+    
+    // 过滤掉工具调用格式，只提取有意义的文本
+    let meaningfulText = fullContent;
+    if (toolCall) {
+      // 移除工具调用格式部分
+      meaningfulText = fullContent.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim();
+    }
+    
+    // 只 yield 有意义的文本（非空）
+    if (meaningfulText && meaningfulText.length > 0) {
+      yield { type: "text", content: meaningfulText };
+    }
     
     if (!toolCall) {
       // 没有工具调用，对话结束
@@ -278,7 +303,10 @@ export async function* chatNodeStream(
     }
     
     console.log(`[Agent] 第 ${currentRound} 轮检测到工具调用:`, toolCall.tool);
-    yield { type: "tool_call", content: JSON.stringify(toolCall), data: toolCall };
+    
+    // 发送进度提示（而不是工具调用格式）
+    const toolProgressMessage = getToolProgressMessage(toolCall.tool);
+    yield { type: "progress", content: toolProgressMessage };
     
     // 执行工具
     const toolResult = await executeTool(toolCall.tool, toolCall.input, currentState, customHeaders);
@@ -288,6 +316,7 @@ export async function* chatNodeStream(
       currentState = { ...currentState, ...toolResult.data };
     }
     
+    // 发送工具执行结果（简洁消息）
     yield { type: "tool_result", content: toolResult.message, data: toolResult.data };
     
     if (!toolResult.success) {

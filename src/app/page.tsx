@@ -277,6 +277,30 @@ export default function ChatAgentPage() {
 
               switch (eventData.type) {
                 case 'text':
+                  // 过滤掉工具调用格式，只显示有意义的文本
+                  const textContent = eventData.content;
+                  // 如果是工具调用格式的开始，跳过
+                  if (textContent.includes('<tool_call>') || 
+                      textContent.match(/^[\s\n]*$/) ||
+                      textContent.match(/^[{}\s":,]*$/)) {
+                    // 不显示工具调用格式
+                    break;
+                  }
+                  setMessages(prev =>
+                    prev.map(m =>
+                      m.id === assistantMessage.id
+                        ? { ...m, content: m.content + textContent }
+                        : m
+                    )
+                  );
+                  break;
+
+                case 'tool_call':
+                  // 不显示工具调用细节
+                  break;
+
+                case 'progress':
+                  // 显示进度提示
                   setMessages(prev =>
                     prev.map(m =>
                       m.id === assistantMessage.id
@@ -286,11 +310,15 @@ export default function ChatAgentPage() {
                   );
                   break;
 
-                case 'tool_call':
-                  // 不显示工具调用细节，仅用于内部状态
-                  break;
-
                 case 'tool_result':
+                  // 显示工具执行结果消息
+                  setMessages(prev =>
+                    prev.map(m =>
+                      m.id === assistantMessage.id
+                        ? { ...m, content: m.content + '\n' + eventData.content }
+                        : m
+                    )
+                  );
                   // 更新状态
                   if (eventData.data) {
                     setSessionState(prev => ({
