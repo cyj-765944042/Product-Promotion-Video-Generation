@@ -48,6 +48,7 @@ interface ChatMessage {
   timestamp: string; // ISO string to avoid hydration issues
   imageUrl?: string; // 用户上传的图片 URL
   isStreaming?: boolean;
+  state?: Partial<SessionState>; // 每条消息自己的状态数据，避免共享状态导致渲染混乱
 }
 
 // 会话状态
@@ -300,50 +301,71 @@ export default function ChatAgentPage() {
                   break;
 
                 case 'progress':
-                  // 显示进度提示
+                  // 显示进度提示（追加到当前消息）
                   setMessages(prev =>
                     prev.map(m =>
                       m.id === assistantMessage.id
-                        ? { ...m, content: m.content + eventData.content }
+                        ? { ...m, content: m.content ? `${m.content}\n${eventData.content}` : eventData.content }
                         : m
                     )
                   );
                   break;
 
                 case 'tool_result':
-                  // 显示工具执行结果消息
+                  // 显示工具执行结果消息，同时将状态数据绑定到消息
+                  const toolData = eventData.data || {};
                   setMessages(prev =>
                     prev.map(m =>
                       m.id === assistantMessage.id
-                        ? { ...m, content: m.content + '\n' + eventData.content }
+                        ? {
+                            ...m,
+                            content: m.content ? `${m.content}\n${eventData.content}` : eventData.content,
+                            state: { ...m.state, ...toolData }, // 将状态绑定到消息
+                          }
                         : m
                     )
                   );
-                  // 更新状态
-                  if (eventData.data) {
-                    setSessionState(prev => ({
-                      ...prev,
-                      ...eventData.data,
-                    }));
-                  }
+                  // 同时更新全局状态（用于按钮状态判断）
+                  setSessionState(prev => ({
+                    ...prev,
+                    ...toolData,
+                  }));
                   break;
 
                 case 'state_update':
                   setSessionId(eventData.sessionId);
+                  const stateData = eventData.data || {};
+                  // 更新消息状态
+                  setMessages(prev =>
+                    prev.map(m =>
+                      m.id === assistantMessage.id
+                        ? { ...m, state: { ...m.state, ...stateData } }
+                        : m
+                    )
+                  );
+                  // 更新全局状态
                   setSessionState(prev => ({
                     ...prev,
-                    ...eventData.data,
+                    ...stateData,
                   }));
                   break;
 
                 case 'wait_feedback':
                   // 等待用户反馈阶段，更新状态并停止加载
-                  if (eventData.data?.state) {
-                    setSessionState(prev => ({
-                      ...prev,
-                      ...eventData.data.state,
-                    }));
-                  }
+                  const feedbackState = eventData.data?.state || {};
+                  // 更新消息状态
+                  setMessages(prev =>
+                    prev.map(m =>
+                      m.id === assistantMessage.id
+                        ? { ...m, state: { ...m.state, ...feedbackState } }
+                        : m
+                    )
+                  );
+                  // 更新全局状态
+                  setSessionState(prev => ({
+                    ...prev,
+                    ...feedbackState,
+                  }));
                   setMessages(prev =>
                     prev.map(m =>
                       m.id === assistantMessage.id
@@ -446,14 +468,17 @@ export default function ChatAgentPage() {
 
   // 渲染助手消息内容
   const renderAssistantContent = (message: ChatMessage) => {
+    // 使用消息自己的状态，如果没有则使用空对象（避免旧消息显示新状态）
+    const msgState = message.state || {};
+
     // 如果有最终视频，显示下载按钮
-    if (sessionState.finalVideoUrl) {
+    if (msgState.finalVideoUrl) {
       return (
         <div className="space-y-3">
           <p className="text-sm">{message.content}</p>
           <Card className="p-3">
             <video
-              src={getAccessibleUrl(sessionState.finalVideoUrl)}
+              src={getAccessibleUrl(msgState.finalVideoUrl)}
               controls
               className="w-full rounded-lg mb-3"
             />
@@ -467,12 +492,12 @@ export default function ChatAgentPage() {
     }
 
     // 如果有视频片段，显示片段卡片 + 交互按钮
-    if (sessionState.segments && sessionState.segments.length > 0) {
+    if (msgState.segments && msgState.segments.length > 0) {
       return (
         <div className="space-y-3">
           <p className="text-sm">{message.content}</p>
           <div className="grid grid-cols-2 gap-2">
-            {sessionState.segments.map((segment, index) => (
+            {msgState.segments.map((segment, index) => (
               <Card key={`segment-${segment.id}-${index}`} className="p-2">
                 <Badge variant="outline" className="mb-2">片段 {segment.id}</Badge>
                 <VideoPlayer
@@ -517,12 +542,12 @@ export default function ChatAgentPage() {
     }
 
     // 如果有文案列表，显示文案卡片 + 交互按钮
-    if (sessionState.scripts && sessionState.scripts.length > 0) {
+    if (msgState.scripts && msgState.scripts.length > 0) {
       return (
         <div className="space-y-3">
           <p className="text-sm">{message.content}</p>
           <div className="space-y-2">
-            {sessionState.scripts.map((script, index) => (
+            {msgState.scripts.map((script, index) => (
               <Card key={index} className="p-2">
                 <Badge variant="outline" className="mb-2">文案 {script.id || index + 1}</Badge>
                 <p className="text-sm">{script.script}</p>
@@ -556,31 +581,31 @@ export default function ChatAgentPage() {
     }
 
     // 如果有商品信息，显示商品卡片
-    if (sessionState.productImageUrl || sessionState.productName) {
+    if (msgState.productImageUrl || msgState.productName) {
       return (
         <div className="space-y-3">
           <p className="text-sm">{message.content}</p>
           <Card className="p-3">
             <div className="flex items-start gap-3">
-              {sessionState.productImageUrl && (
+              {msgState.productImageUrl && (
                 <img 
-                  src={sessionState.productImageUrl} 
+                  src={msgState.productImageUrl} 
                   alt="商品图片" 
                   className="w-24 h-24 object-cover rounded-lg"
                 />
               )}
               <div className="space-y-2">
-                {sessionState.productName && (
+                {msgState.productName && (
                   <div>
                     <Badge variant="secondary">商品名称</Badge>
-                    <p className="text-sm font-medium mt-1">{sessionState.productName}</p>
+                    <p className="text-sm font-medium mt-1">{msgState.productName}</p>
                   </div>
                 )}
-                {sessionState.features && sessionState.features.length > 0 && (
+                {msgState.features && msgState.features.length > 0 && (
                   <div>
                     <Badge variant="secondary">核心卖点</Badge>
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {sessionState.features.map((feature, index) => (
+                      {msgState.features.map((feature, index) => (
                         <Badge key={index} variant="outline">{feature}</Badge>
                       ))}
                     </div>
