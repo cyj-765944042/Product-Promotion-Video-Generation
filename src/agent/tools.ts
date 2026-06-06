@@ -150,9 +150,9 @@ export async function generateScripts(
       }
     );
     
-    // 解析 SSE 响应获取文案
+    // 解析 SSE 响应获取文案和画面Prompt
     const lines = response.data.split('\n');
-    const scripts: Array<{ id: number; script: string }> = [];
+    const scripts: Array<{ id: number; script: string; prompt: string }> = [];
     
     for (const line of lines) {
       if (line.startsWith('data: ')) {
@@ -161,8 +161,18 @@ export async function generateScripts(
           if (data.type === 'script_segment' && data.content) {
             scripts.push({
               id: data.segmentIndex || scripts.length + 1,
-              script: data.content.script || data.content
+              script: data.content.script || data.content,
+              prompt: data.content.prompt || `${productName}产品展示，专业拍摄，吸引眼球`
             });
+          } else if (data.type === 'complete' && data.segments) {
+            // 从 complete 事件获取完整数据
+            for (const seg of data.segments) {
+              scripts.push({
+                id: seg.id || scripts.length + 1,
+                script: seg.script || '',
+                prompt: seg.prompt || `${productName}产品展示，专业拍摄`
+              });
+            }
           }
         } catch {
           // 忽略解析错误
@@ -170,19 +180,19 @@ export async function generateScripts(
       }
     }
     
-    // 如果没有解析到，使用默认文案
+    // 如果没有解析到，使用默认文案+Prompt
     if (scripts.length === 0) {
       scripts.push(
-        { id: 1, script: `${productName}太棒了，强烈推荐！` },
-        { id: 2, script: `${features[0] || '品质'}过硬，性价比超高` },
-        { id: 3, script: `设计时尚，颜值爆表` },
-        { id: 4, script: `现在下单，限时优惠！` }
+        { id: 1, script: `${productName}太棒了，强烈推荐！`, prompt: `${productName}全景展示，吸引眼球` },
+        { id: 2, script: `${features[0] || '品质'}过硬，性价比超高`, prompt: `${productName}细节特写，品质展示` },
+        { id: 3, script: `设计时尚，颜值爆表`, prompt: `${productName}外观展示，设计美感` },
+        { id: 4, script: `现在下单，限时优惠！`, prompt: `${productName}购买引导，促销氛围` }
       );
     }
     
     return {
       success: true,
-      message: `文案生成完成，共 ${scripts.length} 段`,
+      message: `文案生成完成，共 ${scripts.length} 段（含画面Prompt）`,
       data: { scripts }
     };
   } catch (error) {
@@ -205,23 +215,28 @@ export async function generateScripts(
 /**
  * 3. 生成视频片段
  * 调用 /api/generate-video (SSE 流式)
+ * 使用每段的画面Prompt生成对应视频
  */
 export async function generateVideoSegments(
-  scripts: Array<{ id: number; script: string }>,
+  scripts: Array<{ id: number; script: string; prompt?: string }>,
   productImageUrl: string,
   productName: string,
   customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
-  console.log('[Tool] 调用 /api/generate-video');
+  console.log('[Tool] 调用 /api/generate-video，每段使用对应Prompt');
   
   try {
     const formData = new FormData();
     formData.append('productName', productName);
     formData.append('productImageUrl', productImageUrl);
     
-    // 将文案转为 JSON
-    const scriptsJson = JSON.stringify(scripts);
-    formData.append('scripts', scriptsJson);
+    // 将文案转为 JSON（包含每段的prompt）
+    const segmentsForRequest = scripts.map(s => ({
+      id: s.id,
+      script: s.script,
+      prompt: s.prompt || `${productName}产品展示，专业拍摄`
+    }));
+    formData.append('scripts', JSON.stringify(segmentsForRequest));
     
     // generate-video 是 SSE 流式接口
     const response = await axios.post(
@@ -306,16 +321,22 @@ export async function generateVideoSegments(
 export async function composeFinalVideo(
   segments: Array<{ id: number; script: string; videoPath?: string; audioPath?: string }>,
   productName: string,
+  options?: { bgmUrl?: string; embedSubtitle?: boolean },
   customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
   console.log('[Tool] 调用 /api/video-task/compose');
+  if (options?.bgmUrl) {
+    console.log('[Tool] 使用BGM:', options.bgmUrl);
+  }
   
   try {
     const response = await axios.post(
       `${BASE_URL}/api/video-task/compose`,
       {
         segments,
-        productName
+        productName,
+        bgmUrl: options?.bgmUrl,
+        embedSubtitle: options?.embedSubtitle ?? true
       },
       { 
         headers: { 
@@ -378,11 +399,14 @@ export async function modifyScript(
 export async function regenerateSegment(
   segmentId: number,
   script: string,
+  prompt: string,
   productImageUrl: string,
   productName: string,
+  folderPath?: string,
   customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
   console.log('[Tool] 调用 /api/agent/regenerate');
+  console.log('[Tool] 使用画面Prompt:', prompt);
   
   try {
     const response = await axios.post(
@@ -390,8 +414,10 @@ export async function regenerateSegment(
       {
         segmentId,
         script,
+        prompt,
         productImageUrl,
-        productName
+        productName,
+        folderPath
       },
       { 
         headers: { 

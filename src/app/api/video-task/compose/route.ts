@@ -27,13 +27,15 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       try {
         const body = await request.json();
-        const { folderPath, segments } = body as {
+        const { folderPath, segments, bgmUrl, embedSubtitle = true } = body as {
           folderPath: string;
           segments: Array<{
             audioPath: string;
             videoPath: string;
             script: string;
           }>;
+          bgmUrl?: string;
+          embedSubtitle?: boolean;
         };
 
         if (!folderPath || !segments || segments.length === 0) {
@@ -115,10 +117,37 @@ export async function POST(request: NextRequest) {
         const concatCmd = `ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${concatenatedPath}"`;
         execSync(concatCmd, { stdio: 'pipe' });
 
-        // Step 4: 添加字幕
+        // Step 4: 添加字幕（可选）
+        const withSubtitlePath = path.join(outputDir, `with_subtitle_${Date.now()}.mp4`);
+        
+        if (embedSubtitle) {
+          const subtitleCmd = `ffmpeg -y -i "${concatenatedPath}" -vf "subtitles='${srtPath.replace(/'/g, "'\\''")}'" -c:a copy "${withSubtitlePath}"`;
+          execSync(subtitleCmd, { stdio: 'pipe' });
+        } else {
+          // 不内嵌字幕，直接复制
+          fs.copyFileSync(concatenatedPath, withSubtitlePath);
+        }
+
+        // Step 5: 添加 BGM（可选）
         const finalVideoPath = path.join(outputDir, `final_${Date.now()}.mp4`);
-        const subtitleCmd = `ffmpeg -y -i "${concatenatedPath}" -vf "subtitles='${srtPath.replace(/'/g, "'\\''")}'" -c:a copy "${finalVideoPath}"`;
-        execSync(subtitleCmd, { stdio: 'pipe' });
+        
+        if (bgmUrl) {
+          // 下载 BGM 文件
+          const bgmPath = path.join(outputDir, 'bgm.mp3');
+          const axios = require('axios');
+          const bgmResponse = await axios.get(bgmUrl, { responseType: 'arraybuffer' });
+          fs.writeFileSync(bgmPath, bgmResponse.data);
+          
+          // 添加 BGM，调节音量到 20%，并循环播放
+          const bgmCmd = `ffmpeg -y -i "${withSubtitlePath}" -i "${bgmPath}" -filter_complex "[1:a]volume=0.2,aloop=0:size=2e+09[bgm];[0:a][bgm]amix=inputs=2:duration=first[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac "${finalVideoPath}"`;
+          execSync(bgmCmd, { stdio: 'pipe' });
+          
+          // 清理临时 BGM 文件
+          fs.unlinkSync(bgmPath);
+        } else {
+          // 没有 BGM，直接使用带字幕的视频
+          fs.copyFileSync(withSubtitlePath, finalVideoPath);
+        }
 
         // 获取最终视频时长
         const finalDurationCmd = `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${finalVideoPath}"`;
@@ -127,9 +156,13 @@ export async function POST(request: NextRequest) {
         sendEvent(controller, {
           type: 'complete',
           content: {
-            videoUrl: finalVideoPath,  // 返回完整本地路径，前端会通过 getAccessibleUrl 转换
+            videoUrl: finalVideoPath,
             videoLocalPath: finalVideoPath,
+            srtPath: srtPath,
+            srtUrl: srtPath,
             duration: finalDuration,
+            hasBgm: !!bgmUrl,
+            subtitleEmbedded: embedSubtitle,
           },
         });
 

@@ -136,8 +136,10 @@ async function executeTool(
       return await regenerateSegment(
         input.segmentId as number,
         input.script as string,
+        input.prompt as string,
         input.productImageUrl as string,
         input.productName as string,
+        input.folderPath as string | undefined,
         customHeaders
       );
     
