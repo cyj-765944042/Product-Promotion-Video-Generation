@@ -232,15 +232,15 @@ export async function generateVideoSegments(
   try {
     const formData = new FormData();
     formData.append('productName', productName);
-    formData.append('productImageUrl', productImageUrl);
+    formData.append('imageUrl', productImageUrl); // API 期望的参数名
     
-    // 将文案转为 JSON（包含每段的prompt）
+    // 将文案转为 JSON（包含每段的prompt），API 期望的参数名是 segments
     const segmentsForRequest = scripts.map(s => ({
       id: s.id,
       script: s.script,
       prompt: s.prompt || `${productName}产品展示，专业拍摄`
     }));
-    formData.append('scripts', JSON.stringify(segmentsForRequest));
+    formData.append('segments', JSON.stringify(segmentsForRequest));
     
     // generate-video 是 SSE 流式接口
     const response = await axios.post(
