@@ -495,6 +495,10 @@ export default function ChatAgentPage() {
     if (msgState.segments && msgState.segments.length > 0) {
       return (
         <div className="space-y-3">
+          <div className="flex items-center gap-2 text-sm text-blue-600 font-medium">
+            <Video className="w-4 h-4" />
+            <span>🎬 已生成 {msgState.segments.length} 个视频片段</span>
+          </div>
           <p className="text-sm">{message.content}</p>
           <div className="grid grid-cols-2 gap-2">
             {msgState.segments.map((segment, index) => (
@@ -545,6 +549,10 @@ export default function ChatAgentPage() {
     if (msgState.scripts && msgState.scripts.length > 0) {
       return (
         <div className="space-y-3">
+          <div className="flex items-center gap-2 text-sm text-purple-600 font-medium">
+            <FileText className="w-4 h-4" />
+            <span>✍️ 已生成 {msgState.scripts.length} 段带货文案</span>
+          </div>
           <p className="text-sm">{message.content}</p>
           <div className="space-y-2">
             {msgState.scripts.map((script, index) => (

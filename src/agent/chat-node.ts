@@ -119,16 +119,19 @@ function parseToolCall(content: string): { tool: string; input: Record<string, u
 }
 
 // 获取工具执行进度提示消息
-function getToolProgressMessage(toolName: string): string {
+function getToolProgressMessage(toolName: string, state?: ChatAgentState): string {
+  const scriptsCount = state?.scripts?.length || 5;
+  const segmentsCount = state?.scripts?.length || 5;
+  
   switch (toolName) {
     case "uploadAndIdentifyProduct":
-      return "🔍 正在识别商品信息...";
+      return "🔍 正在识别商品信息，预计提取3-5个卖点...";
     case "generateScripts":
-      return "✍️ 正在生成带货文案...";
+      return `✍️ 正在生成带货文案，预计${scriptsCount}段文案，请稍等...`;
     case "generateVideoSegments":
-      return "🎬 正在生成视频片段...";
+      return `🎬 正在生成视频片段，预计${segmentsCount}个片段，请稍等...`;
     case "composeFinalVideo":
-      return "🎞️ 正在合成最终视频...";
+      return "🎞️ 正在合成最终视频，预计需要1-2分钟...";
     case "regenerateSegment":
       return "🔄 正在重新生成片段...";
     case "modifyScript":
@@ -305,7 +308,7 @@ export async function* chatNodeStream(
     console.log(`[Agent] 第 ${currentRound} 轮检测到工具调用:`, toolCall.tool);
     
     // 发送进度提示（而不是工具调用格式）
-    const toolProgressMessage = getToolProgressMessage(toolCall.tool);
+    const toolProgressMessage = getToolProgressMessage(toolCall.tool, state);
     yield { type: "progress", content: toolProgressMessage };
     
     // 执行工具
