@@ -29,12 +29,23 @@ import {
   User,
 } from 'lucide-react';
 
+// 客户端时间组件 - 避免 hydration 问题
+function ClientTime({ timestamp }: { timestamp: string }) {
+  const [time, setTime] = useState<string>('');
+  
+  useEffect(() => {
+    setTime(new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
+  }, [timestamp]);
+  
+  return <span>{time || '--:--'}</span>;
+}
+
 // 消息类型
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  timestamp: Date;
+  timestamp: string; // ISO string to avoid hydration issues
   isStreaming?: boolean;
   toolCall?: {
     tool: string;
@@ -189,7 +200,7 @@ export default function ChatAgentPage() {
       id: 'welcome',
       role: 'assistant',
       content: '您好！我是带货视频小助手，专精于带货短视频生成。\n\n我可以帮您：\n1. 📷 上传商品图片，自动识别商品和卖点\n2. ✍️ 生成带货文案\n3. 🎬 生成带货视频片段\n4. 🎞️ 合成最终视频\n\n请上传您的商品图片，开始创作吧！',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     },
   ]);
   const [inputValue, setInputValue] = useState('');
@@ -215,7 +226,7 @@ export default function ChatAgentPage() {
       id: `user_${Date.now()}`,
       role: 'user',
       content: imageUrl ? `${content}\n[已上传商品图片]` : content,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     };
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
@@ -226,7 +237,7 @@ export default function ChatAgentPage() {
       id: `assistant_${Date.now()}`,
       role: 'assistant',
       content: '',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       isStreaming: true,
     };
     setMessages(prev => [...prev, assistantMessage]);
@@ -388,7 +399,7 @@ export default function ChatAgentPage() {
         id: 'welcome_new',
         role: 'assistant',
         content: '会话已清除。请上传新的商品图片，开始新的创作！',
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
       },
     ]);
   };
@@ -448,7 +459,7 @@ export default function ChatAgentPage() {
       <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
         <div className={`flex items-start gap-2 max-w-[85%]`}>
           {/* 头像 */}
-          <div className={`p-2 rounded-full ${isUser ? 'bg-blue-100' : 'bg-purple-100'} order-${isUser ? 2 : 1}`}>
+          <div className={`p-2 rounded-full ${isUser ? 'bg-blue-100 order-2' : 'bg-purple-100 order-1'}`}>
             {isUser ? <User className="w-4 h-4 text-blue-600" /> : <Bot className="w-4 h-4 text-purple-600" />}
           </div>
 
@@ -491,9 +502,9 @@ export default function ChatAgentPage() {
               </div>
             )}
 
-            {/* 时间 */}
+            {/* 时间 - 仅在客户端渲染 */}
             <div className="text-xs opacity-60 mt-1">
-              {message.timestamp.toLocaleTimeString()}
+              <ClientTime timestamp={message.timestamp} />
             </div>
           </div>
         </div>
