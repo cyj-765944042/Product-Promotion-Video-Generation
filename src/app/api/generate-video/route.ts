@@ -889,6 +889,25 @@ export async function POST(request: NextRequest) {
         };
 
         let finalVideoUrl = concatenatedVideoUrl;
+        
+        // 等待拼接后的视频URL可访问
+        console.log('等待视频URL可访问...');
+        for (let waitAttempt = 1; waitAttempt <= 5; waitAttempt++) {
+          try {
+            const urlCheck = await fetch(concatenatedVideoUrl, { method: 'HEAD' });
+            if (urlCheck.ok) {
+              console.log(`视频URL已可访问 (第${waitAttempt}次检查)`);
+              break;
+            }
+            console.log(`视频URL暂不可访问 (${urlCheck.status})，等待${waitAttempt * 2}秒后重试...`);
+          } catch (checkErr) {
+            console.log(`视频URL检查失败，等待${waitAttempt * 2}秒后重试...`);
+          }
+          if (waitAttempt < 5) {
+            await new Promise(resolve => setTimeout(resolve, waitAttempt * 2000));
+          }
+        }
+
         try {
           const subtitleResponse = await videoEditClient.addSubtitles(
             concatenatedVideoUrl,
@@ -898,9 +917,11 @@ export async function POST(request: NextRequest) {
 
           if (subtitleResponse.url) {
             finalVideoUrl = subtitleResponse.url;
+            console.log('字幕添加成功');
           }
         } catch (subtitleError) {
           console.error('字幕添加失败:', subtitleError);
+          // 继续使用无字幕的视频URL
         }
 
         sendEvent(controller, {
