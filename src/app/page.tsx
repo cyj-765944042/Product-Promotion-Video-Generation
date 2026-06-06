@@ -605,17 +605,17 @@ export default function ChatAgentPage() {
         <Card className="bg-white/80 backdrop-blur p-4">
           <div className="flex gap-2">
             {/* 图片上传 */}
-            <div className="relative">
+            <div className="relative inline-block">
+              <Button variant="outline" className="relative pointer-events-none">
+                <ImageIcon className="w-4 h-4 mr-1" />
+                上传图片
+              </Button>
               <input
                 type="file"
                 accept="image/*"
                 onChange={handleImageUpload}
-                className="absolute inset-0 opacity-0 cursor-pointer w-full"
+                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
               />
-              <Button variant="outline" className="relative w-auto">
-                <ImageIcon className="w-4 h-4 mr-1" />
-                上传图片
-              </Button>
             </div>
 
             {/* 文本输入 */}
