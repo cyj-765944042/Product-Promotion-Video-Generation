@@ -46,6 +46,7 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string; // ISO string to avoid hydration issues
+  imageUrl?: string; // 用户上传的图片 URL
   isStreaming?: boolean;
   toolCall?: {
     tool: string;
@@ -227,6 +228,7 @@ export default function ChatAgentPage() {
       role: 'user',
       content: imageUrl ? `${content}\n[已上传商品图片]` : content,
       timestamp: new Date().toISOString(),
+      imageUrl: imageUrl, // 添加图片 URL
     };
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
@@ -406,6 +408,26 @@ export default function ChatAgentPage() {
 
   // 渲染助手消息内容
   const renderAssistantContent = (message: ChatMessage) => {
+    // 如果有最终视频，显示下载按钮
+    if (sessionState.finalVideoUrl) {
+      return (
+        <div className="space-y-3">
+          <p className="text-sm">{message.content}</p>
+          <Card className="p-3">
+            <video
+              src={getAccessibleUrl(sessionState.finalVideoUrl)}
+              controls
+              className="w-full rounded-lg mb-3"
+            />
+            <Button className="w-full bg-gradient-to-r from-green-600 to-teal-600">
+              <Download className="w-4 h-4 mr-2" />
+              下载完整视频
+            </Button>
+          </Card>
+        </div>
+      );
+    }
+
     // 如果有视频片段，显示片段卡片
     if (sessionState.segments && sessionState.segments.length > 0) {
       return (
@@ -427,21 +449,56 @@ export default function ChatAgentPage() {
       );
     }
 
-    // 如果有最终视频，显示下载按钮
-    if (sessionState.finalVideoUrl) {
+    // 如果有文案列表，显示文案卡片
+    if (sessionState.scripts && sessionState.scripts.length > 0) {
+      return (
+        <div className="space-y-3">
+          <p className="text-sm">{message.content}</p>
+          <div className="space-y-2">
+            {sessionState.scripts.map((script, index) => (
+              <Card key={index} className="p-2">
+                <Badge variant="outline" className="mb-2">文案 {script.id || index + 1}</Badge>
+                <p className="text-sm">{script.script}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // 如果有商品信息，显示商品卡片
+    if (sessionState.productImageUrl || sessionState.productName) {
       return (
         <div className="space-y-3">
           <p className="text-sm">{message.content}</p>
           <Card className="p-3">
-            <video
-              src={getAccessibleUrl(sessionState.finalVideoUrl)}
-              controls
-              className="w-full rounded-lg mb-3"
-            />
-            <Button className="w-full bg-gradient-to-r from-green-600 to-teal-600">
-              <Download className="w-4 h-4 mr-2" />
-              下载完整视频
-            </Button>
+            <div className="flex items-start gap-3">
+              {sessionState.productImageUrl && (
+                <img 
+                  src={sessionState.productImageUrl} 
+                  alt="商品图片" 
+                  className="w-24 h-24 object-cover rounded-lg"
+                />
+              )}
+              <div className="space-y-2">
+                {sessionState.productName && (
+                  <div>
+                    <Badge variant="secondary">商品名称</Badge>
+                    <p className="text-sm font-medium mt-1">{sessionState.productName}</p>
+                  </div>
+                )}
+                {sessionState.features && sessionState.features.length > 0 && (
+                  <div>
+                    <Badge variant="secondary">核心卖点</Badge>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {sessionState.features.map((feature, index) => (
+                        <Badge key={index} variant="outline">{feature}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </Card>
         </div>
       );
@@ -473,7 +530,16 @@ export default function ChatAgentPage() {
             )}
 
             {isUser ? (
-              <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+              <div className="space-y-2">
+                {message.imageUrl && (
+                  <img 
+                    src={message.imageUrl} 
+                    alt="商品图片" 
+                    className="max-w-[200px] rounded-lg"
+                  />
+                )}
+                <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+              </div>
             ) : (
               renderAssistantContent(message)
             )}
