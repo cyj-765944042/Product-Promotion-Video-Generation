@@ -372,7 +372,7 @@ export default function ChatAgentPage() {
     formData.append('file', file);
 
     try {
-      const response = await fetch('/api/upload', {
+      const response = await fetch('/api/upload-image', {
         method: 'POST',
         body: formData,
       });
@@ -380,7 +380,7 @@ export default function ChatAgentPage() {
       if (!response.ok) throw new Error('上传失败');
 
       const data = await response.json();
-      sendMessage('请帮我分析这张商品图片，识别商品信息并提取卖点', data.url);
+      sendMessage('请帮我分析这张商品图片，识别商品信息并提取卖点', data.imageUrl);
     } catch (error) {
       console.error('上传图片失败:', error);
       alert('上传图片失败，请重试');
