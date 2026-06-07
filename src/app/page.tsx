@@ -9,7 +9,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
 import { getAccessibleUrl } from '@/lib/utils';
 import {
-  Upload,
   Send,
   Video,
   FileText,
@@ -20,14 +19,8 @@ import {
   CheckCircle2,
   RefreshCw,
   Trash2,
-  Play,
-  Pause,
-  Volume2,
-  VolumeX,
   MessageCircle,
-  Bot,
   User,
-  Maximize,
   ChevronDown,
 } from 'lucide-react';
 
@@ -78,7 +71,7 @@ interface SessionState {
   currentStage?: 'idle' | 'identifying' | 'product_identified' | 'script_generated' | 'video_generated' | 'composing' | 'done';
 }
 
-// 视频播放器组件
+// 视频播放器组件（使用原生controls）
 function VideoPlayer({
   videoUrl,
   audioUrl,
@@ -90,12 +83,6 @@ function VideoPlayer({
   script: string;
   localVideoPath?: string; // 本地视频路径
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -103,72 +90,23 @@ function VideoPlayer({
   const effectiveVideoUrl = localVideoPath || (videoUrl ? getAccessibleUrl(videoUrl) : '');
   const accessibleAudioUrl = audioUrl ? getAccessibleUrl(audioUrl) : '';
 
-  const togglePlay = useCallback(() => {
-    if (!videoRef.current || !audioRef.current) return;
-    if (isPlaying) {
-      videoRef.current.pause();
-      audioRef.current.pause();
-    } else {
-      videoRef.current.play().catch(() => setVideoError('视频播放失败'));
-      audioRef.current.play().catch(() => {});
-    }
-    setIsPlaying(!isPlaying);
-  }, [isPlaying]);
-
-  const toggleMute = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.muted = !isMuted;
-      setIsMuted(!isMuted);
-    }
-  }, [isMuted]);
-
-  const handleTimeUpdate = useCallback(() => {
-    if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
-    }
-  }, []);
-
-  const handleLoadedMetadata = useCallback(() => {
-    if (videoRef.current) {
-      setDuration(videoRef.current.duration);
-      setIsLoading(false);
-    }
-  }, []);
-
-  const handleEnded = useCallback(() => {
-    setIsPlaying(false);
-  }, []);
-
-  const handleError = useCallback(() => {
-    setVideoError('视频加载失败，可能由于网络或权限限制');
-    setIsLoading(false);
-  }, []);
-
-  const handleCanPlay = useCallback(() => {
-    setIsLoading(false);
-    setVideoError(null);
-  }, []);
-
-  const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
   return (
     <div className="relative bg-black rounded-lg overflow-hidden">
       {effectiveVideoUrl ? (
         <video
-          ref={videoRef}
           src={effectiveVideoUrl}
           className="w-full aspect-video object-contain"
-          onTimeUpdate={handleTimeUpdate}
-          onLoadedMetadata={handleLoadedMetadata}
-          onEnded={handleEnded}
-          onError={handleError}
-          onCanPlay={handleCanPlay}
+          controls
           playsInline
           preload="auto"
+          onError={() => {
+            setVideoError('视频加载失败，可能由于网络或权限限制');
+            setIsLoading(false);
+          }}
+          onCanPlay={() => {
+            setIsLoading(false);
+            setVideoError(null);
+          }}
         />
       ) : (
         <div className="w-full aspect-video bg-gray-800 flex items-center justify-center">
@@ -178,8 +116,8 @@ function VideoPlayer({
       
       {/* 加载状态 */}
       {isLoading && effectiveVideoUrl && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-          <div className="text-white text-sm">加载视频中...</div>
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center pointer-events-none">
+          <Loader2 className="w-6 h-6 animate-spin text-white" />
         </div>
       )}
       
@@ -200,57 +138,7 @@ function VideoPlayer({
         </div>
       )}
       
-      {accessibleAudioUrl && <audio ref={audioRef} src={accessibleAudioUrl} />}
-
-      {/* 字幕 */}
-      <div className="absolute bottom-12 left-0 right-0 flex justify-center pointer-events-none">
-        <div className="bg-black/70 text-white px-3 py-1 rounded max-w-[80%]">
-          <p className="text-sm">{script}</p>
-        </div>
-      </div>
-
-      {/* 控制栏 */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-        <div className="flex items-center gap-2">
-          <button onClick={togglePlay} className="text-white p-1 hover:bg-white/20 rounded">
-            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-          </button>
-          <button onClick={toggleMute} className="text-white p-1 hover:bg-white/20 rounded">
-            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={duration || 100}
-            step={0.1}
-            value={currentTime}
-            onChange={(e) => {
-              const time = parseFloat(e.target.value);
-              if (videoRef.current && audioRef.current) {
-                videoRef.current.currentTime = time;
-                audioRef.current.currentTime = time;
-              }
-            }}
-            className="flex-1 h-1 accent-blue-500 cursor-pointer"
-          />
-          <span className="text-white text-xs min-w-[60px]">{formatTime(currentTime)}/{formatTime(duration)}</span>
-          <button 
-            onClick={() => {
-              if (videoRef.current) {
-                if (document.fullscreenElement) {
-                  document.exitFullscreen();
-                } else {
-                  videoRef.current.requestFullscreen();
-                }
-              }
-            }} 
-            className="text-white p-1 hover:bg-white/20 rounded"
-            title="全屏"
-          >
-            <Maximize className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      {accessibleAudioUrl && <audio src={accessibleAudioUrl} />}
     </div>
   );
 }
