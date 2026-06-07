@@ -246,7 +246,7 @@ export default function ChatAgentPage() {
     {
       id: 'welcome',
       role: 'assistant',
-      content: '您好！我是带货视频小助手，专精于带货短视频生成。\n\n我可以帮您：\n1. 📷 上传商品图片，自动识别商品和卖点\n2. ✍️ 生成带货文案\n3. 🎬 生成带货视频片段\n4. 🎞️ 合成最终视频\n\n请上传您的商品图片，开始创作吧！',
+      content: '您好！我是「货小影」，您的专业带货视频智能助手。\n\n我可以帮您：\n1. 📷 上传商品图片，自动识别商品和卖点\n2. ✍️ 分段创作口播文案与画面提示词\n3. 🎬 生成带货视频片段（配音+画面）\n4. 🎞️ 合成成片（字幕+背景音乐）\n\n请上传您的商品图片或描述，开始创作吧！',
       timestamp: new Date().toISOString(),
     },
   ]);
@@ -694,8 +694,14 @@ export default function ChatAgentPage() {
       <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
         <div className={`flex items-start gap-2 max-w-[85%]`}>
           {/* 头像 */}
-          <div className={`p-2 rounded-full ${isUser ? 'bg-blue-100 order-2' : 'bg-purple-100 order-1'}`}>
-            {isUser ? <User className="w-4 h-4 text-blue-600" /> : <Bot className="w-4 h-4 text-purple-600" />}
+          <div className={`p-1 rounded-full ${isUser ? 'bg-blue-100 order-2' : 'bg-transparent order-1'}`}>
+            {isUser ? <User className="w-5 h-5 text-blue-600" /> : (
+              <img 
+                src="/assets/agent-avatar.png" 
+                alt="货小影" 
+                className="w-10 h-10 rounded-full object-cover"
+              />
+            )}
           </div>
 
           {/* 内容 */}
@@ -757,7 +763,7 @@ export default function ChatAgentPage() {
         <div className="text-center mb-6">
           <div className="flex items-center justify-center gap-2 mb-2">
             <MessageCircle className="w-6 h-6 text-purple-600" />
-            <h1 className="text-2xl font-bold text-gray-800">带货视频小助手</h1>
+            <h1 className="text-2xl font-bold text-gray-800">货小影 - 带货视频助手</h1>
           </div>
           <p className="text-gray-500 text-sm">AI Agent 驱动的带货短视频生成工具</p>
         </div>
