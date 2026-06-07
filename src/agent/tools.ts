@@ -61,13 +61,36 @@ export async function uploadAndIdentifyProduct(
     const formData = new FormData();
     
     if (imageUrl.startsWith('http')) {
-      // 下载图片
-      const imageResponse = await axios.get(imageUrl, { 
-        responseType: 'arraybuffer',
-        headers: customHeaders
-      });
-      const imageBuffer = Buffer.from(imageResponse.data);
-      const imageFile = new File([imageBuffer], 'product.jpg', { type: 'image/jpeg' });
+      // 下载图片（添加超时和重试机制）
+      let imageBuffer: Buffer | null = null;
+      const maxRetries = 3;
+      
+      for (let retry = 0; retry < maxRetries; retry++) {
+        try {
+          const imageResponse = await axios.get(imageUrl, { 
+            responseType: 'arraybuffer',
+            headers: customHeaders,
+            timeout: 15000 // 15秒超时
+          });
+          imageBuffer = Buffer.from(imageResponse.data);
+          break; // 成功则退出重试循环
+        } catch (retryError: any) {
+          if (retryError.code === 'ETIMEDOUT' || retryError.code === 'ECONNABORTED') {
+            console.warn(`[Tool] 图片下载超时，重试 ${retry + 1}/${maxRetries}`);
+            if (retry < maxRetries - 1) {
+              await new Promise(resolve => setTimeout(resolve, 2000)); // 等待2秒后重试
+              continue;
+            }
+          }
+          throw retryError; // 其他错误或最后一次重试失败，抛出异常
+        }
+      }
+      
+      if (!imageBuffer) {
+        throw new Error('图片下载失败，请检查图片URL是否可访问');
+      }
+      
+      const imageFile = new File([new Uint8Array(imageBuffer)], 'product.jpg', { type: 'image/jpeg' });
       formData.append('image', imageFile);
     } else {
       // 本地路径，读取文件
