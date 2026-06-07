@@ -49,14 +49,20 @@ export function getAccessibleUrl(localPath: string, useProxy = true): string {
 
 /**
  * 判断是否是需要代理的外部视频URL
- * 火山引擎的URL通常包含 tos-cn-beijing.volces.com 或 coze-dianbo
+ * 火山引擎的原始URL通常包含 tos-cn-beijing.volces.com 或 coze-dianbo
+ * 注意：对象存储签名URL (coze-coding-project.tos) 可以直接访问，不需要代理
  */
 function isExternalVideoUrl(url: string): boolean {
+  // 对象存储签名URL可以直接访问，不需要代理
+  if (url.includes('coze-coding-project.tos.coze.site')) {
+    return false;
+  }
+  
+  // 火山引擎原始URL需要代理（有IP限制）
   const videoHosts = [
     'tos-cn-beijing.volces.com',
     'tos-cn-shanghai.volces.com',
     'coze-dianbo.tos',
-    'coze-coding-project.tos',
   ];
   
   return videoHosts.some(host => url.includes(host));

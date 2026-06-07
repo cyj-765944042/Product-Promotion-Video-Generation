@@ -404,9 +404,13 @@ export async function generateVideoSegments(
       if (line.startsWith('data: ')) {
         try {
           const data = JSON.parse(line.slice(6));
-          if (data.type === 'segment_complete' || data.type === 'segment') {
-            const segmentId = data.segmentIndex || data.id || segments.length + 1;
-            const videoUrl = data.videoUrl || data.videoPath;
+          // 匹配多种事件类型：segment_video, segment_complete, segment, complete
+          if (data.type === 'segment_video' || data.type === 'segment_complete' || data.type === 'segment') {
+            // segment_video 事件的 content 包含 segmentId, videoUrl, duration
+            const segmentId = data.content?.segmentId || data.segmentIndex || data.id || data.segmentId || segments.length + 1;
+            const videoUrl = data.content?.videoUrl || data.videoUrl || data.videoPath;
+            
+            console.log(`[Tool] 解析视频片段事件: type=${data.type}, segmentId=${segmentId}, videoUrl=${videoUrl?.substring(0, 100)}...`);
             
             // 下载视频到本地（优先转存到对象存储）
             let localVideoPath: string | undefined;
@@ -419,16 +423,45 @@ export async function generateVideoSegments(
               );
               localVideoPath = result.localPath || undefined;
               signedVideoUrl = result.signedUrl || undefined;
+              console.log(`[Tool] 视频片段 ${segmentId} 下载结果: localPath=${localVideoPath}, signedUrl=${signedVideoUrl?.substring(0, 50)}...`);
             }
             
             segments.push({
               id: segmentId,
-              script: data.script || scripts[segments.length]?.script || '',
+              script: data.content?.script || data.script || scripts[segments.length]?.script || '',
               videoPath: data.videoPath,
               audioPath: data.audioPath,
               videoUrl: signedVideoUrl || videoUrl, // 优先使用签名URL
               localVideoPath: localVideoPath
             });
+          }
+          // 处理 complete 事件（包含所有片段）
+          if (data.type === 'complete' && data.content?.segmentVideos) {
+            console.log(`[Tool] 解析 complete 事件，包含 ${data.content.segmentVideos.length} 个片段`);
+            for (const sv of data.content.segmentVideos) {
+              const segmentId = sv.id || segments.length + 1;
+              const videoUrl = sv.videoUrl;
+              
+              // 下载视频到本地
+              let localVideoPath: string | undefined;
+              let signedVideoUrl: string | undefined;
+              if (videoUrl) {
+                const result = await downloadVideoToLocal(
+                  videoUrl,
+                  `segments/${sessionId}`,
+                  `segment_${segmentId}.mp4`
+                );
+                localVideoPath = result.localPath || undefined;
+                signedVideoUrl = result.signedUrl || undefined;
+              }
+              
+              segments.push({
+                id: segmentId,
+                script: sv.script || scripts[segments.length]?.script || '',
+                videoUrl: signedVideoUrl || videoUrl,
+                localVideoPath: localVideoPath
+              });
+            }
           }
         } catch {
           // 忽略解析错误
