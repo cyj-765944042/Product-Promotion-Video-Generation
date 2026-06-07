@@ -9,11 +9,18 @@ export function cn(...inputs: ClassValue[]) {
  * 将本地文件路径转换为可访问的 URL
  * 开发环境：/workspace/projects/public/xxx -> /xxx
  * 生产环境：/tmp/xxx -> /api/file?path=/tmp/xxx
+ * 
+ * 对于外部视频URL（火山引擎等），使用代理API绕过浏览器访问限制
  */
-export function getAccessibleUrl(localPath: string): string {
+export function getAccessibleUrl(localPath: string, useProxy = true): string {
   if (!localPath) return '';
   
-  // 如果已经是 http(s) URL，直接返回
+  // 如果是火山引擎等外部视频URL，使用代理API
+  if (useProxy && isExternalVideoUrl(localPath)) {
+    return `/api/video-proxy?url=${encodeURIComponent(localPath)}`;
+  }
+  
+  // 如果已经是 http(s) URL 但不是视频，直接返回
   if (localPath.startsWith('http://') || localPath.startsWith('https://')) {
     return localPath;
   }
@@ -38,4 +45,19 @@ export function getAccessibleUrl(localPath: string): string {
     }
     return localPath;
   }
+}
+
+/**
+ * 判断是否是需要代理的外部视频URL
+ * 火山引擎的URL通常包含 tos-cn-beijing.volces.com 或 coze-dianbo
+ */
+function isExternalVideoUrl(url: string): boolean {
+  const videoHosts = [
+    'tos-cn-beijing.volces.com',
+    'tos-cn-shanghai.volces.com',
+    'coze-dianbo.tos',
+    'coze-coding-project.tos',
+  ];
+  
+  return videoHosts.some(host => url.includes(host));
 }
