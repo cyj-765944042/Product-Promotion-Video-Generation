@@ -889,33 +889,39 @@ export async function POST(request: NextRequest) {
         };
 
         let finalVideoUrl = concatenatedVideoUrl;
-        let urlAccessible = false;
+        let signedVideoUrl: string | undefined;
         
-        // 等待拼接后的视频URL可访问
-        console.log('等待视频URL可访问...');
-        for (let waitAttempt = 1; waitAttempt <= 5; waitAttempt++) {
-          try {
-            const urlCheck = await fetch(concatenatedVideoUrl, { method: 'HEAD' });
-            if (urlCheck.ok) {
-              console.log(`视频URL已可访问 (第${waitAttempt}次检查)`);
-              urlAccessible = true;
-              break;
-            }
-            console.log(`视频URL暂不可访问 (${urlCheck.status})，等待${waitAttempt * 2}秒后重试...`);
-          } catch (checkErr) {
-            console.log(`视频URL检查失败，等待${waitAttempt * 2}秒后重试...`);
+        // 先将视频转存到对象存储，获取可访问的签名URL
+        console.log('将视频转存到对象存储...');
+        try {
+          const storage = new S3Storage();
+          // 从URL下载并上传到对象存储，返回存储的key
+          const storageKey = await storage.uploadFromUrl({
+            url: concatenatedVideoUrl,
+            timeout: 60000, // 60秒超时
+          });
+          
+          // 使用key生成可访问的签名URL
+          signedVideoUrl = await storage.generatePresignedUrl({
+            key: storageKey,
+            expireTime: 3600, // 1小时有效期
+          });
+          
+          if (signedVideoUrl) {
+            finalVideoUrl = signedVideoUrl;
+            console.log('视频转存成功，使用签名URL:', signedVideoUrl.substring(0, 50) + '...');
           }
-          if (waitAttempt < 5) {
-            await new Promise(resolve => setTimeout(resolve, waitAttempt * 2000));
-          }
+        } catch (transferError) {
+          console.error('视频转存失败:', transferError);
+          // 继续使用原始URL
         }
 
-        // 只有URL可访问时才尝试添加字幕
-        if (urlAccessible) {
+        // 使用签名URL添加字幕（如果转存成功）
+        if (signedVideoUrl) {
           try {
-            console.log('尝试添加字幕...');
+            console.log('使用签名URL添加字幕...');
             const subtitleResponse = await videoEditClient.addSubtitles(
-              concatenatedVideoUrl,
+              signedVideoUrl,
               subtitleConfig,
               { textList }
             );
@@ -929,8 +935,10 @@ export async function POST(request: NextRequest) {
             // 继续使用无字幕的视频URL
           }
         } else {
-          console.log('视频URL不可访问，跳过字幕添加，使用无字幕视频');
+          console.log('视频转存失败，跳过字幕添加，使用原始视频URL');
         }
+
+        // 发送最终视频URL（可能是签名URL、带字幕URL或原始URL）
 
         sendEvent(controller, {
           type: 'video_url',
