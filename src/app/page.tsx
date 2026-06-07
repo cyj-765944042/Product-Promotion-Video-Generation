@@ -528,7 +528,7 @@ export default function ChatAgentPage() {
             <video
               src={videoSrc}
               controls
-              className="w-full rounded-lg mb-3"
+              className="w-full aspect-video rounded-lg mb-3 object-contain"
             />
             <Button className="w-full bg-gradient-to-r from-green-600 to-teal-600">
               <Download className="w-4 h-4 mr-2" />
@@ -557,7 +557,7 @@ export default function ChatAgentPage() {
                     {segment.localVideoPath ? '✅ 视频已下载' : segment.videoUrl ? '✅ 视频已生成' : '⏳ 视频生成中'}
                   </span>
                 </div>
-                <div className="w-full max-w-md mx-auto">
+                <div className="w-full">
                   <VideoPlayer
                     videoUrl={segment.videoUrl}
                     audioUrl={segment.audioUrl}
@@ -797,7 +797,7 @@ export default function ChatAgentPage() {
 
         {/* 对话区域 */}
         <Card className="bg-white/80 backdrop-blur mb-4">
-          <ScrollArea className="h-[400px] p-4">
+          <ScrollArea className="h-[600px] p-4">
             <div ref={scrollRef}>
               {messages.map((message, index) => (
                 <div key={index}>
