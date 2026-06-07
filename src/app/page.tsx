@@ -692,10 +692,14 @@ export default function ChatAgentPage() {
 
     return (
       <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
-        <div className={`flex items-start gap-2 max-w-[85%]`}>
+        <div className={`flex items-start gap-2 max-w-[85%] ${isUser ? 'flex-row-reverse' : ''}`}>
           {/* 头像 */}
-          <div className={`p-1 rounded-full ${isUser ? 'bg-blue-100 order-2' : 'bg-transparent order-1'}`}>
-            {isUser ? <User className="w-5 h-5 text-blue-600" /> : (
+          <div className={`p-1 rounded-full shrink-0`}>
+            {isUser ? (
+              <div className="bg-blue-100 rounded-full p-1.5">
+                <User className="w-4 h-4 text-blue-600" />
+              </div>
+            ) : (
               <img 
                 src="/assets/agent-avatar.png" 
                 alt="货小影" 
