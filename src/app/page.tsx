@@ -27,6 +27,7 @@ import {
   MessageCircle,
   Bot,
   User,
+  Maximize,
 } from 'lucide-react';
 
 // 客户端时间组件 - 避免 hydration 问题
@@ -165,9 +166,7 @@ function VideoPlayer({
           onEnded={handleEnded}
           onError={handleError}
           onCanPlay={handleCanPlay}
-          onClick={togglePlay}
           playsInline
-          controls
           preload="auto"
         />
       ) : (
@@ -212,16 +211,17 @@ function VideoPlayer({
       {/* 控制栏 */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
         <div className="flex items-center gap-2">
-          <button onClick={togglePlay} className="text-white p-1">
+          <button onClick={togglePlay} className="text-white p-1 hover:bg-white/20 rounded">
             {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
           </button>
-          <button onClick={toggleMute} className="text-white p-1">
+          <button onClick={toggleMute} className="text-white p-1 hover:bg-white/20 rounded">
             {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
           <input
             type="range"
             min={0}
-            max={duration}
+            max={duration || 100}
+            step={0.1}
             value={currentTime}
             onChange={(e) => {
               const time = parseFloat(e.target.value);
@@ -230,9 +230,24 @@ function VideoPlayer({
                 audioRef.current.currentTime = time;
               }
             }}
-            className="flex-1 h-1 accent-blue-500"
+            className="flex-1 h-1 accent-blue-500 cursor-pointer"
           />
-          <span className="text-white text-xs">{formatTime(currentTime)}/{formatTime(duration)}</span>
+          <span className="text-white text-xs min-w-[60px]">{formatTime(currentTime)}/{formatTime(duration)}</span>
+          <button 
+            onClick={() => {
+              if (videoRef.current) {
+                if (document.fullscreenElement) {
+                  document.exitFullscreen();
+                } else {
+                  videoRef.current.requestFullscreen();
+                }
+              }
+            }} 
+            className="text-white p-1 hover:bg-white/20 rounded"
+            title="全屏"
+          >
+            <Maximize className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </div>
