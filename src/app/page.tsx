@@ -777,10 +777,10 @@ export default function ChatAgentPage() {
       </div>
 
       {/* 输入区域 - 固定在底部 */}
-      <div className="sticky bottom-0 bg-gradient-to-t from-blue-50 to-transparent pt-4 pb-4">
+      <div className="sticky bottom-0 bg-gradient-to-t from-blue-50 to-transparent pt-2 pb-2">
         <div className="max-w-4xl mx-auto px-4">
-          <Card className="bg-white/95 backdrop-blur p-4 shadow-lg">
-            <div className="flex gap-2">
+          <Card className="bg-white/95 backdrop-blur p-3 shadow-lg">
+            <div className="flex gap-2 items-center">
               {/* 图片上传 */}
               <div className="relative inline-block">
                 <Button variant="outline" className="relative pointer-events-none">
@@ -825,8 +825,8 @@ export default function ChatAgentPage() {
             </div>
 
             {/* 快捷操作 */}
-            <div className="flex gap-2 mt-3">
-              <span className="text-xs text-gray-500">快捷操作:</span>
+            <div className="flex gap-2 mt-2 items-center">
+              <span className="text-xs text-gray-500">快捷:</span>
               <Button
                 variant="ghost"
                 size="sm"
