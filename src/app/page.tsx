@@ -168,9 +168,10 @@ export default function ChatAgentPage() {
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const target = e.target as HTMLDivElement;
     const { scrollTop, scrollHeight, clientHeight } = target;
-    // 如果距离底部超过100px，显示向下箭头
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
-    setShowScrollButton(!isNearBottom);
+    // 如果距离底部超过50px，显示向下箭头
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 50;
+    const hasScrollableContent = scrollHeight > clientHeight + 10;
+    setShowScrollButton(hasScrollableContent && !isNearBottom);
   }, []);
 
   // 滚动到底部
@@ -726,11 +727,11 @@ export default function ChatAgentPage() {
         )}
 
         {/* 对话区域 */}
-        <Card className="bg-white/80 backdrop-blur flex-1 min-h-0 relative">
+        <Card className="bg-white/80 backdrop-blur flex-1 min-h-0 relative overflow-hidden">
           <div 
             ref={scrollAreaRef}
             onScroll={handleScroll}
-            className="h-full overflow-y-auto p-4"
+            className="absolute inset-0 overflow-y-auto p-4"
           >
             <div ref={scrollRef}>
               {messages.map((message, index) => (
