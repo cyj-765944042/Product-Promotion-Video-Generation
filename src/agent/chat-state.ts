@@ -24,6 +24,7 @@ export interface ChatAgentState {
     audioUrl?: string;
     videoPath?: string;
     videoUrl?: string;
+    localVideoPath?: string;  // 本地视频路径
     duration: number;
   }>;
   
@@ -33,6 +34,7 @@ export interface ChatAgentState {
   // 最终视频
   finalVideoUrl?: string;
   finalVideoPath?: string;
+  localVideoPath?: string;  // 本地最终视频路径
   finalDuration?: number;
   subtitleUrl?: string;
   

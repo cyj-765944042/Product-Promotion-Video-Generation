@@ -66,9 +66,11 @@ interface SessionState {
     duration?: number;
     audioLocalPath?: string;
     videoLocalPath?: string;
+    localVideoPath?: string;  // 本地视频路径（用于播放）
   }>;
   finalVideoUrl?: string;
   finalVideoLocalPath?: string;
+  localVideoPath?: string;  // 本地最终视频路径（用于播放）
   finalDuration?: number;
   subtitleUrl?: string;
   currentStage?: 'idle' | 'identifying' | 'product_identified' | 'script_generated' | 'video_generated' | 'composing' | 'done';
@@ -79,10 +81,12 @@ function VideoPlayer({
   videoUrl,
   audioUrl,
   script,
+  localVideoPath, // 本地视频路径（优先使用）
 }: {
   videoUrl?: string;
   audioUrl?: string;
   script: string;
+  localVideoPath?: string; // 本地视频路径
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -93,7 +97,8 @@ function VideoPlayer({
   const [videoError, setVideoError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const accessibleVideoUrl = videoUrl ? getAccessibleUrl(videoUrl) : '';
+  // 优先使用本地视频路径，否则使用远程 URL
+  const effectiveVideoUrl = localVideoPath || (videoUrl ? getAccessibleUrl(videoUrl) : '');
   const accessibleAudioUrl = audioUrl ? getAccessibleUrl(audioUrl) : '';
 
   const togglePlay = useCallback(() => {
@@ -150,10 +155,10 @@ function VideoPlayer({
 
   return (
     <div className="relative bg-black rounded-lg overflow-hidden">
-      {accessibleVideoUrl ? (
+      {effectiveVideoUrl ? (
         <video
           ref={videoRef}
-          src={accessibleVideoUrl}
+          src={effectiveVideoUrl}
           className="w-full aspect-video object-contain"
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
@@ -171,7 +176,7 @@ function VideoPlayer({
       )}
       
       {/* 加载状态 */}
-      {isLoading && accessibleVideoUrl && (
+      {isLoading && effectiveVideoUrl && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
           <div className="text-white text-sm">加载视频中...</div>
         </div>
@@ -183,7 +188,7 @@ function VideoPlayer({
           <div className="text-center">
             <p className="text-red-400 text-sm mb-2">{videoError}</p>
             <a 
-              href={accessibleVideoUrl} 
+              href={effectiveVideoUrl} 
               target="_blank" 
               rel="noopener noreferrer"
               className="text-blue-400 text-xs underline hover:text-blue-300"
@@ -513,13 +518,14 @@ export default function ChatAgentPage() {
     const msgState = message.state || {};
 
     // 如果有最终视频，显示下载按钮
-    if (msgState.finalVideoUrl) {
+    if (msgState.finalVideoUrl || msgState.localVideoPath) {
+      const videoSrc = msgState.localVideoPath || getAccessibleUrl(msgState.finalVideoUrl || '');
       return (
         <div className="space-y-3">
           <p className="text-sm">{message.content}</p>
           <Card className="p-3">
             <video
-              src={getAccessibleUrl(msgState.finalVideoUrl)}
+              src={videoSrc}
               controls
               className="w-full rounded-lg mb-3"
             />
@@ -547,7 +553,7 @@ export default function ChatAgentPage() {
                 <div className="flex items-center justify-between mb-2">
                   <Badge variant="outline" className="text-sm">片段 {segment.id}</Badge>
                   <span className="text-xs text-muted-foreground">
-                    {segment.videoUrl ? '✅ 视频已生成' : '⏳ 视频生成中'}
+                    {segment.localVideoPath ? '✅ 视频已下载' : segment.videoUrl ? '✅ 视频已生成' : '⏳ 视频生成中'}
                   </span>
                 </div>
                 <div className="w-full max-w-md mx-auto">
@@ -555,6 +561,7 @@ export default function ChatAgentPage() {
                     videoUrl={segment.videoUrl}
                     audioUrl={segment.audioUrl}
                     script={segment.script}
+                    localVideoPath={segment.localVideoPath}
                   />
                 </div>
                 {/* 单片段重生成按钮 */}

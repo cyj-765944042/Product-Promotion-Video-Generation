@@ -4,6 +4,8 @@
  */
 
 import axios from 'axios';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const getBaseUrl = () => {
   const domain = process.env.COZE_PROJECT_DOMAIN_DEFAULT;
@@ -19,6 +21,55 @@ const getBaseUrl = () => {
 };
 const BASE_URL = getBaseUrl();
 
+// 本地视频存储目录
+const getVideoStorageDir = (subDir: string) => {
+  const env = process.env.COZE_PROJECT_ENV;
+  const baseDir = env === 'PROD' ? '/tmp' : (process.env.COZE_WORKSPACE_PATH || '/workspace/projects');
+  const videoDir = path.join(baseDir, 'public', 'videos', subDir);
+  
+  // 确保目录存在
+  if (!fs.existsSync(videoDir)) {
+    fs.mkdirSync(videoDir, { recursive: true });
+  }
+  return videoDir;
+};
+
+// 下载视频到本地
+async function downloadVideoToLocal(
+  videoUrl: string, 
+  subDir: string, 
+  filename: string,
+  retries: number = 3
+): Promise<string | null> {
+  const videoDir = getVideoStorageDir(subDir);
+  const localPath = path.join(videoDir, filename);
+  
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`[Tool] 下载视频到本地 (尝试 ${attempt}/${retries}): ${videoUrl}`);
+      
+      const response = await axios.get(videoUrl, {
+        responseType: 'arraybuffer',
+        timeout: 60000 // 60秒超时
+      });
+      
+      fs.writeFileSync(localPath, Buffer.from(response.data));
+      console.log(`[Tool] 视频已保存到本地: ${localPath}`);
+      
+      // 返回可通过 web 访问的路径
+      return `/videos/${subDir}/${filename}`;
+    } catch (error) {
+      console.error(`[Tool] 下载视频失败 (尝试 ${attempt}):`, error instanceof Error ? error.message : error);
+      if (attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+      }
+    }
+  }
+  
+  console.error(`[Tool] 下载视频最终失败: ${videoUrl}`);
+  return null;
+}
+
 // 工具结果类型
 export interface ToolResult {
   success: boolean;
@@ -32,17 +83,22 @@ export interface SessionState {
   productImageUrl?: string;
   productName?: string;
   features?: string[];
-  scripts?: Array<{ id: number; script: string }>;
+  scripts?: Array<{ id: number; script: string; prompt?: string }>;
   segments?: Array<{ 
     id: number; 
     script: string; 
+    prompt?: string;
     videoPath?: string; 
     audioPath?: string;
     videoUrl?: string;
     audioUrl?: string;
+    localVideoPath?: string; // 本地视频路径（用于播放）
   }>;
   finalVideoUrl?: string;
+  localVideoPath?: string; // 本地最终视频路径
   finalVideoLocalPath?: string;
+  sessionId?: string; // 会话ID（用于视频文件夹命名）
+  currentStage?: string;
 }
 
 /**
@@ -306,19 +362,38 @@ export async function generateVideoSegments(
       videoPath?: string; 
       audioPath?: string;
       videoUrl?: string;
+      localVideoPath?: string; // 本地视频路径（用于播放）
     }> = [];
+    
+    // 生成会话ID用于文件夹命名
+    const sessionId = Date.now().toString();
     
     for (const line of lines) {
       if (line.startsWith('data: ')) {
         try {
           const data = JSON.parse(line.slice(6));
           if (data.type === 'segment_complete' || data.type === 'segment') {
+            const segmentId = data.segmentIndex || data.id || segments.length + 1;
+            const videoUrl = data.videoUrl || data.videoPath;
+            
+            // 下载视频到本地
+            let localVideoPath: string | undefined;
+            if (videoUrl) {
+              const localPath = await downloadVideoToLocal(
+                videoUrl,
+                `segments/${sessionId}`,
+                `segment_${segmentId}.mp4`
+              );
+              localVideoPath = localPath || undefined;
+            }
+            
             segments.push({
-              id: data.segmentIndex || data.id || segments.length + 1,
+              id: segmentId,
               script: data.script || scripts[segments.length]?.script || '',
               videoPath: data.videoPath,
               audioPath: data.audioPath,
-              videoUrl: data.videoUrl
+              videoUrl: videoUrl,
+              localVideoPath: localVideoPath
             });
           }
         } catch {
@@ -333,15 +408,17 @@ export async function generateVideoSegments(
         id: s.id,
         script: s.script,
         videoPath: undefined,
-        audioPath: undefined
+        audioPath: undefined,
+        localVideoPath: undefined
       }));
     }
     
     return {
       success: true,
-      message: `视频片段生成完成，共 ${segments.length} 个`,
+      message: `视频片段生成完成，共 ${segments.length} 个（已下载到本地）`,
       data: { 
         segments,
+        sessionId,
         currentStage: "video_generated"
       }
     };
@@ -368,9 +445,9 @@ export async function generateVideoSegments(
  * 调用 /api/video-task/compose
  */
 export async function composeFinalVideo(
-  segments: Array<{ id: number; script: string; videoPath?: string; audioPath?: string }>,
+  segments: Array<{ id: number; script: string; videoPath?: string; audioPath?: string; localVideoPath?: string }>,
   productName: string,
-  options?: { bgmUrl?: string; embedSubtitle?: boolean },
+  options?: { bgmUrl?: string; embedSubtitle?: boolean; sessionId?: string },
   customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
   console.log('[Tool] 调用 /api/video-task/compose');
@@ -391,16 +468,33 @@ export async function composeFinalVideo(
         headers: { 
           ...customHeaders,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 120000 // 2分钟超时
       }
     );
     
     const result = response.data;
+    const finalVideoUrl = result.finalVideoUrl;
+    
+    // 下载最终视频到本地
+    let localVideoPath: string | undefined;
+    if (finalVideoUrl) {
+      const sessionId = options?.sessionId || Date.now().toString();
+      const filename = `${productName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}_final.mp4`;
+      const downloadedPath = await downloadVideoToLocal(
+        finalVideoUrl,
+        `final/${sessionId}`,
+        filename
+      );
+      localVideoPath = downloadedPath || undefined;
+    }
+    
     return {
       success: true,
-      message: '最终视频合成完成',
+      message: '最终视频合成完成（已下载到本地）',
       data: {
-        finalVideoUrl: result.finalVideoUrl,
+        finalVideoUrl: finalVideoUrl,
+        localVideoPath: localVideoPath,
         finalVideoLocalPath: result.finalVideoLocalPath,
         finalSubtitles: result.finalSubtitles,
         subtitleUrl: result.finalSubtitles,
