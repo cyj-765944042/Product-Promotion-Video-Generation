@@ -90,6 +90,8 @@ function VideoPlayer({
   const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const accessibleVideoUrl = videoUrl ? getAccessibleUrl(videoUrl) : '';
   const accessibleAudioUrl = audioUrl ? getAccessibleUrl(audioUrl) : '';
@@ -100,8 +102,8 @@ function VideoPlayer({
       videoRef.current.pause();
       audioRef.current.pause();
     } else {
-      videoRef.current.play();
-      audioRef.current.play();
+      videoRef.current.play().catch(() => setVideoError('视频播放失败'));
+      audioRef.current.play().catch(() => {});
     }
     setIsPlaying(!isPlaying);
   }, [isPlaying]);
@@ -122,11 +124,22 @@ function VideoPlayer({
   const handleLoadedMetadata = useCallback(() => {
     if (videoRef.current) {
       setDuration(videoRef.current.duration);
+      setIsLoading(false);
     }
   }, []);
 
   const handleEnded = useCallback(() => {
     setIsPlaying(false);
+  }, []);
+
+  const handleError = useCallback(() => {
+    setVideoError('视频加载失败，可能由于网络或权限限制');
+    setIsLoading(false);
+  }, []);
+
+  const handleCanPlay = useCallback(() => {
+    setIsLoading(false);
+    setVideoError(null);
   }, []);
 
   const formatTime = (time: number) => {
@@ -145,14 +158,42 @@ function VideoPlayer({
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
           onEnded={handleEnded}
+          onError={handleError}
+          onCanPlay={handleCanPlay}
           onClick={togglePlay}
           playsInline
+          preload="metadata"
         />
       ) : (
         <div className="w-full aspect-video bg-gray-800 flex items-center justify-center">
           <p className="text-gray-400 text-sm">视频生成中...</p>
         </div>
       )}
+      
+      {/* 加载状态 */}
+      {isLoading && accessibleVideoUrl && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+          <div className="text-white text-sm">加载视频中...</div>
+        </div>
+      )}
+      
+      {/* 错误状态 */}
+      {videoError && (
+        <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-red-400 text-sm mb-2">{videoError}</p>
+            <a 
+              href={accessibleVideoUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-400 text-xs underline hover:text-blue-300"
+            >
+              点击在新窗口打开视频
+            </a>
+          </div>
+        </div>
+      )}
+      
       {accessibleAudioUrl && <audio ref={audioRef} src={accessibleAudioUrl} />}
 
       {/* 字幕 */}
@@ -500,15 +541,22 @@ export default function ChatAgentPage() {
             <span>🎬 已生成 {msgState.segments.length} 个视频片段</span>
           </div>
           <p className="text-sm">{message.content}</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-4">
             {msgState.segments.map((segment, index) => (
-              <Card key={`segment-${segment.id}-${index}`} className="p-2">
-                <Badge variant="outline" className="mb-2">片段 {segment.id}</Badge>
-                <VideoPlayer
-                  videoUrl={segment.videoUrl}
-                  audioUrl={segment.audioUrl}
-                  script={segment.script}
-                />
+              <Card key={`segment-${segment.id}-${index}`} className="p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <Badge variant="outline" className="text-sm">片段 {segment.id}</Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {segment.videoUrl ? '✅ 视频已生成' : '⏳ 视频生成中'}
+                  </span>
+                </div>
+                <div className="w-full max-w-md mx-auto">
+                  <VideoPlayer
+                    videoUrl={segment.videoUrl}
+                    audioUrl={segment.audioUrl}
+                    script={segment.script}
+                  />
+                </div>
                 {/* 单片段重生成按钮 */}
                 <Button
                   size="sm"
