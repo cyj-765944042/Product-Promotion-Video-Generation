@@ -167,7 +167,8 @@ function VideoPlayer({
           onCanPlay={handleCanPlay}
           onClick={togglePlay}
           playsInline
-          preload="metadata"
+          controls
+          preload="auto"
         />
       ) : (
         <div className="w-full aspect-video bg-gray-800 flex items-center justify-center">

@@ -469,6 +469,15 @@ export async function generateVideoSegments(
       }
     }
     
+    // 按ID排序片段
+    segments.sort((a, b) => a.id - b.id);
+    
+    // 输出调试日志
+    console.log(`[Tool] 视频片段解析完成，共 ${segments.length} 个片段`);
+    segments.forEach((s, i) => {
+      console.log(`[Tool] 片段 ${i + 1}: id=${s.id}, videoUrl=${s.videoUrl?.substring(0, 80)}..., localPath=${s.localVideoPath}`);
+    });
+    
     // 如果没有解析到，返回脚本信息（稍后可重试）
     if (segments.length === 0) {
       segments = scripts.map(s => ({
