@@ -680,6 +680,29 @@ export async function POST(request: NextRequest) {
               mergedVideoUrls.push(mergedVideoUrl);
               console.log(`视频 ${i + 1} FFmpeg音视频合并成功，视频${actualVideoDuration}秒，音频${info.audioDuration}秒`);
               
+              // 验证合并后的视频是否有音频轨道
+              try {
+                const probeResult = spawn('ffprobe', [
+                  '-v', 'quiet',
+                  '-show_streams',
+                  '-select_streams', 'a',
+                  mergedFilePath
+                ]);
+                let audioProbeOutput = '';
+                probeResult.stdout.on('data', (data: Buffer) => {
+                  audioProbeOutput += data.toString();
+                });
+                probeResult.on('close', (probeCode: number) => {
+                  const hasAudio = audioProbeOutput.includes('codec_type=audio');
+                  console.log(`[验证] 合并后视频 ${i + 1} 是否有音频轨道: ${hasAudio ? 'YES' : 'NO'}`);
+                  if (!hasAudio) {
+                    console.error(`[警告] 视频片段 ${i + 1} 缺少音频轨道!`);
+                  }
+                });
+              } catch (probeError) {
+                console.error(`[验证] FFprobe检查音频轨道失败:`, probeError);
+              }
+              
               // Clean up temp files
               fs.unlinkSync(localVideoPath);
               fs.unlinkSync(mergedFilePath);
