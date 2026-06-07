@@ -189,9 +189,25 @@ async function executeTool(
       );
     
     case "composeFinalVideo":
+      // 如果LLM没有传入segments参数，从state中获取
+      const segmentsForCompose = (input.segments && Array.isArray(input.segments) && input.segments.length > 0)
+        ? input.segments
+        : state.segments || [];
+      
+      if (segmentsForCompose.length === 0) {
+        console.error('[Agent] composeFinalVideo: segments为空，无法合成视频');
+        return {
+          success: false,
+          message: "无法合成视频：缺少视频片段数据。请先生成视频片段。",
+          error: "segments_empty"
+        };
+      }
+      
+      console.log(`[Agent] composeFinalVideo: 使用 ${segmentsForCompose.length} 个片段进行合成`);
+      
       return await composeFinalVideo(
-        input.segments as Array<{ id: number; script: string; prompt: string; videoPath?: string; audioPath?: string }>,
-        input.productName as string,
+        segmentsForCompose as Array<{ id: number; script: string; prompt: string; videoPath?: string; audioPath?: string; videoUrl?: string; audioUrl?: string }>,
+        input.productName as string || state.productName || "商品",
         { bgmUrl: input.bgmUrl as string | undefined, embedSubtitle: input.embedSubtitle as boolean | undefined },
         customHeaders
       );
