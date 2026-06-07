@@ -889,6 +889,7 @@ export async function POST(request: NextRequest) {
         };
 
         let finalVideoUrl = concatenatedVideoUrl;
+        let urlAccessible = false;
         
         // 等待拼接后的视频URL可访问
         console.log('等待视频URL可访问...');
@@ -897,6 +898,7 @@ export async function POST(request: NextRequest) {
             const urlCheck = await fetch(concatenatedVideoUrl, { method: 'HEAD' });
             if (urlCheck.ok) {
               console.log(`视频URL已可访问 (第${waitAttempt}次检查)`);
+              urlAccessible = true;
               break;
             }
             console.log(`视频URL暂不可访问 (${urlCheck.status})，等待${waitAttempt * 2}秒后重试...`);
@@ -908,20 +910,26 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        try {
-          const subtitleResponse = await videoEditClient.addSubtitles(
-            concatenatedVideoUrl,
-            subtitleConfig,
-            { textList }
-          );
+        // 只有URL可访问时才尝试添加字幕
+        if (urlAccessible) {
+          try {
+            console.log('尝试添加字幕...');
+            const subtitleResponse = await videoEditClient.addSubtitles(
+              concatenatedVideoUrl,
+              subtitleConfig,
+              { textList }
+            );
 
-          if (subtitleResponse.url) {
-            finalVideoUrl = subtitleResponse.url;
-            console.log('字幕添加成功');
+            if (subtitleResponse.url) {
+              finalVideoUrl = subtitleResponse.url;
+              console.log('字幕添加成功');
+            }
+          } catch (subtitleError) {
+            console.error('字幕添加失败:', subtitleError);
+            // 继续使用无字幕的视频URL
           }
-        } catch (subtitleError) {
-          console.error('字幕添加失败:', subtitleError);
-          // 继续使用无字幕的视频URL
+        } else {
+          console.log('视频URL不可访问，跳过字幕添加，使用无字幕视频');
         }
 
         sendEvent(controller, {
