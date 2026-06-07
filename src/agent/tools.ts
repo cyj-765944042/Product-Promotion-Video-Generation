@@ -160,19 +160,38 @@ export async function generateScripts(
         try {
           const data = JSON.parse(line.slice(6));
           if (data.type === 'script_segment' && data.content) {
+            // 先添加脚本，prompt后续通过prompt_segment更新
             scripts.push({
-              id: data.segmentIndex || scripts.length + 1,
+              id: data.content.id || data.segmentIndex + 1,
               script: data.content.script || data.content,
-              prompt: data.content.prompt || `${productName}产品展示，专业拍摄，吸引眼球`
+              prompt: '' // 先留空，等待prompt_segment更新
             });
-          } else if (data.type === 'complete' && data.segments) {
-            // 从 complete 事件获取完整数据
-            for (const seg of data.segments) {
+          } else if (data.type === 'prompt_segment' && data.content) {
+            // 更新对应segment的prompt
+            const segmentId = data.content.id;
+            const existingScript = scripts.find(s => s.id === segmentId);
+            if (existingScript) {
+              existingScript.prompt = data.content.prompt;
+            } else {
+              // 如果还没添加script，先添加完整数据
               scripts.push({
-                id: seg.id || scripts.length + 1,
-                script: seg.script || '',
-                prompt: seg.prompt || `${productName}产品展示，专业拍摄`
+                id: segmentId,
+                script: data.content.script,
+                prompt: data.content.prompt
               });
+            }
+          } else if (data.type === 'done') {
+            // 从 done 事件获取完整数据
+            const doneData = JSON.parse(data.content);
+            if (doneData.segments && doneData.segments.length > 0) {
+              scripts.length = 0; // 清空之前的数据
+              for (const seg of doneData.segments) {
+                scripts.push({
+                  id: seg.id || scripts.length + 1,
+                  script: seg.script || '',
+                  prompt: seg.prompt || `${productName}产品展示，专业拍摄`
+                });
+              }
             }
           }
         } catch {
