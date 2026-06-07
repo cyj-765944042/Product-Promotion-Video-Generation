@@ -28,6 +28,7 @@ import {
   Bot,
   User,
   Maximize,
+  ChevronDown,
 } from 'lucide-react';
 
 // 客户端时间组件 - 避免 hydration 问题
@@ -271,14 +272,30 @@ export default function ChatAgentPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
 
-  // 自动滚动
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  // 检测滚动位置
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement;
+    const { scrollTop, scrollHeight, clientHeight } = target;
+    // 如果距离底部超过100px，显示向下箭头
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+    setShowScrollButton(!isNearBottom);
+  }, []);
+
+  // 滚动到底部
+  const scrollToBottom = useCallback(() => {
+    if (scrollAreaRef.current) {
+      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, []);
+
+  // 自动滚动（新消息时）
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
 
   // 发送消息
   const sendMessage = async (content: string, imageUrl?: string) => {
@@ -776,10 +793,10 @@ export default function ChatAgentPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <div className="max-w-4xl mx-auto p-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex flex-col">
+      <div className="max-w-4xl mx-auto p-4 pt-6 pb-2 flex-1 flex flex-col">
         {/* 标题 */}
-        <div className="text-center mb-6">
+        <div className="text-center mb-4">
           <div className="flex items-center justify-center gap-2 mb-2">
             <MessageCircle className="w-6 h-6 text-purple-600" />
             <h1 className="text-2xl font-bold text-gray-800">货小影 - 带货视频助手</h1>
@@ -789,7 +806,7 @@ export default function ChatAgentPage() {
 
         {/* 商品信息卡片 */}
         {sessionState.productName && (
-          <Card className="mb-4 p-3 bg-white/80 backdrop-blur">
+          <Card className="mb-3 p-3 bg-white/80 backdrop-blur">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {sessionState.productImageUrl && (
@@ -821,8 +838,12 @@ export default function ChatAgentPage() {
         )}
 
         {/* 对话区域 */}
-        <Card className="bg-white/80 backdrop-blur mb-4">
-          <ScrollArea className="h-[600px] p-4">
+        <Card className="bg-white/80 backdrop-blur flex-1 min-h-0 relative">
+          <div 
+            ref={scrollAreaRef}
+            onScroll={handleScroll}
+            className="h-full overflow-y-auto p-4"
+          >
             <div ref={scrollRef}>
               {messages.map((message, index) => (
                 <div key={index}>
@@ -835,7 +856,11 @@ export default function ChatAgentPage() {
                 <div className="flex justify-start mb-4">
                   <div className="flex items-start gap-2">
                     <div className="p-2 rounded-full bg-purple-100">
-                      <Bot className="w-4 h-4 text-purple-600" />
+                      <img 
+                        src="/assets/agent-avatar.png" 
+                        alt="货小影" 
+                        className="w-4 h-4 rounded-full object-cover"
+                      />
                     </div>
                     <div className="rounded-lg p-3 bg-gray-100">
                       <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
@@ -845,90 +870,108 @@ export default function ChatAgentPage() {
                 </div>
               )}
             </div>
-          </ScrollArea>
-        </Card>
+          </div>
 
-        {/* 输入区域 */}
-        <Card className="bg-white/80 backdrop-blur p-4">
-          <div className="flex gap-2">
-            {/* 图片上传 */}
-            <div className="relative inline-block">
-              <Button variant="outline" className="relative pointer-events-none">
-                <ImageIcon className="w-4 h-4 mr-1" />
-                上传图片
-              </Button>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+          {/* 向下滚动按钮 */}
+          {showScrollButton && (
+            <button
+              onClick={scrollToBottom}
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 
+                bg-purple-600 hover:bg-purple-700 text-white 
+                rounded-full p-2 shadow-lg transition-all
+                flex items-center justify-center"
+              title="滚动到底部"
+            >
+              <ChevronDown className="w-5 h-5" />
+            </button>
+          )}
+        </Card>
+      </div>
+
+      {/* 输入区域 - 固定在底部 */}
+      <div className="sticky bottom-0 bg-gradient-to-t from-blue-50 to-transparent pt-4 pb-4">
+        <div className="max-w-4xl mx-auto px-4">
+          <Card className="bg-white/95 backdrop-blur p-4 shadow-lg">
+            <div className="flex gap-2">
+              {/* 图片上传 */}
+              <div className="relative inline-block">
+                <Button variant="outline" className="relative pointer-events-none">
+                  <ImageIcon className="w-4 h-4 mr-1" />
+                  上传图片
+                </Button>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                />
+              </div>
+
+              {/* 文本输入 */}
+              <Input
+                ref={inputRef}
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+                placeholder="输入您的需求..."
+                className="flex-1"
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    sendMessage(inputValue);
+                  }
+                }}
               />
+
+              {/* 发送按钮 */}
+              <Button
+                onClick={() => sendMessage(inputValue)}
+                disabled={isLoading || !inputValue.trim()}
+                className="bg-gradient-to-r from-blue-600 to-purple-600"
+              >
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+              </Button>
             </div>
 
-            {/* 文本输入 */}
-            <Input
-              ref={inputRef}
-              value={inputValue}
-              onChange={e => setInputValue(e.target.value)}
-              placeholder="输入您的需求..."
-              className="flex-1"
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  sendMessage(inputValue);
-                }
-              }}
-            />
-
-            {/* 发送按钮 */}
-            <Button
-              onClick={() => sendMessage(inputValue)}
-              disabled={isLoading || !inputValue.trim()}
-              className="bg-gradient-to-r from-blue-600 to-purple-600"
-            >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4" />
-              )}
-            </Button>
-          </div>
-
-          {/* 快捷操作 */}
-          <div className="flex gap-2 mt-3">
-            <span className="text-xs text-gray-500">快捷操作:</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs h-7"
-              onClick={() => sendMessage('请生成带货文案')}
-              disabled={!sessionState.productName}
-            >
-              <FileText className="w-3 h-3 mr-1" />
-              生成文案
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs h-7"
-              onClick={() => sendMessage('请生成视频片段')}
-              disabled={!sessionState.scripts?.length}
-            >
-              <Video className="w-3 h-3 mr-1" />
-              生成视频
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs h-7"
-              onClick={() => sendMessage('请合成最终视频')}
-              disabled={!sessionState.segments?.length}
-            >
-              <Sparkles className="w-3 h-3 mr-1" />
-              合成视频
-            </Button>
-          </div>
-        </Card>
+            {/* 快捷操作 */}
+            <div className="flex gap-2 mt-3">
+              <span className="text-xs text-gray-500">快捷操作:</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-7"
+                onClick={() => sendMessage('请生成带货文案')}
+                disabled={!sessionState.productName}
+              >
+                <FileText className="w-3 h-3 mr-1" />
+                生成文案
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-7"
+                onClick={() => sendMessage('请生成视频片段')}
+                disabled={!sessionState.scripts?.length}
+              >
+                <Video className="w-3 h-3 mr-1" />
+                生成视频
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-7"
+                onClick={() => sendMessage('请合成最终视频')}
+                disabled={!sessionState.segments?.length}
+              >
+                <Sparkles className="w-3 h-3 mr-1" />
+                合成视频
+              </Button>
+            </div>
+          </Card>
+        </div>
       </div>
     </div>
   );
