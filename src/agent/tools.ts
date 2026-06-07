@@ -6,6 +6,7 @@
 import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
+import { uploadFromRemoteUrl } from '../lib/storage';
 
 const getBaseUrl = () => {
   const domain = process.env.COZE_PROJECT_DOMAIN_DEFAULT;
@@ -34,40 +35,71 @@ const getVideoStorageDir = (subDir: string) => {
   return videoDir;
 };
 
-// 下载视频到本地
+// 下载视频到本地（优先转存到对象存储）
 async function downloadVideoToLocal(
   videoUrl: string, 
   subDir: string, 
   filename: string,
   retries: number = 3
-): Promise<string | null> {
-  const videoDir = getVideoStorageDir(subDir);
-  const localPath = path.join(videoDir, filename);
+): Promise<{ localPath: string | null; signedUrl: string | null }> {
+  let signedUrl: string | null = null;
+  let localPath: string | null = null;
   
+  // 优先尝试转存到对象存储（生成可访问的签名 URL）
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      console.log(`[Tool] 下载视频到本地 (尝试 ${attempt}/${retries}): ${videoUrl}`);
+      console.log(`[Tool] 尝试转存视频到对象存储 (尝试 ${attempt}/${retries}): ${videoUrl}`);
       
-      const response = await axios.get(videoUrl, {
-        responseType: 'arraybuffer',
-        timeout: 60000 // 60秒超时
-      });
+      const result = await uploadFromRemoteUrl(
+        videoUrl,
+        `${subDir}/${filename}`,
+        'video/mp4',
+        60000 // 60秒超时
+      );
       
-      fs.writeFileSync(localPath, Buffer.from(response.data));
-      console.log(`[Tool] 视频已保存到本地: ${localPath}`);
-      
-      // 返回可通过 web 访问的路径
-      return `/videos/${subDir}/${filename}`;
+      signedUrl = result.signedUrl;
+      console.log(`[Tool] 视频已转存到对象存储，签名URL: ${signedUrl}`);
+      break;
     } catch (error) {
-      console.error(`[Tool] 下载视频失败 (尝试 ${attempt}):`, error instanceof Error ? error.message : error);
+      console.error(`[Tool] 转存视频到对象存储失败 (尝试 ${attempt}):`, error instanceof Error ? error.message : error);
       if (attempt < retries) {
         await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
       }
     }
   }
   
-  console.error(`[Tool] 下载视频最终失败: ${videoUrl}`);
-  return null;
+  // 备用方案：下载到本地存储
+  if (!signedUrl) {
+    const videoDir = getVideoStorageDir(subDir);
+    const filePath = path.join(videoDir, filename);
+    
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        console.log(`[Tool] 下载视频到本地存储 (尝试 ${attempt}/${retries}): ${videoUrl}`);
+        
+        const response = await axios.get(videoUrl, {
+          responseType: 'arraybuffer',
+          timeout: 60000 // 60秒超时
+        });
+        
+        fs.writeFileSync(filePath, Buffer.from(response.data));
+        localPath = `/videos/${subDir}/${filename}`;
+        console.log(`[Tool] 视频已保存到本地: ${localPath}`);
+        break;
+      } catch (error) {
+        console.error(`[Tool] 下载视频到本地失败 (尝试 ${attempt}):`, error instanceof Error ? error.message : error);
+        if (attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+        }
+      }
+    }
+  }
+  
+  if (!signedUrl && !localPath) {
+    console.error(`[Tool] 下载视频最终失败: ${videoUrl}`);
+  }
+  
+  return { localPath, signedUrl };
 }
 
 // 工具结果类型
@@ -376,15 +408,17 @@ export async function generateVideoSegments(
             const segmentId = data.segmentIndex || data.id || segments.length + 1;
             const videoUrl = data.videoUrl || data.videoPath;
             
-            // 下载视频到本地
+            // 下载视频到本地（优先转存到对象存储）
             let localVideoPath: string | undefined;
+            let signedVideoUrl: string | undefined;
             if (videoUrl) {
-              const localPath = await downloadVideoToLocal(
+              const result = await downloadVideoToLocal(
                 videoUrl,
                 `segments/${sessionId}`,
                 `segment_${segmentId}.mp4`
               );
-              localVideoPath = localPath || undefined;
+              localVideoPath = result.localPath || undefined;
+              signedVideoUrl = result.signedUrl || undefined;
             }
             
             segments.push({
@@ -392,7 +426,7 @@ export async function generateVideoSegments(
               script: data.script || scripts[segments.length]?.script || '',
               videoPath: data.videoPath,
               audioPath: data.audioPath,
-              videoUrl: videoUrl,
+              videoUrl: signedVideoUrl || videoUrl, // 优先使用签名URL
               localVideoPath: localVideoPath
             });
           }
@@ -476,24 +510,26 @@ export async function composeFinalVideo(
     const result = response.data;
     const finalVideoUrl = result.finalVideoUrl;
     
-    // 下载最终视频到本地
+    // 下载最终视频到本地（优先转存到对象存储）
     let localVideoPath: string | undefined;
+    let signedVideoUrl: string | undefined;
     if (finalVideoUrl) {
       const sessionId = options?.sessionId || Date.now().toString();
       const filename = `${productName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}_final.mp4`;
-      const downloadedPath = await downloadVideoToLocal(
+      const downloadResult = await downloadVideoToLocal(
         finalVideoUrl,
         `final/${sessionId}`,
         filename
       );
-      localVideoPath = downloadedPath || undefined;
+      localVideoPath = downloadResult.localPath || undefined;
+      signedVideoUrl = downloadResult.signedUrl || undefined;
     }
     
     return {
       success: true,
-      message: '最终视频合成完成（已下载到本地）',
+      message: '最终视频合成完成（已转存到对象存储）',
       data: {
-        finalVideoUrl: finalVideoUrl,
+        finalVideoUrl: signedVideoUrl || finalVideoUrl, // 优先使用签名URL
         localVideoPath: localVideoPath,
         finalVideoLocalPath: result.finalVideoLocalPath,
         finalSubtitles: result.finalSubtitles,
