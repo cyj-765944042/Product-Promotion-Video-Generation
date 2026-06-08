@@ -628,42 +628,8 @@ export async function POST(request: NextRequest) {
           };
         });
         
-        // Use a counter to track completed videos (atomic increment)
-        let completedCount = 0;
-        
-        // Wait for all video generations to complete (不在此处发送事件，等合并后再发送)
-        const videoResults = await Promise.all(
-          videoGenerationPromises.map(async (promise) => {
-            const result = await promise;
-            // Increment completed count atomically
-            completedCount++;
-            // 不发送segment_video事件，等音视频合并后再发送
-            return result;
-          })
-        );
-        
-        // Sort by index to maintain order
-        videoResults.sort((a, b) => a.index - b.index);
-        
-        for (const result of videoResults) {
-          segmentVideoInfos.push({
-            videoUrl: result.videoUrl,
-            audioUrl: result.audioUrl,
-            audioDuration: result.audioDuration,
-            videoDuration: result.audioDuration,
-            script: result.script,
-          });
-          
-          // 记录中间文件
-          intermediateFiles.segmentVideos.push({
-            segmentId: result.segmentId,
-            url: result.videoUrl,
-            duration: result.audioDuration,
-          });
-        }
-
         // ==========================================
-        // Step 3: Merge audio and video for each segment
+        // Step 3: Merge audio and video for each segment (in parallel, send in order)
         // ==========================================
         
         // 发送音视频合并进度事件
@@ -676,202 +642,160 @@ export async function POST(request: NextRequest) {
           isGenerating: true,
         });
         
+        // 存储已完成的片段（用于按顺序发送）
+        const completedSegments: Map<number, { 
+          mergedVideoUrl: string;
+          duration: number;
+          script: string;
+          audioUrl: string;
+        }> = new Map();
+        
+        // 记录已发送的片段ID
+        let lastSentSegmentId = 0;
+        
+        // 按顺序发送片段视频事件
+        const sendSegmentsInOrder = async () => {
+          while (completedSegments.has(lastSentSegmentId + 1)) {
+            const nextId = lastSentSegmentId + 1;
+            const segmentData = completedSegments.get(nextId);
+            if (segmentData) {
+              console.log(`发送第 ${nextId} 段视频事件（已完成合并）`);
+              
+              // 发送segment_status事件
+              sendEvent(controller, {
+                type: 'segment_status',
+                content: `第 ${nextId} 段视频已完成`,
+                segmentId: nextId,
+                status: 'completed',
+              });
+              
+              // 发送segment_video事件
+              sendEvent(controller, {
+                type: 'segment_video',
+                content: {
+                  segmentId: nextId,
+                  videoUrl: segmentData.mergedVideoUrl,
+                  audioUrl: segmentData.audioUrl,
+                  script: segmentData.script,
+                  duration: segmentData.duration,
+                },
+                segmentId: nextId,
+              });
+              
+              lastSentSegmentId = nextId;
+            }
+          }
+        };
+        
         const mergedVideoUrls: string[] = [];
         const mergedDurations: number[] = []; // Store actual durations after merge
         
-        for (let i = 0; i < segmentVideoInfos.length; i++) {
-          const info = segmentVideoInfos[i];
-          const segmentId = segments[i].id;
-          
-          if (info.audioUrl) {
+        // Wait for all video generations to complete, then merge in parallel
+        const videoResults = await Promise.all(
+          videoGenerationPromises.map(async (promise) => {
+            const result = await promise;
+            
+            // 视频生成完成后立即进行音视频合并
+            console.log(`第 ${result.segmentId} 段视频生成完成，开始合并音频...`);
+            
+            const segmentId = result.segmentId;
+            const info = {
+              videoUrl: result.videoUrl,
+              audioUrl: result.audioUrl,
+              audioDuration: result.audioDuration,
+              videoDuration: result.audioDuration,
+              script: result.script,
+            };
+            
+            segmentVideoInfos.push(info);
+            
+            // 记录中间文件
+            intermediateFiles.segmentVideos.push({
+              segmentId: result.segmentId,
+              url: result.videoUrl,
+              duration: result.audioDuration,
+            });
+            
+            // 发送合并进度
             sendEvent(controller, {
               type: 'audio_merge',
-              content: `正在为第 ${i + 1}/${segments.length} 段视频添加配音...`,
-              segmentId: i + 1,
+              content: `正在为第 ${segmentId}/${segments.length} 段视频添加配音...`,
+              segmentId: segmentId,
             });
             
             try {
               // Download video to local temp directory
-              const videoFileName = `video_${segmentId}_${Date.now()}.mp4`;
-              const localVideoPath = `/tmp/${videoFileName}`;
+              const tempDir = `/tmp/segment_${Date.now()}_${segmentId}`;
+              const videoPath = `${tempDir}/video.mp4`;
+              const audioPath = `${tempDir}/audio.mp3`;
+              const outputPath = `${tempDir}/merged.mp4`;
               
-              console.log(`下载视频到本地: ${localVideoPath}`);
-              await downloadFile(info.videoUrl, localVideoPath);
+              // Create temp directory
+              fs.mkdirSync(tempDir, { recursive: true });
               
-              // Get local audio path from audioInfos
-              const audioInfo = audioInfos.find(a => a.segmentId === segmentId);
-              const localAudioPath = audioInfo?.localPath;
+              // Download video
+              console.log(`下载第 ${segmentId} 段视频到本地...`);
+              await downloadFile(result.videoUrl, videoPath);
               
-              if (!localAudioPath || !fs.existsSync(localAudioPath)) {
-                throw new Error(`音频文件不存在: ${localAudioPath}`);
-              }
+              // Download audio
+              console.log(`下载第 ${segmentId} 段音频到本地...`);
+              await downloadFile(result.audioUrl, audioPath);
               
-              // 验证音频文件是否有有效的音频流
-              try {
-                const audioProbeOutput = execSync(
-                  `ffprobe -v quiet -show_streams -select_streams a "${localAudioPath}"`,
-                  { encoding: 'utf-8', timeout: 5000 }
-                );
-                const audioHasStream = audioProbeOutput.includes('codec_type=audio');
-                console.log(`[验证] 音频文件 ${segmentId} 是否有效: ${audioHasStream ? 'YES' : 'NO'}`);
-                if (!audioHasStream) {
-                  console.error(`[警告] 音频文件 ${segmentId} 无有效音频流，文件可能损坏!`);
-                  // 输出音频文件信息
-                  console.log(`音频文件详情: ${audioProbeOutput}`);
-                }
-              } catch (audioProbeError) {
-                console.error(`[验证] FFprobe检查音频文件失败:`, audioProbeError);
-              }
-              
-              // Use FFmpeg to merge audio and video
-              const mergedFileName = `merged_${segmentId}_${Date.now()}.mp4`;
-              const mergedFilePath = `/tmp/${mergedFileName}`;
-              
-              console.log(`FFmpeg合并音视频: ${mergedFilePath}`);
-              await mergeVideoAudioFFmpeg(localVideoPath, localAudioPath, mergedFilePath);
-              
-              // Get actual video duration after merge using FFmpeg
-              const actualVideoDuration = await getVideoDurationFFmpeg(mergedFilePath);
-              console.log(`合并后视频真实时长: ${actualVideoDuration}秒，音频时长: ${info.audioDuration}秒`);
-              
-              // Update only videoDuration, keep audioDuration for subtitles
-              segmentVideoInfos[i].videoDuration = actualVideoDuration;
-              mergedDurations.push(actualVideoDuration);
+              // Merge audio and video using FFmpeg
+              console.log(`使用FFmpeg合并第 ${segmentId} 段音视频...`);
+              await mergeVideoAudioFFmpeg(videoPath, audioPath, outputPath);
               
               // Upload merged video to object storage
-              console.log('上传合并后的视频...');
-              const mergedVideoBuffer = fs.readFileSync(mergedFilePath);
-              const mergedVideoKey = await storage.uploadFile({
-                fileContent: mergedVideoBuffer,
-                fileName: `videos/merged_${segmentId}_${Date.now()}.mp4`,
+              console.log(`上传第 ${segmentId} 段合并后的视频到对象存储...`);
+              const storage = new S3Storage();
+              const mergedBuffer = fs.readFileSync(outputPath);
+              const mergedKey = await storage.uploadFile({
+                fileContent: mergedBuffer,
+                fileName: `videos/merged_segment_${segmentId}_${Date.now()}.mp4`,
                 contentType: 'video/mp4',
               });
-              let mergedVideoUrl = await storage.generatePresignedUrl({
-                key: mergedVideoKey,
+              const mergedVideoUrl = await storage.generatePresignedUrl({
+                key: mergedKey,
                 expireTime: 86400,
               });
               
-              // 为分段视频添加字幕（从源头解决字幕同步问题）
-              console.log(`为分段视频 ${i + 1} 添加字幕...`);
-              try {
-                // 分段字幕配置：简体字、通透背景
-                const segmentSubtitleConfig = {
-                  font_pos_config: {
-                    pos_x: '0',
-                    pos_y: '90%',
-                    width: '100%',
-                    height: '10%',
-                  },
-                  font_size: 36,
-                  font_color: '#FFFFFFFF',
-                  font_type: '1525745', // 系统默认字体，支持简体中文
-                  background_color: '#00000000', // 完全透明背景（无背景）
-                  background_border_width: 0,
-                  border_width: 2, // 增加描边宽度，让文字更清晰
-                  border_color: '#000000AA', // 文字描边颜色（半透明黑色）
-                };
-                
-                // 该分段字幕从0开始，结束于音频时长
-                const segmentTextList = [{
-                  start_time: 0,
-                  end_time: info.audioDuration,
-                  text: info.script,
-                }];
-                
-                console.log(`分段字幕: 0-${info.audioDuration}: ${info.script}`);
-                
-                const subtitleResponse = await videoEditClient.addSubtitles(
-                  mergedVideoUrl,
-                  segmentSubtitleConfig,
-                  { textList: segmentTextList }
-                );
-                
-                if (subtitleResponse.url) {
-                  mergedVideoUrl = subtitleResponse.url;
-                  console.log(`分段视频 ${i + 1} 字幕添加成功`);
-                }
-              } catch (subtitleError) {
-                console.error(`分段视频 ${i + 1} 字幕添加失败:`, subtitleError);
-                // 继续使用无字幕的视频URL
-              }
+              console.log(`第 ${segmentId} 段视频合并完成: ${mergedVideoUrl}`);
+              
+              // Store completed segment
+              completedSegments.set(segmentId, {
+                mergedVideoUrl: mergedVideoUrl,
+                duration: result.audioDuration,
+                script: result.script,
+                audioUrl: result.audioUrl,
+              });
               
               mergedVideoUrls.push(mergedVideoUrl);
-              console.log(`视频 ${i + 1} FFmpeg音视频合并成功，视频${actualVideoDuration}秒，音频${info.audioDuration}秒`);
+              mergedDurations.push(result.audioDuration);
               
-              // 验证合并后的视频是否有音频轨道（同步执行）
-              try {
-                const probeOutput = execSync(
-                  `ffprobe -v quiet -show_streams -select_streams a "${mergedFilePath}"`,
-                  { encoding: 'utf-8', timeout: 5000 }
-                );
-                const hasAudio = probeOutput.includes('codec_type=audio');
-                console.log(`[验证] 合并后视频 ${i + 1} 是否有音频轨道: ${hasAudio ? 'YES' : 'NO'}`);
-                if (!hasAudio) {
-                  console.error(`[警告] 视频片段 ${i + 1} 缺少音频轨道!`);
-                }
-              } catch (probeError) {
-                console.error(`[验证] FFprobe检查音频轨道失败:`, probeError);
-              }
+              // Try to send in order
+              await sendSegmentsInOrder();
               
-              // Clean up temp files (验证完成后再删除)
-              fs.unlinkSync(localVideoPath);
-              fs.unlinkSync(mergedFilePath);
-              
-              // 发送segment_status更新为已完成
-              sendEvent(controller, {
-                type: 'segment_status',
-                content: {},
-                segmentId: segmentId,
-                status: 'completed',
-              });
-              
-              // 发送segment_video事件，使用合并后的视频URL（已包含音频）
-              sendEvent(controller, {
-                type: 'segment_video',
-                content: { 
-                  segmentId: segmentId, 
-                  videoUrl: mergedVideoUrl, // 使用合并后的视频URL
-                  audioUrl: null, // 合并后不再需要单独的音频URL
-                  duration: actualVideoDuration,
-                },
-                segmentId: i + 1,
-                current: i + 1,
-                total: segments.length,
-              });
+              // Cleanup temp files
+              fs.rmSync(tempDir, { recursive: true, force: true });
               
             } catch (mergeError) {
-              console.error(`FFmpeg音频合并失败 (${i + 1}):`, mergeError);
-              // Fallback to original video URL and duration
-              mergedVideoUrls.push(info.videoUrl);
-              mergedDurations.push(info.videoDuration);
-              
-              // 发送segment_status更新为失败
+              console.error(`第 ${segmentId} 段音视频合并失败:`, mergeError);
               sendEvent(controller, {
                 type: 'segment_status',
-                content: {},
+                content: `第 ${segmentId} 段视频合并失败`,
                 segmentId: segmentId,
                 status: 'failed',
               });
-              
-              // 发送segment_video事件（合并失败，使用原始URL）
-              sendEvent(controller, {
-                type: 'segment_video',
-                content: { 
-                  segmentId: segmentId, 
-                  videoUrl: info.videoUrl, // 原始视频URL
-                  audioUrl: info.audioUrl, // 需要单独的音频URL
-                  duration: info.videoDuration,
-                },
-                segmentId: i + 1,
-                current: i + 1,
-                total: segments.length,
-              });
             }
-          } else {
-            mergedVideoUrls.push(info.videoUrl);
-            mergedDurations.push(info.videoDuration);
-          }
-        }
+            
+            return result;
+          })
+        );
+        
+        // 确保所有片段都已发送
+        await sendSegmentsInOrder();
+        
+        console.log(`所有片段视频合并完成，共 ${mergedVideoUrls.length} 个片段`);
 
         // ==========================================
         // Step 4: Concatenate all videos (skip if only one segment)
