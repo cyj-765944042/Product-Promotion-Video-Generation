@@ -169,10 +169,8 @@ function UserAvatar({
 
 // 配音语言选择器组件
 const VOICE_LANGUAGES = [
-  { code: 'mandarin', label: '普通话', ttsVoice: 'zh_female_shuangkuaisisi_moon_bigtts' },
-  { code: 'cantonese', label: '粤语', ttsVoice: 'zh_female_shuangkuaisisi_moon_bigtts' }, // 粤语暂用普通话模型
-  { code: 'english', label: '英语', ttsVoice: 'en_female_rmqhrrhmt_moon_bigtts' },
-  { code: 'japanese', label: '日语', ttsVoice: 'ja_female_rmqhrrhmt_moon_bigtts' },
+  { code: 'mandarin', label: '普通话', ttsVoice: 'zh_female_mizai_saturn_bigtts' },
+  { code: 'english', label: '英语', ttsVoice: 'zh_female_vv_uranus_bigtts' },
 ];
 
 function LanguageSelector({

@@ -301,13 +301,10 @@ export async function POST(request: NextRequest) {
   const productImageFile = formData.get('productImage') as File | null;
   const voiceLanguage = formData.get('voiceLanguage') as string || 'mandarin'; // 配音语言
 
-  // 配音语言对应的TTS语音模型（基于火山引擎可用模型）
-  // 注意：目前只有中文语音模型，英语使用支持中英双语的Vivi模型
+  // 配音语言对应的TTS语音模型（简化：只有普通话和英语）
   const TTS_VOICE_MAP: Record<string, string> = {
     'mandarin': 'zh_female_mizai_saturn_bigtts', // 普通话女声 - Mizai
-    'cantonese': 'zh_female_mizai_saturn_bigtts', // 粤语暂用普通话模型（暂无粤语专用模型）
     'english': 'zh_female_vv_uranus_bigtts', // 英语 - Vivi（支持中英双语）
-    'japanese': 'zh_female_mizai_saturn_bigtts', // 日语暂用普通话模型（暂无日语专用模型）
   };
   const ttsVoice = TTS_VOICE_MAP[voiceLanguage] || TTS_VOICE_MAP['mandarin'];
   console.log(`使用配音语言: ${voiceLanguage}, TTS语音模型: ${ttsVoice}`);

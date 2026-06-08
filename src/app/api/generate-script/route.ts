@@ -40,12 +40,10 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // 语言对应的文案语言指示
+  // 语言对应的文案语言指示（简化：只有普通话和英语）
   const LANGUAGE_MAP: Record<string, { name: string; instruction: string }> = {
     'mandarin': { name: '普通话', instruction: '请使用中文生成口播文案' },
-    'cantonese': { name: '粤语', instruction: '请使用粤语风格生成口播文案（可用粤语常用表达）' },
     'english': { name: '英语', instruction: '请使用英语生成口播文案，所有文案内容必须是英文' },
-    'japanese': { name: '日语', instruction: '请使用日语生成口播文案，所有文案内容必须是日文' },
   };
   const languageInfo = LANGUAGE_MAP[voiceLanguage] || LANGUAGE_MAP['mandarin'];
   console.log(`[Generate Script] 使用配音语言: ${voiceLanguage}, 文案语言: ${languageInfo.name}`);
