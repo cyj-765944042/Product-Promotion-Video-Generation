@@ -1431,7 +1431,12 @@ export default function ChatAgentPage() {
                           }
                         : m
                     );
-                    return { ...s, messages: updatedMessages, state: { ...s.state, ...toolData }, updatedAt: new Date().toISOString() };
+                    // 自动命名：如果productName首次出现且会话名称是默认的"新对话"，则自动更新为商品名称
+                    let newTitle = s.title;
+                    if (toolData.productName && (s.title === '新对话' || s.title.startsWith('新对话'))) {
+                      newTitle = toolData.productName;
+                    }
+                    return { ...s, title: newTitle, messages: updatedMessages, state: { ...s.state, ...toolData }, updatedAt: new Date().toISOString() };
                   }));
                   if (isCurrentSession) {
                     setMessages(prev =>
@@ -1460,8 +1465,14 @@ export default function ChatAgentPage() {
                         ? { ...m, state: { ...m.state, ...stateData } }
                         : m
                     );
+                    // 自动命名：如果productName首次出现且会话名称是默认的"新对话"，则自动更新为商品名称
+                    let newTitle = s.title;
+                    if (stateData.productName && (s.title === '新对话' || s.title.startsWith('新对话'))) {
+                      newTitle = stateData.productName;
+                    }
                     return { 
                       ...s, 
+                      title: newTitle,
                       messages: updatedMessages, 
                       state: { ...s.state, ...stateData },
                       backendSessionId: newBackendSessionId,
