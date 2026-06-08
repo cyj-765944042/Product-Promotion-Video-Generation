@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as http from 'http';
 import * as https from 'https';
 import { HeaderUtils } from 'coze-coding-dev-sdk';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 
 // Types
 interface ScriptSegment {
@@ -649,6 +649,23 @@ export async function POST(request: NextRequest) {
                 throw new Error(`音频文件不存在: ${localAudioPath}`);
               }
               
+              // 验证音频文件是否有有效的音频流
+              try {
+                const audioProbeOutput = execSync(
+                  `ffprobe -v quiet -show_streams -select_streams a "${localAudioPath}"`,
+                  { encoding: 'utf-8', timeout: 5000 }
+                );
+                const audioHasStream = audioProbeOutput.includes('codec_type=audio');
+                console.log(`[验证] 音频文件 ${segmentId} 是否有效: ${audioHasStream ? 'YES' : 'NO'}`);
+                if (!audioHasStream) {
+                  console.error(`[警告] 音频文件 ${segmentId} 无有效音频流，文件可能损坏!`);
+                  // 输出音频文件信息
+                  console.log(`音频文件详情: ${audioProbeOutput}`);
+                }
+              } catch (audioProbeError) {
+                console.error(`[验证] FFprobe检查音频文件失败:`, audioProbeError);
+              }
+              
               // Use FFmpeg to merge audio and video
               const mergedFileName = `merged_${segmentId}_${Date.now()}.mp4`;
               const mergedFilePath = `/tmp/${mergedFileName}`;
@@ -680,30 +697,22 @@ export async function POST(request: NextRequest) {
               mergedVideoUrls.push(mergedVideoUrl);
               console.log(`视频 ${i + 1} FFmpeg音视频合并成功，视频${actualVideoDuration}秒，音频${info.audioDuration}秒`);
               
-              // 验证合并后的视频是否有音频轨道
+              // 验证合并后的视频是否有音频轨道（同步执行）
               try {
-                const probeResult = spawn('ffprobe', [
-                  '-v', 'quiet',
-                  '-show_streams',
-                  '-select_streams', 'a',
-                  mergedFilePath
-                ]);
-                let audioProbeOutput = '';
-                probeResult.stdout.on('data', (data: Buffer) => {
-                  audioProbeOutput += data.toString();
-                });
-                probeResult.on('close', (probeCode: number) => {
-                  const hasAudio = audioProbeOutput.includes('codec_type=audio');
-                  console.log(`[验证] 合并后视频 ${i + 1} 是否有音频轨道: ${hasAudio ? 'YES' : 'NO'}`);
-                  if (!hasAudio) {
-                    console.error(`[警告] 视频片段 ${i + 1} 缺少音频轨道!`);
-                  }
-                });
+                const probeOutput = execSync(
+                  `ffprobe -v quiet -show_streams -select_streams a "${mergedFilePath}"`,
+                  { encoding: 'utf-8', timeout: 5000 }
+                );
+                const hasAudio = probeOutput.includes('codec_type=audio');
+                console.log(`[验证] 合并后视频 ${i + 1} 是否有音频轨道: ${hasAudio ? 'YES' : 'NO'}`);
+                if (!hasAudio) {
+                  console.error(`[警告] 视频片段 ${i + 1} 缺少音频轨道!`);
+                }
               } catch (probeError) {
                 console.error(`[验证] FFprobe检查音频轨道失败:`, probeError);
               }
               
-              // Clean up temp files
+              // Clean up temp files (验证完成后再删除)
               fs.unlinkSync(localVideoPath);
               fs.unlinkSync(mergedFilePath);
               
