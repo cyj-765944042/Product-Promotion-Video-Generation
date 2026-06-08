@@ -202,7 +202,7 @@ function LanguageSelector({
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+        className="flex items-center gap-1 px-2 py-1 text-xs text-[#666666] hover:text-[#333333] hover:bg-[#F1F3F5] rounded transition-colors"
       >
         <span className="font-medium">配音语言：</span>
         <span>{currentLang.label}</span>
@@ -210,13 +210,13 @@ function LanguageSelector({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[120px]">
+        <div className="absolute top-full left-0 mt-1 bg-white border border-[#E5E5E5] rounded-md shadow-lg z-50 min-w-[120px]">
           {VOICE_LANGUAGES.map((lang) => (
             <button
               key={lang.code}
               onClick={() => handleSelect(lang.code)}
-              className={`w-full px-3 py-2 text-left text-sm hover:bg-blue-50 transition-colors ${
-                lang.code === language ? 'text-blue-600 font-medium bg-blue-50' : 'text-gray-700'
+              className={`w-full px-3 py-2 text-left text-sm hover:bg-[#F1F3F5] transition-colors ${
+                lang.code === language ? 'text-[#B999F3] font-medium bg-[#ECE6F7]' : 'text-[#666666]'
               }`}
             >
               {lang.label}
@@ -286,8 +286,8 @@ function SessionSidebar({
       <div
         className={`group relative px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-200
           ${isSelected 
-            ? 'bg-[#7c3aed]/20 text-white border border-[#7c3aed]/40' 
-            : 'hover:bg-gray-700/50 text-gray-300'
+            ? 'bg-[#ECE6F7] text-[#333333] border border-[#D4C2F6]' 
+            : 'hover:bg-[#F1F3F5] text-[#666666]'
           }`}
         onClick={() => !isEditing && onSelectSession(session.id)}
       >
@@ -301,7 +301,7 @@ function SessionSidebar({
                 if (e.key === 'Enter') handleSaveEdit();
                 if (e.key === 'Escape') handleCancelEdit();
               }}
-              className="w-full bg-gray-700 text-white px-2 py-1 rounded text-sm outline-none border border-[#7c3aed]"
+              className="w-full bg-white text-[#333333] px-2 py-1 rounded text-sm outline-none border border-[#D4C2F6]"
               autoFocus
               onClick={(e) => e.stopPropagation()}
             />
@@ -310,12 +310,12 @@ function SessionSidebar({
               <div className="text-sm font-medium truncate">{session.title}</div>
               <div className="flex items-center gap-2 mt-0.5">
                 {session.isGenerating && (
-                  <span className="text-xs text-[#7c3aed] flex items-center gap-1">
+                  <span className="text-xs text-[#B999F3] flex items-center gap-1">
                     <Loader2 className="w-3 h-3 animate-spin" />
                     生成中
                   </span>
                 )}
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-[#999999]">
                   {new Date(session.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
@@ -330,7 +330,7 @@ function SessionSidebar({
                   e.stopPropagation();
                   handleStartEdit(session);
                 }}
-                className="p-1 hover:bg-gray-600 rounded text-gray-400 hover:text-white"
+                className="p-1 hover:bg-[#F1F3F5] rounded text-[#7A7A7A] hover:text-[#333333]"
                 title="重命名"
               >
                 <Pencil className="w-3 h-3" />
@@ -340,7 +340,7 @@ function SessionSidebar({
                   e.stopPropagation();
                   onDeleteSession(session.id);
                 }}
-                className="p-1 hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400"
+                className="p-1 hover:bg-red-500/20 rounded text-[#7A7A7A] hover:text-red-500"
                 title="删除"
               >
                 <Trash2 className="w-3 h-3" />
@@ -353,14 +353,14 @@ function SessionSidebar({
   };
 
   return (
-    <div className="w-[260px] h-full bg-gray-800 flex flex-col border-r border-gray-700">
+    <div className="w-[260px] h-full bg-[#F8F7F5] flex flex-col border-r border-[#E5E5E5]">
       {/* 新建对话按钮 */}
       <div className="p-4">
         <button
           onClick={onNewSession}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg
-            bg-[#7c3aed] hover:bg-[#5b21b6] text-white font-medium
-            transition-all duration-200 shadow-md hover:shadow-lg"
+            bg-[#D4C2F6] hover:bg-[#B999F3] text-[#333333] font-medium
+            transition-all duration-200 shadow-sm hover:shadow-md"
         >
           <Plus className="w-4 h-4" />
           新建对话
@@ -372,7 +372,7 @@ function SessionSidebar({
         {/* 今天 */}
         {todaySessions.length > 0 && (
           <div>
-            <div className="text-xs text-gray-500 font-medium mb-2 px-1">今天</div>
+            <div className="text-xs text-[#999999] font-medium mb-2 px-1">今天</div>
             <div className="space-y-1">
               {todaySessions.map(session => (
                 <SessionItem key={session.id} session={session} />
@@ -384,7 +384,7 @@ function SessionSidebar({
         {/* 最近 */}
         {recentSessions.length > 0 && (
           <div>
-            <div className="text-xs text-gray-500 font-medium mb-2 px-1">最近</div>
+            <div className="text-xs text-[#999999] font-medium mb-2 px-1">最近</div>
             <div className="space-y-1">
               {recentSessions.map(session => (
                 <SessionItem key={session.id} session={session} />
@@ -395,7 +395,7 @@ function SessionSidebar({
 
         {/* 空状态 */}
         {sessions.length === 0 && (
-          <div className="text-center text-gray-500 py-8">
+          <div className="text-center text-[#999999] py-8">
             <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
             <p className="text-sm">暂无历史对话</p>
           </div>
@@ -616,7 +616,7 @@ function ProgressTracker({
   if (!isGenerating || currentStage === 0) return null;
 
   return (
-    <div className="bg-white rounded-lg border border-blue-100 shadow-sm p-4 mb-4">
+    <div className="bg-white rounded-lg border border-[#E5E5E5] shadow-sm p-4 mb-4">
       {/* 进度条 */}
       <div className="flex items-center gap-2 mb-3">
         {PROGRESS_STAGES.map((stage, idx) => (
@@ -624,8 +624,8 @@ function ProgressTracker({
             {/* 阶段节点 */}
             <div className={`flex items-center justify-center w-8 h-8 rounded-full transition-all duration-300
               ${currentStage >= stage.key 
-                ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white' 
-                : 'bg-gray-100 text-gray-400'}`}>
+                ? 'bg-gradient-to-r from-[#B999F3] to-[#D4C2F6] text-white' 
+                : 'bg-[#F1F3F5] text-[#999999]'}`}>
               {currentStage === stage.key ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : currentStage > stage.key ? (
@@ -637,14 +637,14 @@ function ProgressTracker({
             {/* 阶段名称 */}
             <div className="ml-2 hidden sm:block">
               <span className={`text-xs font-medium transition-colors
-                ${currentStage >= stage.key ? 'text-blue-600' : 'text-gray-400'}`}>
+                ${currentStage >= stage.key ? 'text-[#B999F3]' : 'text-[#999999]'}`}>
                 {stage.name}
               </span>
             </div>
             {/* 连接线 */}
             {idx < PROGRESS_STAGES.length - 1 && (
               <div className={`flex-1 h-1 mx-2 rounded transition-all duration-300
-                ${currentStage > stage.key ? 'bg-gradient-to-r from-blue-500 to-purple-500' : 'bg-gray-200'}`} />
+                ${currentStage > stage.key ? 'bg-gradient-to-r from-[#B999F3] to-[#D4C2F6]' : 'bg-[#E5E5E5]'}`} />
             )}
           </div>
         ))}
@@ -653,11 +653,11 @@ function ProgressTracker({
       {/* 实时状态文字 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-          <span className="text-sm text-blue-600 font-medium">{stageName}</span>
+          <Loader2 className="w-4 h-4 animate-spin text-[#B999F3]" />
+          <span className="text-sm text-[#B999F3] font-medium">{stageName}</span>
         </div>
         {estimatedTime && (
-          <span className="text-xs text-gray-500">预计等待 {estimatedTime}</span>
+          <span className="text-xs text-[#666666]">预计等待 {estimatedTime}</span>
         )}
       </div>
     </div>
@@ -667,8 +667,8 @@ function ProgressTracker({
 // 镜头卡片状态标签组件
 function SegmentStatusBadge({ status }: { status: 'pending' | 'processing' | 'completed' | 'failed' }) {
   const statusConfig = {
-    pending: { color: 'text-gray-400', bg: 'bg-gray-100', icon: Circle, text: '待处理' },
-    processing: { color: 'text-blue-500', bg: 'bg-blue-50', icon: Loader2, text: '处理中' },
+    pending: { color: 'text-[#999999]', bg: 'bg-[#F1F3F5]', icon: Circle, text: '待处理' },
+    processing: { color: 'text-[#B999F3]', bg: 'bg-[#ECE6F7]', icon: Loader2, text: '处理中' },
     completed: { color: 'text-green-500', bg: 'bg-green-50', icon: CheckCircle2, text: '已完成' },
     failed: { color: 'text-red-500', bg: 'bg-red-50', icon: AlertCircle, text: '失败' },
   };
@@ -737,8 +737,8 @@ function ScriptCard({
 
   // 根据状态配置节点样式
   const nodeStyle = {
-    pending: 'bg-blue-100 text-blue-600 border-2 border-blue-300',
-    processing: 'bg-blue-500 text-white border-2 border-blue-400',
+    pending: 'bg-[#ECE6F7] text-[#B999F3] border-2 border-[#D4C2F6]',
+    processing: 'bg-[#B999F3] text-white border-2 border-[#D4C2F6]',
     completed: 'bg-green-500 text-white border-2 border-green-400',
     failed: 'bg-red-500 text-white border-2 border-red-400',
   };
@@ -762,32 +762,32 @@ function ScriptCard({
         {/* 连接线 */}
         {!isLast && (
           <div className={`w-0.5 h-full mt-1 flex-1 min-h-[20px] transition-colors duration-300
-            ${status === 'completed' ? 'bg-green-300' : 'bg-blue-200'}`} />
+            ${status === 'completed' ? 'bg-green-300' : 'bg-[#D4C2F6]'}`} />
         )}
       </div>
 
       {/* 卡片主体 */}
       <div className={`flex-1 bg-white rounded-lg border transition-all duration-200
-        ${editingScript || editingPrompt ? 'border-blue-300 shadow-md' : 'border-gray-100 shadow-sm group-hover:shadow-md'}
+        ${editingScript || editingPrompt ? 'border-[#D4C2F6] shadow-md' : 'border-[#E5E5E5] shadow-sm group-hover:shadow-md'}
         ${disabled ? 'opacity-70' : ''}`}>
         
         {/* 状态标签栏 */}
-        <div className="flex items-center justify-between px-3 py-1 bg-gray-50 rounded-t-lg border-b border-gray-100">
-          <span className="text-xs text-gray-400 font-medium">镜头 {index + 1}</span>
+        <div className="flex items-center justify-between px-3 py-1 bg-[#F1F3F5] rounded-t-lg border-b border-[#E5E5E5]">
+          <span className="text-xs text-[#999999] font-medium">镜头 {index + 1}</span>
           <SegmentStatusBadge status={status} />
         </div>
         
         {/* 上半部分：镜头脚本编辑区 */}
-        <div className="p-3 border-b border-gray-100">
+        <div className="p-3 border-b border-[#E5E5E5]">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <Camera className="w-4 h-4 text-gray-400" />
-              <span className="text-xs text-gray-500 font-medium">镜头描述</span>
+              <Camera className="w-4 h-4 text-[#7A7A7A]" />
+              <span className="text-xs text-[#666666] font-medium">镜头描述</span>
             </div>
             {!editingPrompt && !disabled && (
               <button
                 onClick={() => setEditingPrompt(true)}
-                className="text-xs text-gray-400 hover:text-blue-600 transition-colors"
+                className="text-xs text-[#7A7A7A] hover:text-[#B999F3] transition-colors"
               >
                 编辑
               </button>
@@ -799,20 +799,20 @@ function ScriptCard({
               <textarea
                 value={promptValue}
                 onChange={(e) => setPromptValue(e.target.value)}
-                className="w-full p-2 text-sm border border-gray-200 rounded-md focus:border-blue-300 focus:ring-1 focus:ring-blue-200 resize-none"
+                className="w-full p-2 text-sm border border-[#E5E5E5] rounded-md focus:border-[#D4C2F6] focus:ring-1 focus:ring-[#D4C2F6] resize-none"
                 rows={4}
                 placeholder="输入镜头描述..."
               />
               <div className="flex justify-end gap-2">
                 <button
                   onClick={handleCancelPrompt}
-                  className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded"
+                  className="px-2 py-1 text-xs text-[#666666] hover:bg-[#F1F3F5] rounded"
                 >
                   取消
                 </button>
                 <button
                   onClick={handleSavePrompt}
-                  className="px-2 py-1 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded"
+                  className="px-2 py-1 text-xs bg-[#B999F3] text-white hover:bg-[#D4C2F6] rounded"
                 >
                   保存
                 </button>
@@ -821,7 +821,7 @@ function ScriptCard({
           ) : (
             <div
               onClick={() => !disabled && setEditingPrompt(true)}
-              className={`text-xs text-gray-500 ${disabled ? 'cursor-default' : 'cursor-pointer hover:text-gray-700'}`}
+              className={`text-xs text-[#666666] ${disabled ? 'cursor-default' : 'cursor-pointer hover:text-[#333333]'}`}
             >
               {script.prompt || '暂无镜头描述'}
             </div>
@@ -831,20 +831,20 @@ function ScriptCard({
         {/* 下半部分：口播文案编辑区 */}
         <div className="p-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-gray-500 font-medium">口播文案</span>
+            <span className="text-xs text-[#666666] font-medium">口播文案</span>
             <div className="flex items-center gap-2">
               {!editingScript && (
                 <>
                   <button
                     onClick={() => !disabled && setEditingScript(true)}
-                    className={`text-xs ${disabled ? 'text-gray-300 cursor-default' : 'text-gray-400 hover:text-blue-600 transition-colors'}`}
+                    className={`text-xs ${disabled ? 'text-[#999999] cursor-default' : 'text-[#7A7A7A] hover:text-[#B999F3] transition-colors'}`}
                     disabled={disabled}
                   >
                     编辑
                   </button>
                   <button
                     onClick={onRegenerate}
-                    className={`text-xs ${disabled ? 'text-gray-300 cursor-default' : 'text-blue-500 hover:text-blue-600 font-medium'}`}
+                    className={`text-xs ${disabled ? 'text-[#999999] cursor-default' : 'text-[#B999F3] hover:text-[#D4C2F6] font-medium'}`}
                     disabled={disabled}
                   >
                     重新生成
@@ -859,27 +859,27 @@ function ScriptCard({
               <textarea
                 value={scriptValue}
                 onChange={(e) => setScriptValue(e.target.value)}
-                className="w-full p-2 text-sm font-medium border border-gray-200 rounded-md focus:border-blue-300 focus:ring-1 focus:ring-blue-200 resize-none"
+                className="w-full p-2 text-sm font-medium border border-[#E5E5E5] rounded-md focus:border-[#D4C2F6] focus:ring-1 focus:ring-[#D4C2F6] resize-none"
                 rows={3}
                 placeholder="输入口播文案..."
               />
               <div className="flex justify-end gap-2">
                 <button
                   onClick={handleCancelScript}
-                  className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded"
+                  className="px-2 py-1 text-xs text-[#666666] hover:bg-[#F1F3F5] rounded"
                 >
                   取消
                 </button>
                 <button
                   onClick={handleSaveScript}
-                  className="px-2 py-1 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded"
+                  className="px-2 py-1 text-xs bg-[#B999F3] text-white hover:bg-[#D4C2F6] rounded"
                 >
                   保存
                 </button>
               </div>
             </div>
           ) : (
-            <p className="text-sm font-medium text-gray-700 line-clamp-3">
+            <p className="text-sm font-medium text-[#333333] line-clamp-3">
               {script.script || '暂无口播文案'}
             </p>
           )}
@@ -1942,7 +1942,7 @@ export default function ChatAgentPage() {
               <a
                 href={videoSrc}
                 download
-                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 transition-colors"
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#B999F3] text-white rounded-lg text-sm hover:bg-[#D4C2F6] transition-colors"
               >
                 <Download className="w-4 h-4" />
                 下载视频
@@ -1967,11 +1967,11 @@ export default function ChatAgentPage() {
             <Card className="bg-white shadow-sm max-w-[600px]">
               <CardContent className="p-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="secondary" className="bg-blue-100 text-blue-700">商品</Badge>
+                  <Badge variant="secondary" className="bg-[#ECE6F7] text-[#333333]">商品</Badge>
                   <span className="font-medium text-sm">{msgState.productName}</span>
                 </div>
                 {msgState.features && msgState.features.length > 0 && (
-                  <div className="text-xs text-gray-600">
+                  <div className="text-xs text-[#666666]">
                     <span className="font-medium">核心卖点：</span>
                     {msgState.features.join('、')}
                   </div>
@@ -1998,9 +1998,9 @@ export default function ChatAgentPage() {
                   />
                 </div>
                 {/* 文案与操作区 */}
-                <div className="p-3 bg-gray-50">
-                  <Badge variant="outline" className="mb-2 text-xs border-blue-200 text-blue-600">片段 {segment.id}</Badge>
-                  <p className="text-sm text-gray-700 mt-1 line-clamp-2 leading-relaxed">{segment.script}</p>
+                <div className="p-3 bg-[#F1F3F5]">
+                  <Badge variant="outline" className="mb-2 text-xs border-[#D4C2F6] text-[#B999F3]">片段 {segment.id}</Badge>
+                  <p className="text-sm text-[#333333] mt-1 line-clamp-2 leading-relaxed">{segment.script}</p>
                 </div>
               </div>
             ))}
@@ -2010,7 +2010,7 @@ export default function ChatAgentPage() {
           <div className="flex gap-2 mt-3">
             <Button
               size="sm"
-              className="bg-blue-500 hover:bg-blue-600"
+              className="bg-[#B999F3] hover:bg-[#D4C2F6]"
               onClick={() => sendMessage('请合成所有片段为最终视频')}
               disabled={isLoading}
             >
@@ -2042,11 +2042,11 @@ export default function ChatAgentPage() {
             <Card className="bg-white shadow-sm max-w-[600px]">
               <CardContent className="p-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="secondary" className="bg-blue-100 text-blue-700">商品</Badge>
+                  <Badge variant="secondary" className="bg-[#ECE6F7] text-[#B999F3]">商品</Badge>
                   <span className="font-medium text-sm">{msgState.productName}</span>
                 </div>
                 {msgState.features && msgState.features.length > 0 && (
-                  <div className="text-xs text-gray-600">
+                  <div className="text-xs text-[#666666]">
                     <span className="font-medium">核心卖点：</span>
                     {msgState.features.join('、')}
                   </div>
@@ -2064,19 +2064,19 @@ export default function ChatAgentPage() {
           />
           
           {/* 镜头序列引导语 */}
-          <div className="text-xs text-gray-500 mb-3 p-2 bg-blue-50 rounded-lg">
+          <div className="text-xs text-[#666666] mb-3 p-2 bg-[#ECE6F7] rounded-lg">
             📹 以下是为你生成的连续镜头，可直接修改镜头描述和口播文案，调整顺序或单独重制某一镜头，再生成完整视频
           </div>
           
           {/* 镜头序列卡片 - 左侧流程线 + 纵向排列 */}
           <div className="relative pl-8">
             {/* 左侧垂直流程线 */}
-            <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-blue-200" />
+            <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-[#D4C2F6]" />
             {/* 流程节点 */}
             {msgState.scripts.map((script, index) => (
               <div key={script.id} className="relative mb-4 last:mb-0">
                 {/* 左侧节点圆点 */}
-                <div className="absolute -left-5 top-4 w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow" />
+                <div className="absolute -left-5 top-4 w-3 h-3 rounded-full bg-[#B999F3] border-2 border-white shadow" />
                 
                 {/* 镜头卡片 */}
                 <ScriptCard
@@ -2112,9 +2112,9 @@ export default function ChatAgentPage() {
           </div>
           
           {/* 底部统一操作按钮 */}
-          <div className="mt-4 p-3 bg-white rounded-lg shadow-sm border border-gray-100">
+          <div className="mt-4 p-3 bg-white rounded-lg shadow-sm border border-[#E5E5E5]">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-[#666666]">
                 {isGenerating ? '正在生成中，请稍候...' : 
                   msgState.currentStage === 'video_generated' 
                     ? '分段视频已生成，点击合成完整视频' 
@@ -2122,7 +2122,7 @@ export default function ChatAgentPage() {
               </span>
               <Button
                 size="sm"
-                className="bg-blue-500 hover:bg-blue-600 text-white"
+                className="bg-[#B999F3] hover:bg-[#D4C2F6] text-white"
                 onClick={() => sendMessage(
                   msgState.currentStage === 'video_generated' 
                     ? '合成完整视频' 
@@ -2155,11 +2155,11 @@ export default function ChatAgentPage() {
           <Card className="bg-white shadow-sm max-w-[600px]">
             <CardContent className="p-3">
               <div className="flex items-center gap-2 mb-2">
-                <Badge variant="secondary" className="bg-blue-100 text-blue-700">商品</Badge>
+                <Badge variant="secondary" className="bg-[#ECE6F7] text-[#B999F3]">商品</Badge>
                 <span className="font-medium text-sm">{msgState.productName}</span>
               </div>
               {msgState.features && msgState.features.length > 0 && (
-                <div className="text-xs text-gray-600">
+                <div className="text-xs text-[#666666]">
                   <span className="font-medium">核心卖点：</span>
                   {msgState.features.join('、')}
                 </div>
@@ -2168,7 +2168,7 @@ export default function ChatAgentPage() {
           </Card>
           <Button
             size="sm"
-            className="bg-blue-500 hover:bg-blue-600"
+            className="bg-[#B999F3] hover:bg-[#D4C2F6] text-white"
             onClick={() => sendMessage('请根据商品信息生成带货文案')}
             disabled={isLoading}
           >
@@ -2203,7 +2203,7 @@ export default function ChatAgentPage() {
       return (
         <div key={message.id} className="flex justify-end items-start gap-2 mb-3">
           {/* 消息气泡 */}
-          <div className="max-w-[72%] bg-blue-500 text-white rounded-2xl rounded-tr-md px-4 py-2.5 shadow-sm">
+          <div className="max-w-[72%] bg-[#B999F3] text-white rounded-2xl rounded-tr-md px-4 py-2.5 shadow-sm">
             {message.imageUrl && (
               <img 
                 src={message.imageUrl} 
@@ -2212,7 +2212,7 @@ export default function ChatAgentPage() {
               />
             )}
             <p className="text-sm">{message.content}</p>
-            <p className="text-xs text-blue-200 mt-1 text-right">
+            <p className="text-xs text-[#D4C2F6] mt-1 text-right">
               <ClientTime timestamp={message.timestamp} />
             </p>
           </div>
@@ -2246,25 +2246,25 @@ export default function ChatAgentPage() {
           />
         )}
         {/* 消息气泡 */}
-        <div className="max-w-[72%] bg-blue-50 text-gray-800 rounded-2xl rounded-tl-md px-4 py-2.5 shadow-sm">
+        <div className="max-w-[72%] bg-[#F1F3F5] text-[#333333] rounded-2xl rounded-tl-md px-4 py-2.5 shadow-sm">
           {/* Agent名称标签 - 仅纯文本消息显示 */}
           {isPlainText && (
             <div className="flex items-center gap-1.5 mb-1.5">
-              <span className="text-xs font-medium text-blue-600">货小影</span>
+              <span className="text-xs font-medium text-[#B999F3]">货小影</span>
             </div>
           )}
           
           {/* 内容 */}
           {message.isStreaming && !message.content ? (
             <div className="flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-              <span className="text-sm text-gray-500">正在思考...</span>
+              <Loader2 className="w-4 h-4 animate-spin text-[#B999F3]" />
+              <span className="text-sm text-[#666666]">正在思考...</span>
             </div>
           ) : (
             renderAssistantContent(message)
           )}
           
-          <p className="text-xs text-gray-400 mt-2">
+          <p className="text-xs text-[#999999] mt-2">
             <ClientTime timestamp={message.timestamp} />
           </p>
         </div>
@@ -2275,11 +2275,11 @@ export default function ChatAgentPage() {
   return (
     <>
       {/* 全屏背景 */}
-      <div className="fixed inset-0 bg-gray-100" />
+      <div className="fixed inset-0 bg-[#F8F7F5]" />
       
       {/* 左右分栏布局 */}
       <div 
-        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl overflow-hidden flex"
+        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-lg overflow-hidden flex"
         style={{
           width: 'calc(82vw + 260px)',
           minWidth: '840px',
@@ -2305,16 +2305,16 @@ export default function ChatAgentPage() {
         {/* 右侧聊天窗口 */}
         <div className="flex-1 flex flex-col" style={{ width: isCollapsed ? '100%' : 'calc(100% - 260px)' }}>
           {/* 顶部导航栏 - 固定56px */}
-          <div className="h-[56px] bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-between px-4 shrink-0">
+          <div className="h-[56px] bg-[#F8F7F5] flex items-center justify-between px-4 shrink-0 border-b border-[#E5E5E5]">
             <div className="flex items-center gap-3">
               <img 
                 src="/assets/agent-avatar.png" 
                 alt="货小影" 
-                className="w-8 h-8 rounded-full object-cover border-2 border-white/30"
+                className="w-8 h-8 rounded-full object-cover border-2 border-[#D4C2F6]"
               />
               <div className="flex flex-col">
-                <span className="text-white font-medium text-sm">货小影</span>
-                <span className="text-blue-100 text-xs">带货视频智能助手</span>
+                <span className="text-[#333333] font-medium text-sm">货小影</span>
+                <span className="text-[#666666] text-xs">带货视频智能助手</span>
               </div>
               {/* 配音语言选择器 */}
               <LanguageSelector language={voiceLanguage} onChange={setVoiceLanguage} />
@@ -2333,13 +2333,13 @@ export default function ChatAgentPage() {
               {/* 折叠按钮 */}
               <button
                 onClick={() => setIsCollapsed(!isCollapsed)}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                className="p-2 hover:bg-[#F1F3F5] rounded-lg transition-colors"
                 title={isCollapsed ? '展开' : '折叠'}
               >
                 {isCollapsed ? (
-                  <ChevronUp className="w-5 h-5 text-white" />
+                  <ChevronUp className="w-5 h-5 text-[#7A7A7A]" />
                 ) : (
-                  <ChevronDown className="w-5 h-5 text-white" />
+                  <ChevronDown className="w-5 h-5 text-[#7A7A7A]" />
                 )}
               </button>
             </div>
@@ -2349,7 +2349,7 @@ export default function ChatAgentPage() {
           {!isCollapsed && (
             <div 
               ref={scrollAreaRef}
-              className="flex-1 min-h-0 bg-gray-100 overflow-y-auto p-4 relative"
+              className="flex-1 min-h-0 bg-[#F8F7F5] overflow-y-auto p-4 relative"
               style={{ overflowX: 'hidden' }}
               onScroll={handleScroll}
             >
@@ -2358,8 +2358,8 @@ export default function ChatAgentPage() {
               {/* 加载指示器 */}
               {isLoading && messages[messages.length - 1]?.isStreaming && messages[messages.length - 1]?.content && (
                 <div className="flex justify-start mb-3">
-                  <div className="bg-blue-50 rounded-2xl px-4 py-2 shadow-sm">
-                    <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                  <div className="bg-[#F1F3F5] rounded-2xl px-4 py-2 shadow-sm">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#B999F3]" />
                   </div>
                 </div>
               )}
@@ -2368,7 +2368,7 @@ export default function ChatAgentPage() {
           
           {/* 底部输入栏 - 固定70px */}
           {!isCollapsed && (
-            <div className="h-[70px] bg-white border-t border-gray-200 flex items-center justify-center px-4 gap-3 shrink-0 relative">
+            <div className="h-[70px] bg-white border-t border-[#E5E5E5] flex items-center justify-center px-4 gap-3 shrink-0 relative">
               {/* 滚动到底部按钮 - 输入框正上方 */}
               {!isAtBottom && (
                 <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20">
@@ -2384,8 +2384,8 @@ export default function ChatAgentPage() {
                   onChange={handleImageUpload}
                   className="hidden"
                 />
-                <div className="p-2.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
-                  <ImageIcon className="w-5 h-5 text-gray-600" />
+                <div className="p-2.5 bg-[#F1F3F5] hover:bg-[#ECE6F7] rounded-lg transition-colors">
+                  <ImageIcon className="w-5 h-5 text-[#7A7A7A]" />
                 </div>
               </label>
               
@@ -2395,7 +2395,7 @@ export default function ChatAgentPage() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 placeholder="输入消息或上传商品图片..."
-                className="flex-1 max-w-[500px] h-[40px] rounded-full border-gray-300 focus:border-blue-500"
+                className="flex-1 max-w-[500px] h-[40px] rounded-full border-[#E5E5E5] focus:border-[#D4C2F6] focus:ring-[#D4C2F6]"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -2408,7 +2408,7 @@ export default function ChatAgentPage() {
               {/* 发送按钮 */}
               <Button
                 size="icon"
-                className="w-[40px] h-[40px] rounded-full shrink-0 bg-[#7c3aed] hover:bg-[#7c3aed]/80 text-white"
+                className="w-[40px] h-[40px] rounded-full shrink-0 bg-[#B999F3] hover:bg-[#D4C2F6] text-white"
                 onClick={() => sendMessage(inputValue)}
                 disabled={isLoading || !inputValue.trim()}
               >
