@@ -84,6 +84,8 @@ export async function POST(request: NextRequest) {
         // 处理 tool_result 更新状态
         if (agentMessage.type === "tool_result" && agentMessage.data) {
           const toolData = agentMessage.data as Record<string, unknown>;
+          const segmentsData = toolData.segments as Array<unknown> | undefined;
+          console.log(`[API] tool_result 数据: segments=${segmentsData ? `${segmentsData.length}个` : '无'}`);
           if (toolData.productImageUrl) state.productImageUrl = toolData.productImageUrl as string;
           if (toolData.productName) state.productName = toolData.productName as string;
           if (toolData.features) state.features = toolData.features as string[];
@@ -100,6 +102,7 @@ export async function POST(request: NextRequest) {
               videoUrl?: string;
               duration: number;
             }>;
+            console.log(`[API] 更新 state.segments: ${state.segments.length} 个片段`);
             if (state.segments.length > 0 && toolData.currentStage) {
               state.currentStage = toolData.currentStage as ChatAgentState["currentStage"];
             }

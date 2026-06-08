@@ -6,7 +6,8 @@
 import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
-import { uploadFromRemoteUrl } from '../lib/storage';
+import { execSync } from 'child_process';
+import { uploadFromRemoteUrl, uploadLocalFile } from '../lib/storage';
 
 const getBaseUrl = () => {
   const domain = process.env.COZE_PROJECT_DOMAIN_DEFAULT;
@@ -518,69 +519,240 @@ export async function generateVideoSegments(
 
 /**
  * 4. 合成最终视频
- * 调用 /api/video-task/compose
+ * 直接使用 FFmpeg 合成（不调用 compose API）
  */
 export async function composeFinalVideo(
-  segments: Array<{ id: number; script: string; videoPath?: string; audioPath?: string; localVideoPath?: string }>,
+  segments: Array<{ id: number; script: string; videoUrl?: string; audioUrl?: string; localVideoPath?: string; localAudioPath?: string }>,
   productName: string,
   options?: { bgmUrl?: string; embedSubtitle?: boolean; sessionId?: string },
   customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
-  console.log('[Tool] 调用 /api/video-task/compose');
-  if (options?.bgmUrl) {
-    console.log('[Tool] 使用BGM:', options.bgmUrl);
+  console.log('[Tool] composeFinalVideo: 开始合成最终视频');
+  console.log('[Tool] 传入的 segments 数量:', segments?.length || 0);
+  
+  if (!segments || segments.length === 0) {
+    return {
+      success: false,
+      message: '没有可合成的视频片段',
+      error: 'segments 为空'
+    };
   }
   
+  const sessionId = options?.sessionId || Date.now().toString();
+  const tmpDir = `/tmp/compose_${sessionId}`;
+  
   try {
-    const response = await axios.post(
-      `${BASE_URL}/api/video-task/compose`,
-      {
-        segments,
-        productName,
-        bgmUrl: options?.bgmUrl,
-        embedSubtitle: options?.embedSubtitle ?? true
-      },
-      { 
-        headers: { 
-          ...customHeaders,
-          'Content-Type': 'application/json'
-        },
-        timeout: 120000 // 2分钟超时
+    // 创建临时目录
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    }
+    
+    console.log(`[Tool] 创建临时目录: ${tmpDir}`);
+    
+    // Step 1: 下载所有视频和音频文件到本地
+    const localSegments: Array<{ videoPath: string; audioPath: string; script: string; duration: number }> = [];
+    
+    for (const segment of segments) {
+      const segId = segment.id;
+      console.log(`[Tool] 处理片段 ${segId}...`);
+      
+      // 下载视频
+      const videoPath = path.join(tmpDir, `video_${segId}.mp4`);
+      if (segment.videoUrl) {
+        console.log(`[Tool] 下载视频 ${segId}: ${segment.videoUrl.substring(0, 50)}...`);
+        const videoResponse = await axios.get(segment.videoUrl, { 
+          responseType: 'arraybuffer',
+          timeout: 60000,
+          headers: customHeaders
+        });
+        fs.writeFileSync(videoPath, videoResponse.data);
+        console.log(`[Tool] 视频 ${segId} 下载完成，大小: ${fs.statSync(videoPath).size} bytes`);
+      } else {
+        console.error(`[Tool] 片段 ${segId} 没有 videoUrl`);
+        continue;
       }
-    );
+      
+      // 下载音频（如果有）
+      const audioPath = path.join(tmpDir, `audio_${segId}.mp3`);
+      if (segment.audioUrl) {
+        console.log(`[Tool] 下载音频 ${segId}: ${segment.audioUrl.substring(0, 50)}...`);
+        const audioResponse = await axios.get(segment.audioUrl, { 
+          responseType: 'arraybuffer',
+          timeout: 60000,
+          headers: customHeaders
+        });
+        fs.writeFileSync(audioPath, audioResponse.data);
+        console.log(`[Tool] 音频 ${segId} 下载完成，大小: ${fs.statSync(audioPath).size} bytes`);
+      } else {
+        console.log(`[Tool] 片段 ${segId} 没有 audioUrl，使用视频自带音频`);
+        // 如果没有单独的音频，使用视频自带的音频
+        fs.copyFileSync(videoPath, audioPath.replace('.mp3', '_from_video.mp4'));
+      }
+      
+      // 获取音频时长
+      let duration = 0;
+      try {
+        const durationCmd = `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`;
+        duration = parseFloat(execSync(durationCmd, { encoding: 'utf-8', timeout: 5000 }).trim()) || 0;
+      } catch (e) {
+        console.log(`[Tool] 无法获取音频时长，使用默认值 5秒`);
+        duration = 5;
+      }
+      
+      localSegments.push({
+        videoPath,
+        audioPath,
+        script: segment.script,
+        duration
+      });
+    }
     
-    const result = response.data;
-    const finalVideoUrl = result.finalVideoUrl;
+    if (localSegments.length === 0) {
+      return {
+        success: false,
+        message: '没有有效的视频片段可合成',
+        error: '所有片段都缺少视频URL'
+      };
+    }
     
-    // 下载最终视频到本地（优先转存到对象存储）
-    let localVideoPath: string | undefined;
-    let signedVideoUrl: string | undefined;
-    if (finalVideoUrl) {
-      const sessionId = options?.sessionId || Date.now().toString();
-      const filename = `${productName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}_final.mp4`;
-      const downloadResult = await downloadVideoToLocal(
-        finalVideoUrl,
-        `final/${sessionId}`,
-        filename
-      );
-      localVideoPath = downloadResult.localPath || undefined;
-      signedVideoUrl = downloadResult.signedUrl || undefined;
+    console.log(`[Tool] 共 ${localSegments.length} 个有效片段准备合成`);
+    
+    // Step 2: 合并每个视频的音频（如果有单独音频）
+    const mergedVideos: string[] = [];
+    
+    for (const seg of localSegments) {
+      const mergedPath = seg.videoPath.replace('.mp4', '_merged.mp4');
+      
+      // 检查视频是否有音频轨道
+      const probeCmd = `ffprobe -v quiet -show_streams -select_streams a "${seg.videoPath}"`;
+      const probeOutput = execSync(probeCmd, { encoding: 'utf-8', timeout: 5000 });
+      const hasAudioInVideo = probeOutput.includes('codec_type=audio');
+      
+      if (hasAudioInVideo) {
+        // 视频已有音频，直接使用
+        console.log(`[Tool] 视频已有音频轨道，直接使用`);
+        fs.copyFileSync(seg.videoPath, mergedPath);
+      } else if (fs.existsSync(seg.audioPath) && fs.statSync(seg.audioPath).size > 0) {
+        // 合并音频和视频
+        console.log(`[Tool] FFmpeg合并音视频...`);
+        const mergeCmd = `ffmpeg -y -i "${seg.videoPath}" -i "${seg.audioPath}" -c:v copy -c:a aac -shortest "${mergedPath}"`;
+        execSync(mergeCmd, { stdio: 'pipe', timeout: 30000 });
+      } else {
+        // 无音频，直接使用视频
+        console.log(`[Tool] 无音频文件，使用原视频`);
+        fs.copyFileSync(seg.videoPath, mergedPath);
+      }
+      
+      mergedVideos.push(mergedPath);
+    }
+    
+    // Step 3: 生成字幕文件
+    const srtPath = path.join(tmpDir, 'subtitles.srt');
+    let srtContent = '';
+    let currentTime = 0;
+    
+    const formatTime = (seconds: number) => {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      const ms = Math.floor((seconds % 1) * 1000);
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+    };
+    
+    for (let i = 0; i < localSegments.length; i++) {
+      const seg = localSegments[i];
+      const startTime = currentTime;
+      const endTime = currentTime + seg.duration;
+      
+      srtContent += `${i + 1}\n`;
+      srtContent += `${formatTime(startTime)} --> ${formatTime(endTime)}\n`;
+      srtContent += `${seg.script}\n\n`;
+      
+      currentTime = endTime;
+    }
+    
+    fs.writeFileSync(srtPath, srtContent, 'utf-8');
+    console.log(`[Tool] 字幕文件生成完成: ${srtPath}`);
+    
+    // Step 4: 拼接视频
+    const listPath = path.join(tmpDir, 'filelist.txt');
+    const listContent = mergedVideos.map(v => `file '${v}'`).join('\n');
+    fs.writeFileSync(listPath, listContent, 'utf-8');
+    
+    const concatenatedPath = path.join(tmpDir, 'concatenated.mp4');
+    console.log(`[Tool] FFmpeg拼接视频...`);
+    const concatCmd = `ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${concatenatedPath}"`;
+    execSync(concatCmd, { stdio: 'pipe', timeout: 60000 });
+    console.log(`[Tool] 视频拼接完成: ${concatenatedPath}`);
+    
+    // Step 5: 添加字幕（可选）
+    const finalPath = path.join(tmpDir, `final_${Date.now()}.mp4`);
+    
+    if (options?.embedSubtitle !== false) {
+      console.log(`[Tool] FFmpeg添加字幕...`);
+      // 字幕路径需要转义
+      const escapedSrtPath = srtPath.replace(/'/g, "'\\''");
+      const subtitleCmd = `ffmpeg -y -i "${concatenatedPath}" -vf "subtitles='${escapedSrtPath}'" -c:a copy "${finalPath}"`;
+      try {
+        execSync(subtitleCmd, { stdio: 'pipe', timeout: 60000 });
+        console.log(`[Tool] 字幕添加完成`);
+      } catch (subtitleError) {
+        console.error(`[Tool] 字幕添加失败，使用无字幕版本:`, subtitleError);
+        fs.copyFileSync(concatenatedPath, finalPath);
+      }
+    } else {
+      fs.copyFileSync(concatenatedPath, finalPath);
+    }
+    
+    // 获取最终视频时长
+    const durationCmd = `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${finalPath}"`;
+    const finalDuration = parseFloat(execSync(durationCmd, { encoding: 'utf-8', timeout: 5000 }).trim()) || 0;
+    console.log(`[Tool] 最终视频时长: ${finalDuration}秒，文件大小: ${fs.statSync(finalPath).size} bytes`);
+    
+    // Step 6: 上传到对象存储
+    console.log(`[Tool] 上传最终视频到对象存储...`);
+    const filename = `${productName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}_final.mp4`;
+    const key = `final/${sessionId}/${filename}`;
+    
+    // 读取文件内容并上传
+    const fileContent = fs.readFileSync(finalPath);
+    const uploadResult = await uploadLocalFile(fileContent, filename, 'video/mp4');
+    const signedVideoUrl = uploadResult.signedUrl;
+    
+    console.log(`[Tool] 最终视频上传完成: ${signedVideoUrl?.substring(0, 80)}...`);
+    
+    // 清理临时文件
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      console.log(`[Tool] 临时目录清理完成`);
+    } catch (e) {
+      console.log(`[Tool] 临时目录清理失败（可忽略）`);
     }
     
     return {
       success: true,
-      message: '最终视频合成完成（已转存到对象存储）',
+      message: `最终视频合成完成！时长 ${finalDuration}秒，已上传到对象存储`,
       data: {
-        finalVideoUrl: signedVideoUrl || finalVideoUrl, // 优先使用签名URL
-        localVideoPath: localVideoPath,
-        finalVideoLocalPath: result.finalVideoLocalPath,
-        finalSubtitles: result.finalSubtitles,
-        subtitleUrl: result.finalSubtitles,
+        finalVideoUrl: signedVideoUrl,
+        finalVideoLocalPath: finalPath,
+        finalSubtitles: srtContent,
+        subtitleUrl: srtPath,
+        duration: finalDuration,
         currentStage: "done"
       }
     };
   } catch (error) {
-    console.error('[Tool] compose 失败:', error);
+    console.error('[Tool] composeFinalVideo 失败:', error);
+    
+    // 清理临时文件
+    try {
+      if (fs.existsSync(tmpDir)) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    } catch (e) {
+      // 忽略清理错误
+    }
+    
     return {
       success: false,
       message: '视频合成失败',

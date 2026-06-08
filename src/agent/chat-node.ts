@@ -357,9 +357,16 @@ ${nextActionHint}
     // 执行工具
     const toolResult = await executeTool(toolCall.tool, toolCall.input, currentState, customHeaders);
     
+    const segmentsLength = (toolResult.data as Record<string, unknown>)?.segments 
+      ? ((toolResult.data as Record<string, unknown>).segments as Array<unknown>).length 
+      : 0;
+    console.log(`[Agent] 工具 ${toolCall.tool} 执行完成: success=${toolResult.success}, segments=${segmentsLength}`);
+    
     // 更新状态
     if (toolResult.data) {
       currentState = { ...currentState, ...toolResult.data };
+      const currentSegmentsLength = currentState.segments?.length || 0;
+      console.log(`[Agent] currentState 更新后: segments=${currentSegmentsLength}, stage=${currentState.currentStage}`);
     }
     
     // 发送工具执行结果（简洁消息）
