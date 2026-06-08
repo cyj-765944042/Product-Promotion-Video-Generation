@@ -1346,25 +1346,44 @@ export default function ChatAgentPage() {
   // 上传图片
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      console.log('没有选择文件');
+      return;
+    }
 
+    console.log('开始上传图片:', file.name, file.type, file.size);
     const formData = new FormData();
     formData.append('file', file);
 
     try {
+      setIsLoading(true); // 显示加载状态
       const response = await fetch('/api/upload-image', {
         method: 'POST',
         body: formData,
       });
 
-      if (!response.ok) throw new Error('上传失败');
+      console.log('上传响应状态:', response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('上传失败:', errorData);
+        throw new Error(errorData.error || '上传失败');
+      }
 
       const data = await response.json();
+      console.log('上传成功，imageUrl:', data.imageUrl);
+      
+      // 显示上传成功提示
+      setIsLoading(false);
       sendMessage('请帮我分析这张商品图片，识别商品信息并提取卖点', data.imageUrl);
     } catch (error) {
+      setIsLoading(false);
       console.error('上传图片失败:', error);
-      alert('上传图片失败，请重试');
+      alert(`上传图片失败: ${error instanceof Error ? error.message : '请重试'}`);
     }
+    
+    // 清空input，允许再次选择同一文件
+    e.target.value = '';
   };
 
   // 清除会话
