@@ -571,28 +571,13 @@ export async function POST(request: NextRequest) {
         // Use a counter to track completed videos (atomic increment)
         let completedCount = 0;
         
-        // Wait for all video generations to complete, sending events as each completes
+        // Wait for all video generations to complete (不在此处发送事件，等合并后再发送)
         const videoResults = await Promise.all(
           videoGenerationPromises.map(async (promise) => {
             const result = await promise;
-            
             // Increment completed count atomically
             completedCount++;
-            
-            // Send completion event immediately when this video finishes
-            sendEvent(controller, {
-              type: 'segment_video',
-              content: { 
-                segmentId: result.segmentId, 
-                videoUrl: result.videoUrl,
-                audioUrl: result.audioUrl, // 添加音频URL
-                duration: result.audioDuration,
-              },
-              segmentId: result.index,
-              current: completedCount,  // Use completed count instead of index
-              total: segments.length,
-            });
-            
+            // 不发送segment_video事件，等音视频合并后再发送
             return result;
           })
         );
@@ -717,11 +702,39 @@ export async function POST(request: NextRequest) {
               fs.unlinkSync(localVideoPath);
               fs.unlinkSync(mergedFilePath);
               
+              // 发送segment_video事件，使用合并后的视频URL（已包含音频）
+              sendEvent(controller, {
+                type: 'segment_video',
+                content: { 
+                  segmentId: segmentId, 
+                  videoUrl: mergedVideoUrl, // 使用合并后的视频URL
+                  audioUrl: null, // 合并后不再需要单独的音频URL
+                  duration: actualVideoDuration,
+                },
+                segmentId: i + 1,
+                current: i + 1,
+                total: segments.length,
+              });
+              
             } catch (mergeError) {
               console.error(`FFmpeg音频合并失败 (${i + 1}):`, mergeError);
               // Fallback to original video URL and duration
               mergedVideoUrls.push(info.videoUrl);
               mergedDurations.push(info.videoDuration);
+              
+              // 发送segment_video事件（合并失败，使用原始URL）
+              sendEvent(controller, {
+                type: 'segment_video',
+                content: { 
+                  segmentId: segmentId, 
+                  videoUrl: info.videoUrl, // 原始视频URL
+                  audioUrl: info.audioUrl, // 需要单独的音频URL
+                  duration: info.videoDuration,
+                },
+                segmentId: i + 1,
+                current: i + 1,
+                total: segments.length,
+              });
             }
           } else {
             mergedVideoUrls.push(info.videoUrl);

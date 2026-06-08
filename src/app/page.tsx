@@ -470,7 +470,9 @@ export default function ChatAgentPage() {
           <div className="grid gap-3" style={{
             gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
           }}>
-            {msgState.segments.map(segment => (
+            {(msgState.segments || [])
+              .sort((a, b) => (a.id || 0) - (b.id || 0))
+              .map(segment => (
               <div key={segment.id} className="bg-white rounded-xl p-2 shadow-sm">
                 <Badge variant="outline" className="mb-2 text-xs">片段 {segment.id}</Badge>
                 <VideoPlayer
