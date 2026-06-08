@@ -1354,7 +1354,7 @@ export default function ChatAgentPage() {
       
       {/* 悬浮弹窗 */}
       <div 
-        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col relative"
         style={{
           width: '82vw',
           minWidth: '580px',
@@ -1422,17 +1422,19 @@ export default function ChatAgentPage() {
                 </div>
               </div>
             )}
-            
-            {/* 滚动到底部悬浮按钮 */}
-            <div className="absolute bottom-4 right-4">
-              <ScrollToBottomButton onClick={scrollToBottom} isAtBottom={isAtBottom} />
-            </div>
+          </div>
+        )}
+        
+        {/* 滚动到底部按钮 - 输入框正上方 */}
+        {!isCollapsed && !isAtBottom && (
+          <div className="absolute bottom-[78px] left-1/2 -translate-x-1/2 z-10">
+            <ScrollToBottomButton onClick={scrollToBottom} isAtBottom={isAtBottom} />
           </div>
         )}
         
         {/* 底部输入栏 - 固定70px */}
         {!isCollapsed && (
-          <div className="h-[70px] bg-white border-t border-gray-200 flex items-center justify-center px-4 gap-3 shrink-0">
+          <div className="h-[70px] bg-white border-t border-gray-200 flex items-center justify-center px-4 gap-3 shrink-0 relative">
             {/* 上传按钮 */}
             <label className="cursor-pointer">
               <input
