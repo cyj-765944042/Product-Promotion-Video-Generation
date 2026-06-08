@@ -17,6 +17,7 @@ import {
   ChevronDown,
   ChevronUp,
   Minimize2,
+  Play,
 } from 'lucide-react';
 
 // 客户端时间组件 - 避免 hydration 问题
@@ -62,26 +63,38 @@ interface SessionState {
   currentStage?: 'idle' | 'identifying' | 'product_identified' | 'script_generated' | 'video_generated' | 'composing' | 'done';
 }
 
-// 视频播放器组件（16:9固定比例，支持单独音频轨道）
+// 视频播放器组件（16:9固定比例，支持单独音频轨道，支持隐藏控制条）
 function VideoPlayer({
   videoUrl,
   localVideoPath,
   audioUrl,
+  showControls = true,
 }: {
   videoUrl?: string;
   localVideoPath?: string;
   audioUrl?: string;
+  showControls?: boolean;
 }) {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const effectiveVideoUrl = localVideoPath || (videoUrl ? getAccessibleUrl(videoUrl) : '');
   const effectiveAudioUrl = audioUrl ? getAccessibleUrl(audioUrl) : '';
 
+  // 点击播放按钮
+  const handlePlayClick = useCallback(() => {
+    if (videoRef.current) {
+      videoRef.current.play();
+      setIsPlaying(true);
+    }
+  }, []);
+
   // 同步视频和音频播放
   const handlePlay = useCallback(() => {
+    setIsPlaying(true);
     if (audioRef.current && videoRef.current) {
       audioRef.current.currentTime = videoRef.current.currentTime;
       audioRef.current.play();
@@ -89,6 +102,7 @@ function VideoPlayer({
   }, []);
 
   const handlePause = useCallback(() => {
+    setIsPlaying(false);
     if (audioRef.current) {
       audioRef.current.pause();
     }
@@ -118,7 +132,7 @@ function VideoPlayer({
             ref={videoRef}
             src={effectiveVideoUrl}
             className="w-full h-full object-contain"
-            controls
+            controls={showControls}
             playsInline
             preload="auto"
             onPlay={handlePlay}
@@ -141,6 +155,18 @@ function VideoPlayer({
               src={effectiveAudioUrl}
               preload="auto"
             />
+          )}
+          
+          {/* 悬浮播放按钮（仅当隐藏控制条且未播放时显示） */}
+          {!showControls && !isPlaying && !isLoading && effectiveVideoUrl && (
+            <button
+              onClick={handlePlayClick}
+              className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/40 transition-colors cursor-pointer"
+            >
+              <div className="w-12 h-12 rounded-full bg-white/80 flex items-center justify-center shadow-lg">
+                <Play className="w-6 h-6 text-blue-600 ml-1" />
+              </div>
+            </button>
           )}
         </>
       ) : (
@@ -466,21 +492,28 @@ export default function ChatAgentPage() {
             </Card>
           )}
           
-          {/* 视频片段网格 */}
-          <div className="grid gap-3" style={{
-            gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
+          {/* 视频片段网格 - 自适应布局，最小260px，大屏优先2列 */}
+          <div className="grid gap-4" style={{
+            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
           }}>
             {(msgState.segments || [])
               .sort((a, b) => (a.id || 0) - (b.id || 0))
               .map(segment => (
-              <div key={segment.id} className="bg-white rounded-xl p-2 shadow-sm">
-                <Badge variant="outline" className="mb-2 text-xs">片段 {segment.id}</Badge>
-                <VideoPlayer
-                  videoUrl={segment.videoUrl}
-                  localVideoPath={segment.localVideoPath}
-                  audioUrl={segment.audioUrl}
-                />
-                <p className="text-xs text-gray-500 mt-2 line-clamp-2">{segment.script}</p>
+              <div key={segment.id} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+                {/* 视频预览区 - 16:9比例 */}
+                <div className="relative aspect-video bg-gray-900 group">
+                  <VideoPlayer
+                    videoUrl={segment.videoUrl}
+                    localVideoPath={segment.localVideoPath}
+                    audioUrl={segment.audioUrl}
+                    showControls={false}
+                  />
+                </div>
+                {/* 文案与操作区 */}
+                <div className="p-3 bg-gray-50">
+                  <Badge variant="outline" className="mb-2 text-xs border-blue-200 text-blue-600">片段 {segment.id}</Badge>
+                  <p className="text-sm text-gray-700 mt-1 line-clamp-2 leading-relaxed">{segment.script}</p>
+                </div>
               </div>
             ))}
           </div>
