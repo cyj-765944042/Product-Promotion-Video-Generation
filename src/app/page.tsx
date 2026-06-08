@@ -1604,6 +1604,117 @@ export default function ChatAgentPage() {
                   }
                   break;
 
+                // 镜头片段视频URL更新 - 视频生成完成后实时显示
+                case 'segment_video':
+                  const videoSegId = eventData.content?.segmentId;
+                  const videoSegUrl = eventData.content?.videoUrl;
+                  const videoSegAudioUrl = eventData.content?.audioUrl;
+                  const videoSegDuration = eventData.content?.duration;
+                  console.log(`收到片段视频事件: segmentId=${videoSegId}, videoUrl=${videoSegUrl}`);
+                  // 更新会话数据中的segments数组
+                  setSessions(prev => prev.map(s => {
+                    if (s.id !== sessionClientId) return s;
+                    // 找到最后一条助手消息并更新其segments
+                    const lastAssistantIdx = s.messages.findIndex(m => m.role === 'assistant');
+                    if (lastAssistantIdx === -1) return s;
+                    const targetMsg = s.messages[lastAssistantIdx];
+                    const existingSegments = targetMsg.state?.segments || [];
+                    // 更新对应segment的videoUrl
+                    const updatedSegments = existingSegments.map(seg => {
+                      if (seg.id === videoSegId) {
+                        return {
+                          ...seg,
+                          videoUrl: videoSegUrl,
+                          audioUrl: videoSegAudioUrl,
+                          duration: videoSegDuration,
+                        };
+                      }
+                      return seg;
+                    });
+                    // 如果该segment不存在，添加一个新的
+                    if (!existingSegments.find(seg => seg.id === videoSegId)) {
+                      updatedSegments.push({
+                        id: videoSegId,
+                        videoUrl: videoSegUrl,
+                        audioUrl: videoSegAudioUrl,
+                        duration: videoSegDuration,
+                        script: eventData.content?.script || '',
+                        prompt: '', // 视频生成时没有prompt，后续会由state_update补充
+                      });
+                    }
+                    const updatedMessages = s.messages.map((m, idx) =>
+                      idx === lastAssistantIdx
+                        ? { ...m, state: { ...m.state, segments: updatedSegments } }
+                        : m
+                    );
+                    return { 
+                      ...s, 
+                      messages: updatedMessages,
+                      state: { ...s.state, segments: updatedSegments },
+                      updatedAt: new Date().toISOString() 
+                    };
+                  }));
+                  if (isCurrentSession) {
+                    setMessages(prev => {
+                      const lastAssistantIdx = prev.findIndex(m => m.role === 'assistant');
+                      if (lastAssistantIdx === -1) return prev;
+                      const targetMsg = prev[lastAssistantIdx];
+                      const existingSegments = targetMsg.state?.segments || [];
+                      const updatedSegments = existingSegments.map(seg => {
+                        if (seg.id === videoSegId) {
+                          return {
+                            ...seg,
+                            videoUrl: videoSegUrl,
+                            audioUrl: videoSegAudioUrl,
+                            duration: videoSegDuration,
+                          };
+                        }
+                        return seg;
+                      });
+                      if (!existingSegments.find(seg => seg.id === videoSegId)) {
+                        updatedSegments.push({
+                          id: videoSegId,
+                          videoUrl: videoSegUrl,
+                          audioUrl: videoSegAudioUrl,
+                          duration: videoSegDuration,
+                          script: eventData.content?.script || '',
+                          prompt: '', // 视频生成时没有prompt，后续会由state_update补充
+                        });
+                      }
+                      return prev.map((m, idx) =>
+                        idx === lastAssistantIdx
+                          ? { ...m, state: { ...m.state, segments: updatedSegments } }
+                          : m
+                      );
+                    });
+                    setSessionState(prev => {
+                      const existingSegments = prev.segments || [];
+                      const updatedSegments = existingSegments.map(seg => {
+                        if (seg.id === videoSegId) {
+                          return {
+                            ...seg,
+                            videoUrl: videoSegUrl,
+                            audioUrl: videoSegAudioUrl,
+                            duration: videoSegDuration,
+                          };
+                        }
+                        return seg;
+                      });
+                      if (!existingSegments.find(seg => seg.id === videoSegId)) {
+                        updatedSegments.push({
+                          id: videoSegId,
+                          videoUrl: videoSegUrl,
+                          audioUrl: videoSegAudioUrl,
+                          duration: videoSegDuration,
+                          script: eventData.content?.script || '',
+                          prompt: '', // 视频生成时没有prompt，后续会由state_update补充
+                        });
+                      }
+                      return { ...prev, segments: updatedSegments };
+                    });
+                  }
+                  break;
+
                 case 'complete':
                   // 更新会话数据
                   setSessions(prev => prev.map(s => {

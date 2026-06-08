@@ -371,6 +371,38 @@ ${nextActionHint}
       console.log(`[Agent] currentState 更新后: segments=${currentSegmentsLength}, stage=${currentState.currentStage}`);
     }
     
+    // 如果工具返回了segments，逐个发送segment_video事件（实时显示）
+    if (toolCall.tool === 'generateVideoSegments' && toolResult.success && toolResult.data) {
+      const resultSegments = (toolResult.data as Record<string, unknown>).segments as Array<{
+        id: number;
+        videoUrl?: string;
+        audioUrl?: string;
+        script?: string;
+        duration?: number;
+        localVideoPath?: string;
+      }>;
+      
+      if (resultSegments && resultSegments.length > 0) {
+        console.log(`[Agent] 开始逐个发送 ${resultSegments.length} 个segment_video事件`);
+        for (const seg of resultSegments) {
+          if (seg.videoUrl) {
+            // 每个片段发送一个segment_video事件
+            yield {
+              type: "segment_video",
+              content: {
+                segmentId: seg.id,
+                videoUrl: seg.videoUrl,
+                audioUrl: seg.audioUrl,
+                script: seg.script,
+                duration: seg.duration,
+              }
+            };
+            console.log(`[Agent] 发送segment_video事件: segmentId=${seg.id}, videoUrl=${seg.videoUrl?.substring(0, 50)}...`);
+          }
+        }
+      }
+    }
+    
     // 发送工具执行结果（简洁消息）
     yield { type: "tool_result", content: toolResult.message, data: toolResult.data };
     
