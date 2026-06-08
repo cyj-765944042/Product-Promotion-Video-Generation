@@ -1592,12 +1592,19 @@ export default function ChatAgentPage() {
           <div className="mt-4 p-3 bg-white rounded-lg shadow-sm border border-gray-100">
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-600">
-                {isGenerating ? '正在生成中，请稍候...' : '确认所有镜头内容后，点击生成完整视频'}
+                {isGenerating ? '正在生成中，请稍候...' : 
+                  msgState.currentStage === 'video_generated' 
+                    ? '分段视频已生成，点击合成完整视频' 
+                    : '确认所有镜头内容后，点击生成分段视频'}
               </span>
               <Button
                 size="sm"
                 className="bg-blue-500 hover:bg-blue-600 text-white"
-                onClick={() => sendMessage('确认文案，开始生成视频')}
+                onClick={() => sendMessage(
+                  msgState.currentStage === 'video_generated' 
+                    ? '合成完整视频' 
+                    : '生成分段视频'
+                )}
                 disabled={isLoading || isGenerating}
               >
                 {isGenerating ? (
@@ -1606,7 +1613,9 @@ export default function ChatAgentPage() {
                     生成中...
                   </>
                 ) : (
-                  '🎬 生成完整视频'
+                  msgState.currentStage === 'video_generated' 
+                    ? '🎬 合成完整视频' 
+                    : '🎥 生成分段视频'
                 )}
               </Button>
             </div>
