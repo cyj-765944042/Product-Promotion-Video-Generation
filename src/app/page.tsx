@@ -1142,6 +1142,11 @@ export default function ChatAgentPage() {
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setIsLoading(true);
+    
+    // 如果发送的是生成视频或合成视频指令，立即设置isGenerating为true
+    if (content === '生成分段视频' || content === '合成完整视频') {
+      setIsGenerating(true);
+    }
 
     const assistantMessage: ChatMessage = {
       id: `assistant_${Date.now()}`,
