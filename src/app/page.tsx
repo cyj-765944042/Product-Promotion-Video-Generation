@@ -1422,19 +1422,19 @@ export default function ChatAgentPage() {
                 </div>
               </div>
             )}
-          </div>
-        )}
-        
-        {/* 滚动到底部按钮 - 输入框正上方 */}
-        {!isCollapsed && !isAtBottom && (
-          <div className="absolute bottom-[78px] left-1/2 -translate-x-1/2 z-10">
-            <ScrollToBottomButton onClick={scrollToBottom} isAtBottom={isAtBottom} />
+            
+            {/* 滚动到底部悬浮按钮 - 输入框正上方 */}
+            {!isAtBottom && (
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10">
+                <ScrollToBottomButton onClick={scrollToBottom} isAtBottom={isAtBottom} />
+              </div>
+            )}
           </div>
         )}
         
         {/* 底部输入栏 - 固定70px */}
         {!isCollapsed && (
-          <div className="h-[70px] bg-white border-t border-gray-200 flex items-center justify-center px-4 gap-3 shrink-0 relative">
+          <div className="h-[70px] bg-white border-t border-gray-200 flex items-center justify-center px-4 gap-3 shrink-0">
             {/* 上传按钮 */}
             <label className="cursor-pointer">
               <input
