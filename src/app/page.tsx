@@ -17,6 +17,7 @@ import {
   ChevronDown,
   ChevronUp,
   Minimize2,
+  Camera,
   Play,
   User,
 } from 'lucide-react';
@@ -187,6 +188,189 @@ function VideoPlayer({
           <p className="text-red-400 text-sm">{videoError}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// 镜头文案卡片组件（支持编辑、状态标识、拖拽）
+function ScriptCard({
+  script,
+  index,
+  total,
+  onEdit,
+  onRegenerate,
+  onMoveUp,
+  onMoveDown,
+}: {
+  script: { id: number; script: string; prompt: string };
+  index: number;
+  total: number;
+  onEdit: (field: 'script' | 'prompt', value: string) => void;
+  onRegenerate: () => Promise<void>;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+}) {
+  const [editingScript, setEditingScript] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState(false);
+  const [scriptValue, setScriptValue] = useState(script.script);
+  const [promptValue, setPromptValue] = useState(script.prompt);
+  const [promptExpanded, setPromptExpanded] = useState(false);
+
+  const handleSaveScript = () => {
+    onEdit('script', scriptValue);
+    setEditingScript(false);
+  };
+
+  const handleSavePrompt = () => {
+    onEdit('prompt', promptValue);
+    setEditingPrompt(false);
+  };
+
+  const handleCancelScript = () => {
+    setScriptValue(script.script);
+    setEditingScript(false);
+  };
+
+  const handleCancelPrompt = () => {
+    setPromptValue(script.prompt);
+    setEditingPrompt(false);
+  };
+
+  const isLast = index === total - 1;
+
+  return (
+    <div className="relative flex items-start gap-4 group">
+      {/* 左侧流程线 */}
+      <div className="flex flex-col items-center w-8 shrink-0">
+        {/* 圆形节点 */}
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0
+          bg-blue-100 text-blue-600 border-2 border-blue-300`}>
+          {index + 1}
+        </div>
+        {/* 连接线 */}
+        {!isLast && (
+          <div className="w-0.5 h-full bg-blue-200 mt-1 flex-1 min-h-[20px]" />
+        )}
+      </div>
+
+      {/* 卡片主体 */}
+      <div className={`flex-1 bg-white rounded-lg border transition-all duration-200
+        ${editingScript || editingPrompt ? 'border-blue-300 shadow-md' : 'border-gray-100 shadow-sm group-hover:shadow-md'}`}>
+        
+        {/* 上半部分：镜头脚本编辑区 */}
+        <div className="p-3 border-b border-gray-100">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Camera className="w-4 h-4 text-gray-400" />
+              <span className="text-xs text-gray-500 font-medium">镜头描述</span>
+            </div>
+            {!editingPrompt && (
+              <button
+                onClick={() => setEditingPrompt(true)}
+                className="text-xs text-gray-400 hover:text-blue-600 transition-colors"
+              >
+                编辑
+              </button>
+            )}
+          </div>
+          
+          {editingPrompt ? (
+            <div className="space-y-2">
+              <textarea
+                value={promptValue}
+                onChange={(e) => setPromptValue(e.target.value)}
+                className="w-full p-2 text-sm border border-gray-200 rounded-md focus:border-blue-300 focus:ring-1 focus:ring-blue-200 resize-none"
+                rows={promptExpanded ? 4 : 2}
+                placeholder="输入镜头描述..."
+              />
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setPromptExpanded(!promptExpanded)}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  {promptExpanded ? '收起' : '展开'}
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleCancelPrompt}
+                    className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleSavePrompt}
+                    className="px-2 py-1 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded"
+                  >
+                    保存
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div
+              onClick={() => setPromptExpanded(!promptExpanded)}
+              className={`text-xs text-gray-400 cursor-pointer ${promptExpanded ? '' : 'line-clamp-1'}`}
+            >
+              {script.prompt || '暂无镜头描述'}
+            </div>
+          )}
+        </div>
+
+        {/* 下半部分：口播文案编辑区 */}
+        <div className="p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-gray-500 font-medium">口播文案</span>
+            <div className="flex items-center gap-2">
+              {!editingScript && (
+                <>
+                  <button
+                    onClick={() => setEditingScript(true)}
+                    className="text-xs text-gray-400 hover:text-blue-600 transition-colors"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    onClick={onRegenerate}
+                    className="text-xs text-blue-500 hover:text-blue-600 font-medium"
+                  >
+                    重新生成
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+          
+          {editingScript ? (
+            <div className="space-y-2">
+              <textarea
+                value={scriptValue}
+                onChange={(e) => setScriptValue(e.target.value)}
+                className="w-full p-2 text-sm font-medium border border-gray-200 rounded-md focus:border-blue-300 focus:ring-1 focus:ring-blue-200 resize-none"
+                rows={3}
+                placeholder="输入口播文案..."
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={handleCancelScript}
+                  className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleSaveScript}
+                  className="px-2 py-1 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded"
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm font-medium text-gray-700 line-clamp-3">
+              {script.script || '暂无口播文案'}
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -568,37 +752,65 @@ export default function ChatAgentPage() {
             </Card>
           )}
           
-          {/* 文案列表 */}
-          <div className="space-y-2">
-            {msgState.scripts.map(script => (
-              <div key={script.id} className="bg-white rounded-lg p-3 shadow-sm">
-                <div className="flex items-center gap-2 mb-1">
-                  <Badge variant="outline" className="text-xs">文案 {script.id}</Badge>
-                  <span className="text-xs text-gray-400">{script.prompt}</span>
-                </div>
-                <p className="text-sm">{script.script}</p>
+          {/* 镜头序列引导语 */}
+          <div className="text-xs text-gray-500 mb-3 p-2 bg-blue-50 rounded-lg">
+            📹 以下是为你生成的连续镜头，可直接修改镜头描述和口播文案，调整顺序或单独重制某一镜头，再生成完整视频
+          </div>
+          
+          {/* 镜头序列卡片 - 左侧流程线 + 纵向排列 */}
+          <div className="relative pl-8">
+            {/* 左侧垂直流程线 */}
+            <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-blue-200" />
+            {/* 流程节点 */}
+            {msgState.scripts.map((script, index) => (
+              <div key={script.id} className="relative mb-4 last:mb-0">
+                {/* 左侧节点圆点 */}
+                <div className="absolute -left-5 top-4 w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow" />
+                
+                {/* 镜头卡片 */}
+                <ScriptCard
+                  script={script}
+                  index={index}
+                  total={msgState.scripts?.length || 0}
+                  onEdit={(field: 'script' | 'prompt', value: string) => {
+                    // 更新文案内容
+                    const updatedScripts = msgState.scripts?.map(s => 
+                      s.id === script.id ? { ...s, [field]: value } : s
+                    ) || [];
+                    setSessionState(prev => ({
+                      ...prev,
+                      scripts: updatedScripts
+                    }));
+                  }}
+                  onRegenerate={() => sendMessage(`重新生成镜头${script.id}`)}
+                  onMoveUp={index > 0 ? () => {
+                    const newScripts = [...(msgState.scripts || [])];
+                    [newScripts[index - 1], newScripts[index]] = [newScripts[index], newScripts[index - 1]];
+                    setSessionState(prev => ({ ...prev, scripts: newScripts }));
+                  } : undefined}
+                  onMoveDown={index < (msgState.scripts?.length || 0) - 1 ? () => {
+                    const newScripts = [...(msgState.scripts || [])];
+                    [newScripts[index], newScripts[index + 1]] = [newScripts[index + 1], newScripts[index]];
+                    setSessionState(prev => ({ ...prev, scripts: newScripts }));
+                  } : undefined}
+                />
               </div>
             ))}
           </div>
           
-          {/* 操作按钮 */}
-          <div className="flex gap-2 mt-3">
-            <Button
-              size="sm"
-              className="bg-blue-500 hover:bg-blue-600"
-              onClick={() => sendMessage('确认文案，开始生成视频')}
-              disabled={isLoading}
-            >
-              生成视频
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => sendMessage('请修改文案内容')}
-              disabled={isLoading}
-            >
-              修改文案
-            </Button>
+          {/* 底部统一操作按钮 */}
+          <div className="mt-4 p-3 bg-white rounded-lg shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600">确认所有镜头内容后，点击生成完整视频</span>
+              <Button
+                size="sm"
+                className="bg-blue-500 hover:bg-blue-600 text-white"
+                onClick={() => sendMessage('确认文案，开始生成视频')}
+                disabled={isLoading}
+              >
+                🎬 生成完整视频
+              </Button>
+            </div>
           </div>
         </div>
       );
