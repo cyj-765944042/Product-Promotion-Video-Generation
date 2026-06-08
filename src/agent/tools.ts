@@ -395,6 +395,7 @@ export async function generateVideoSegments(
       videoPath?: string; 
       audioPath?: string;
       videoUrl?: string;
+      audioUrl?: string; // 音频URL
       localVideoPath?: string; // 本地视频路径（用于播放）
     }> = [];
     
@@ -407,11 +408,12 @@ export async function generateVideoSegments(
           const data = JSON.parse(line.slice(6));
           // 匹配多种事件类型：segment_video, segment_complete, segment, complete
           if (data.type === 'segment_video' || data.type === 'segment_complete' || data.type === 'segment') {
-            // segment_video 事件的 content 包含 segmentId, videoUrl, duration
+            // segment_video 事件的 content 包含 segmentId, videoUrl, audioUrl, duration
             const segmentId = data.content?.segmentId || data.segmentIndex || data.id || data.segmentId || segments.length + 1;
             const videoUrl = data.content?.videoUrl || data.videoUrl || data.videoPath;
+            const audioUrl = data.content?.audioUrl || data.audioUrl || data.audioPath; // 解析音频URL
             
-            console.log(`[Tool] 解析视频片段事件: type=${data.type}, segmentId=${segmentId}, videoUrl=${videoUrl?.substring(0, 100)}...`);
+            console.log(`[Tool] 解析视频片段事件: type=${data.type}, segmentId=${segmentId}, videoUrl=${videoUrl?.substring(0, 100)}..., audioUrl=${audioUrl?.substring(0, 100) || '无'}...`);
             
             // 下载视频到本地（优先转存到对象存储）
             let localVideoPath: string | undefined;
@@ -433,6 +435,7 @@ export async function generateVideoSegments(
               videoPath: data.videoPath,
               audioPath: data.audioPath,
               videoUrl: signedVideoUrl || videoUrl, // 优先使用签名URL
+              audioUrl: audioUrl, // 添加音频URL
               localVideoPath: localVideoPath
             });
           }

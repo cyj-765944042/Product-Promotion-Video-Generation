@@ -585,6 +585,7 @@ export async function POST(request: NextRequest) {
               content: { 
                 segmentId: result.segmentId, 
                 videoUrl: result.videoUrl,
+                audioUrl: result.audioUrl, // 添加音频URL
                 duration: result.audioDuration,
               },
               segmentId: result.index,
