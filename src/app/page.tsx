@@ -353,7 +353,7 @@ function SessionSidebar({
   };
 
   return (
-    <div className="w-[260px] h-full bg-[#F8F7F5] flex flex-col border-r border-[#E5E5E5]">
+    <div className="w-[260px] h-full bg-gradient-to-b from-[#FAF7F0] to-[#F5F0E6] flex flex-col border-r border-[#E5E5E5]">
       {/* 新建对话按钮 */}
       <div className="p-4">
         <button
@@ -2305,7 +2305,7 @@ export default function ChatAgentPage() {
         {/* 右侧聊天窗口 */}
         <div className="flex-1 flex flex-col" style={{ width: isCollapsed ? '100%' : 'calc(100% - 260px)' }}>
           {/* 顶部导航栏 - 固定56px */}
-          <div className="h-[56px] bg-[#F8F7F5] flex items-center justify-between px-4 shrink-0 border-b border-[#E5E5E5]">
+          <div className="h-[56px] bg-gradient-to-r from-[#FCFAF5] to-[#F5F0E6] flex items-center justify-between px-4 shrink-0 border-b border-[#E5E5E5]">
             <div className="flex items-center gap-3">
               <img 
                 src="/assets/agent-avatar.png" 
