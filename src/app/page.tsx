@@ -1354,7 +1354,7 @@ export default function ChatAgentPage() {
       
       {/* 悬浮弹窗 */}
       <div 
-        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col relative"
+        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
         style={{
           width: '82vw',
           minWidth: '580px',
