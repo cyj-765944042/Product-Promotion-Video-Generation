@@ -2,6 +2,9 @@ import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';
 
+// Increase max listeners to prevent warning during hot reload
+process.setMaxListeners(20);
+
 const dev = process.env.COZE_PROJECT_ENV !== 'PROD';
 const hostname = process.env.HOSTNAME || 'localhost';
 const port = parseInt(process.env.PORT || '5000', 10);
