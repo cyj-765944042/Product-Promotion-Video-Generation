@@ -588,14 +588,14 @@ export async function composeFinalVideo(
     const sortedSegments = [...segments].sort((a, b) => (a.id || 0) - (b.id || 0));
     console.log(`[Tool] 片段排序后的ID顺序: ${sortedSegments.map(s => s.id).join(', ')}`);
     
-    // Step 1: 下载所有视频和音频文件到本地
-    const localSegments: Array<{ videoPath: string; audioPath: string; script: string; duration: number }> = [];
+    // Step 1: 下载所有视频文件到本地（分段视频已包含音频，无需单独下载音频）
+    const localSegments: Array<{ videoPath: string; script: string; duration: number }> = [];
     
     for (const segment of sortedSegments) {
       const segId = segment.id;
       console.log(`[Tool] 处理片段 ${segId}...`);
       
-      // 下载视频
+      // 下载视频（分段视频已包含音频）
       const videoPath = path.join(tmpDir, `video_${segId}.mp4`);
       if (segment.videoUrl) {
         console.log(`[Tool] 下载视频 ${segId}: ${segment.videoUrl.substring(0, 50)}...`);
@@ -611,36 +611,20 @@ export async function composeFinalVideo(
         continue;
       }
       
-      // 下载音频（如果有）
-      const audioPath = path.join(tmpDir, `audio_${segId}.mp3`);
-      if (segment.audioUrl) {
-        console.log(`[Tool] 下载音频 ${segId}: ${segment.audioUrl.substring(0, 50)}...`);
-        const audioResponse = await axios.get(segment.audioUrl, { 
-          responseType: 'arraybuffer',
-          timeout: 60000,
-          headers: customHeaders
-        });
-        fs.writeFileSync(audioPath, audioResponse.data);
-        console.log(`[Tool] 音频 ${segId} 下载完成，大小: ${fs.statSync(audioPath).size} bytes`);
-      } else {
-        console.log(`[Tool] 片段 ${segId} 没有 audioUrl，使用视频自带音频`);
-        // 如果没有单独的音频，使用视频自带的音频
-        fs.copyFileSync(videoPath, audioPath.replace('.mp3', '_from_video.mp4'));
-      }
+      // 分段视频已包含音频，无需单独下载音频
       
-      // 获取音频时长
+      // 获取视频时长（视频已包含音频）
       let duration = 0;
       try {
-        const durationCmd = `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`;
+        const durationCmd = `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`;
         duration = parseFloat(execSync(durationCmd, { encoding: 'utf-8', timeout: 5000 }).trim()) || 0;
       } catch (e) {
-        console.log(`[Tool] 无法获取音频时长，使用默认值 5秒`);
+        console.log(`[Tool] 无法获取视频时长，使用默认值 5秒`);
         duration = 5;
       }
       
       localSegments.push({
         videoPath,
-        audioPath,
         script: segment.script,
         duration
       });
