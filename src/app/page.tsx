@@ -62,37 +62,87 @@ interface SessionState {
   currentStage?: 'idle' | 'identifying' | 'product_identified' | 'script_generated' | 'video_generated' | 'composing' | 'done';
 }
 
-// 视频播放器组件（16:9固定比例）
+// 视频播放器组件（16:9固定比例，支持单独音频轨道）
 function VideoPlayer({
   videoUrl,
   localVideoPath,
+  audioUrl,
 }: {
   videoUrl?: string;
   localVideoPath?: string;
+  audioUrl?: string;
 }) {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   const effectiveVideoUrl = localVideoPath || (videoUrl ? getAccessibleUrl(videoUrl) : '');
+  const effectiveAudioUrl = audioUrl ? getAccessibleUrl(audioUrl) : '';
+
+  // 同步视频和音频播放
+  const handlePlay = useCallback(() => {
+    if (audioRef.current && videoRef.current) {
+      audioRef.current.currentTime = videoRef.current.currentTime;
+      audioRef.current.play();
+    }
+  }, []);
+
+  const handlePause = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+  }, []);
+
+  const handleSeeked = useCallback(() => {
+    if (audioRef.current && videoRef.current) {
+      audioRef.current.currentTime = videoRef.current.currentTime;
+    }
+  }, []);
+
+  const handleTimeUpdate = useCallback(() => {
+    if (audioRef.current && videoRef.current) {
+      // 保持音视频同步（容差0.1秒）
+      const diff = Math.abs(audioRef.current.currentTime - videoRef.current.currentTime);
+      if (diff > 0.1) {
+        audioRef.current.currentTime = videoRef.current.currentTime;
+      }
+    }
+  }, []);
 
   return (
     <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
       {effectiveVideoUrl ? (
-        <video
-          src={effectiveVideoUrl}
-          className="w-full h-full object-contain"
-          controls
-          playsInline
-          preload="auto"
-          onError={() => {
-            setVideoError('视频加载失败');
-            setIsLoading(false);
-          }}
-          onCanPlay={() => {
-            setIsLoading(false);
-            setVideoError(null);
-          }}
-        />
+        <>
+          <video
+            ref={videoRef}
+            src={effectiveVideoUrl}
+            className="w-full h-full object-contain"
+            controls
+            playsInline
+            preload="auto"
+            onPlay={handlePlay}
+            onPause={handlePause}
+            onSeeked={handleSeeked}
+            onTimeUpdate={handleTimeUpdate}
+            onError={() => {
+              setVideoError('视频加载失败');
+              setIsLoading(false);
+            }}
+            onCanPlay={() => {
+              setIsLoading(false);
+              setVideoError(null);
+            }}
+          />
+          {/* 隐藏的音频元素，用于播放TTS音频 */}
+          {effectiveAudioUrl && (
+            <audio
+              ref={audioRef}
+              src={effectiveAudioUrl}
+              preload="auto"
+            />
+          )}
+        </>
       ) : (
         <div className="w-full h-full bg-gray-800 flex items-center justify-center">
           <p className="text-gray-400 text-sm">视频生成中...</p>
@@ -426,6 +476,7 @@ export default function ChatAgentPage() {
                 <VideoPlayer
                   videoUrl={segment.videoUrl}
                   localVideoPath={segment.localVideoPath}
+                  audioUrl={segment.audioUrl}
                 />
                 <p className="text-xs text-gray-500 mt-2 line-clamp-2">{segment.script}</p>
               </div>
