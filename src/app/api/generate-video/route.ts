@@ -723,10 +723,53 @@ export async function POST(request: NextRequest) {
                 fileName: `videos/merged_${segmentId}_${Date.now()}.mp4`,
                 contentType: 'video/mp4',
               });
-              const mergedVideoUrl = await storage.generatePresignedUrl({
+              let mergedVideoUrl = await storage.generatePresignedUrl({
                 key: mergedVideoKey,
                 expireTime: 86400,
               });
+              
+              // 为分段视频添加字幕（从源头解决字幕同步问题）
+              console.log(`为分段视频 ${i + 1} 添加字幕...`);
+              try {
+                const segmentSubtitleConfig = {
+                  font_pos_config: {
+                    pos_x: '0',
+                    pos_y: '90%',
+                    width: '100%',
+                    height: '10%',
+                  },
+                  font_size: 36,
+                  font_color: '#FFFFFFFF',
+                  font_type: '1525745',
+                  background_color: '#00000088',
+                  background_border_width: 0,
+                  border_width: 1,
+                  border_color: '#00000088',
+                };
+                
+                // 该分段字幕从0开始，结束于音频时长
+                const segmentTextList = [{
+                  start_time: 0,
+                  end_time: info.audioDuration,
+                  text: info.script,
+                }];
+                
+                console.log(`分段字幕: 0-${info.audioDuration}: ${info.script}`);
+                
+                const subtitleResponse = await videoEditClient.addSubtitles(
+                  mergedVideoUrl,
+                  segmentSubtitleConfig,
+                  { textList: segmentTextList }
+                );
+                
+                if (subtitleResponse.url) {
+                  mergedVideoUrl = subtitleResponse.url;
+                  console.log(`分段视频 ${i + 1} 字幕添加成功`);
+                }
+              } catch (subtitleError) {
+                console.error(`分段视频 ${i + 1} 字幕添加失败:`, subtitleError);
+                // 继续使用无字幕的视频URL
+              }
               
               mergedVideoUrls.push(mergedVideoUrl);
               console.log(`视频 ${i + 1} FFmpeg音视频合并成功，视频${actualVideoDuration}秒，音频${info.audioDuration}秒`);
@@ -964,7 +1007,7 @@ export async function POST(request: NextRequest) {
         }
 
         // ==========================================
-        // Step 5: Add subtitles to final video
+        // Step 5: Task completion (subtitles already added in segments)
         // ==========================================
         
         // 发送任务收尾进度事件
@@ -977,17 +1020,11 @@ export async function POST(request: NextRequest) {
           isGenerating: true,
         });
         
-        sendEvent(controller, {
-          type: 'subtitle_start',
-          content: '正在添加字幕到视频...',
-        });
-
-        // Generate subtitles based on AUDIO durations (not video durations)
-        // Each audio starts at the beginning of its segment video
+        // 分段视频已包含字幕，拼接后的视频自动继承字幕，无需再次添加
+        // Generate subtitle info for frontend display (based on AUDIO durations)
         const subtitles: Subtitle[] = [];
         let currentTime = 0;
         for (const info of segmentVideoInfos) {
-          // Use audioDuration for subtitle timing
           subtitles.push({
             start: currentTime,
             end: currentTime + info.audioDuration,
@@ -996,44 +1033,20 @@ export async function POST(request: NextRequest) {
           currentTime += info.audioDuration;
         }
 
-        console.log('字幕时间段（基于音频时长）:', subtitles.map(s => `${s.start}-${s.end}: ${s.text}`));
-
-        const textList = subtitles.map(sub => ({
-          start_time: sub.start,
-          end_time: sub.end,
-          text: sub.text,
-        }));
-
-        const subtitleConfig = {
-          font_pos_config: {
-            pos_x: '0',
-            pos_y: '90%',
-            width: '100%',
-            height: '10%',
-          },
-          font_size: 36,
-          font_color: '#FFFFFFFF',
-          font_type: '1525745',
-          background_color: '#00000088',
-          background_border_width: 0,
-          border_width: 1,
-          border_color: '#00000088',
-        };
+        console.log('字幕时间段（用于前端展示）:', subtitles.map(s => `${s.start}-${s.end}: ${s.text}`));
 
         let finalVideoUrl = concatenatedVideoUrl;
         let signedVideoUrl: string | undefined;
         
         // 先将视频转存到对象存储，获取可访问的签名URL
-        console.log('将视频转存到对象存储...');
+        console.log('将拼接后的视频转存到对象存储...');
         try {
           const storage = new S3Storage();
-          // 从URL下载并上传到对象存储，返回存储的key
           const storageKey = await storage.uploadFromUrl({
             url: concatenatedVideoUrl,
             timeout: 60000, // 60秒超时
           });
           
-          // 使用key生成可访问的签名URL
           signedVideoUrl = await storage.generatePresignedUrl({
             key: storageKey,
             expireTime: 3600, // 1小时有效期
@@ -1045,30 +1058,9 @@ export async function POST(request: NextRequest) {
           }
         } catch (transferError) {
           console.error('视频转存失败:', transferError);
-          // 继续使用原始URL
         }
 
-        // 使用签名URL添加字幕（如果转存成功）
-        if (signedVideoUrl) {
-          try {
-            console.log('使用签名URL添加字幕...');
-            const subtitleResponse = await videoEditClient.addSubtitles(
-              signedVideoUrl,
-              subtitleConfig,
-              { textList }
-            );
-
-            if (subtitleResponse.url) {
-              finalVideoUrl = subtitleResponse.url;
-              console.log('字幕添加成功');
-            }
-          } catch (subtitleError) {
-            console.error('字幕添加失败:', subtitleError);
-            // 继续使用无字幕的视频URL
-          }
-        } else {
-          console.log('视频转存失败，跳过字幕添加，使用原始视频URL');
-        }
+        // 字幕已在分段视频中添加，无需再次添加
 
         // 发送最终视频URL（可能是签名URL、带字幕URL或原始URL）
 
