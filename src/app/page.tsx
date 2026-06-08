@@ -35,6 +35,14 @@ const USER_AVATAR_STORAGE_KEY = 'huxiaoying_user_avatar';
 // 会话存储key
 const SESSIONS_STORAGE_KEY = 'huxiaoying_sessions';
 
+// 后台任务状态类型
+interface BackgroundTask {
+  sessionId: string; // 会话ID（用于标识任务属于哪个会话）
+  abortController: AbortController; // 用于取消请求
+  status: 'running' | 'completed' | 'failed' | 'cancelled'; // 任务状态
+  startedAt: string; // 开始时间
+}
+
 // 会话类型定义
 interface Session {
   id: string;
@@ -49,7 +57,8 @@ interface Session {
   };
   createdAt: string;
   updatedAt: string;
-  isGenerating?: boolean;
+  isGenerating?: boolean; // 是否正在生成中（后台任务运行）
+  backendSessionId?: string; // 后端会话ID（用于恢复后端状态）
 }
 
 // 滚动到底部悬浮按钮组件
@@ -885,16 +894,9 @@ export default function ChatAgentPage() {
   // 状态
   const [sessions, setSessions] = useState<Session[]>([]); // 所有会话列表
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null); // 当前会话ID
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content: '您好！我是「货小影」，您的专业带货视频智能助手。\n\n我可以帮您：\n1. 上传商品图片，自动识别商品和卖点\n2. 分段创作口播文案与画面提示词\n3. 生成带货视频片段\n4. 合成成片\n\n请上传您的商品图片或描述，开始创作吧！',
-      timestamp: new Date().toISOString(),
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [sessionId, setSessionId] = useState<string>();
+  const [sessionId, setSessionId] = useState<string>(); // 后端会话ID
   const [sessionState, setSessionState] = useState<SessionState>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -912,6 +914,9 @@ export default function ChatAgentPage() {
     stageName: '',
     segmentStatus: {},
   });
+
+  // 后台任务管理器：存储每个会话的后台任务状态
+  const backgroundTasksRef = useRef<Map<string, BackgroundTask>>(new Map());
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -935,15 +940,64 @@ export default function ChatAgentPage() {
       try {
         const parsed = JSON.parse(savedSessions) as Session[];
         setSessions(parsed);
-        // 如果有会话，选择第一个
+        // 如果有会话，选择第一个并加载其数据
         if (parsed.length > 0) {
-          setCurrentSessionId(parsed[0].id);
+          const firstSession = parsed[0];
+          setCurrentSessionId(firstSession.id);
+          setMessages(firstSession.messages);
+          setSessionState(firstSession.state);
+          setGenerationProgress(firstSession.progress);
+          setSessionId(firstSession.backendSessionId);
+          setIsGenerating(firstSession.isGenerating || false);
         }
       } catch (e) {
         console.error('解析会话数据失败:', e);
+        // 创建默认会话
+        createDefaultSession();
       }
+    } else {
+      // 没有保存的会话，创建默认会话
+      createDefaultSession();
     }
   }, []);
+
+  // 创建默认欢迎会话
+  const createDefaultSession = useCallback(() => {
+    const defaultSession: Session = {
+      id: `session_${Date.now()}`,
+      title: '新对话',
+      messages: [{
+        id: 'welcome',
+        role: 'assistant',
+        content: '您好！我是「货小影」，您的专业带货视频智能助手。\n\n我可以帮您：\n1. 上传商品图片，自动识别商品和卖点\n2. 分段创作口播文案与画面提示词\n3. 生成带货视频片段\n4. 合成成片\n\n请上传您的商品图片或描述，开始创作吧！',
+        timestamp: new Date().toISOString(),
+      }],
+      state: {},
+      progress: {
+        currentStage: 0,
+        stageName: '',
+        segmentStatus: {},
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setSessions([defaultSession]);
+    setCurrentSessionId(defaultSession.id);
+    setMessages(defaultSession.messages);
+    setSessionState({});
+    setGenerationProgress({
+      currentStage: 0,
+      stageName: '',
+      segmentStatus: {},
+    });
+  }, []);
+
+  // 初始化时如果没有会话，创建默认会话
+  useEffect(() => {
+    if (sessions.length === 0 && !currentSessionId) {
+      createDefaultSession();
+    }
+  }, [sessions.length, currentSessionId, createDefaultSession]);
 
   // 保存会话列表到localStorage
   useEffect(() => {
@@ -952,8 +1006,40 @@ export default function ChatAgentPage() {
     }
   }, [sessions]);
 
-  // 新建会话
+  // 组件卸载时清理后台任务
+  useEffect(() => {
+    return () => {
+      // 取消所有正在运行的后台任务
+      backgroundTasksRef.current.forEach((task, sessionId) => {
+        if (task.status === 'running') {
+          task.abortController.abort();
+          task.status = 'cancelled';
+          console.log(`已取消会话 ${sessionId} 的后台任务`);
+        }
+      });
+      backgroundTasksRef.current.clear();
+    };
+  }, []);
+
+  // 新建会话（保存当前会话状态）
   const handleNewSession = useCallback(() => {
+    // 保存当前会话状态
+    if (currentSessionId) {
+      setSessions(prev => prev.map(s => 
+        s.id === currentSessionId 
+          ? { 
+              ...s, 
+              messages, 
+              state: sessionState, 
+              progress: generationProgress, 
+              isGenerating, 
+              backendSessionId: sessionId,
+              updatedAt: new Date().toISOString() 
+            }
+          : s
+      ));
+    }
+    
     const newId = `session_${Date.now()}`;
     const newSession: Session = {
       id: newId,
@@ -983,23 +1069,51 @@ export default function ChatAgentPage() {
       segmentStatus: {},
     });
     setSessionId(undefined);
-  }, []);
+    setIsGenerating(false);
+    setIsLoading(false);
+  }, [currentSessionId, messages, sessionState, generationProgress, isGenerating, sessionId]);
 
-  // 切换会话
+  // 切换会话（保存当前会话状态，不中断后台任务）
   const handleSelectSession = useCallback((id: string) => {
+    // 保存当前会话状态
+    if (currentSessionId) {
+      setSessions(prev => prev.map(s => 
+        s.id === currentSessionId 
+          ? { 
+              ...s, 
+              messages, 
+              state: sessionState, 
+              progress: generationProgress, 
+              isGenerating, 
+              backendSessionId: sessionId,
+              updatedAt: new Date().toISOString() 
+            }
+          : s
+      ));
+    }
+    
+    // 加载新会话的状态
     const session = sessions.find(s => s.id === id);
     if (session) {
       setCurrentSessionId(id);
       setMessages(session.messages);
       setSessionState(session.state);
       setGenerationProgress(session.progress);
-      setSessionId(undefined);
+      setSessionId(session.backendSessionId);
       setIsGenerating(session.isGenerating || false);
     }
-  }, [sessions]);
+  }, [currentSessionId, sessions, messages, sessionState, generationProgress, isGenerating, sessionId]);
 
-  // 删除会话
+  // 删除会话（取消后台任务）
   const handleDeleteSession = useCallback((id: string) => {
+    // 取消该会话的后台任务
+    const task = backgroundTasksRef.current.get(id);
+    if (task && task.status === 'running') {
+      task.abortController.abort();
+      task.status = 'cancelled';
+      backgroundTasksRef.current.delete(id);
+    }
+    
     setSessions(prev => {
       const newSessions = prev.filter(s => s.id !== id);
       // 如果删除的是当前会话，切换到第一个或新建
@@ -1010,6 +1124,8 @@ export default function ChatAgentPage() {
           setMessages(firstSession.messages);
           setSessionState(firstSession.state);
           setGenerationProgress(firstSession.progress);
+          setSessionId(firstSession.backendSessionId);
+          setIsGenerating(firstSession.isGenerating || false);
         } else {
           // 没有会话了，新建一个
           handleNewSession();
@@ -1128,9 +1244,25 @@ export default function ChatAgentPage() {
     setIsAtBottom(true);
   }, [messages, scrollToBottom]);
 
-  // 发送消息
+  // 发送消息（支持后台执行）
   const sendMessage = async (content: string, imageUrl?: string) => {
     if (!content.trim() && !imageUrl) return;
+    if (!currentSessionId) return; // 确保有当前会话ID
+
+    // 创建AbortController用于取消请求
+    const abortController = new AbortController();
+    
+    // 存储后台任务状态
+    const task: BackgroundTask = {
+      sessionId: currentSessionId,
+      abortController,
+      status: 'running',
+      startedAt: new Date().toISOString(),
+    };
+    backgroundTasksRef.current.set(currentSessionId, task);
+
+    const sessionClientId = currentSessionId; // 保存当前会话ID，用于后台更新
+    const backendSessionId = sessionId; // 保存后端会话ID
 
     const userMessage: ChatMessage = {
       id: `user_${Date.now()}`,
@@ -1139,13 +1271,29 @@ export default function ChatAgentPage() {
       timestamp: new Date().toISOString(),
       imageUrl: imageUrl,
     };
+    
+    // 更新当前会话的消息列表
     setMessages(prev => [...prev, userMessage]);
+    
+    // 同时更新会话数据（用于后台持久化）
+    setSessions(prev => prev.map(s => 
+      s.id === sessionClientId 
+        ? { ...s, messages: [...s.messages, userMessage], updatedAt: new Date().toISOString() }
+        : s
+    ));
+    
     setInputValue('');
     setIsLoading(true);
     
     // 如果发送的是生成视频或合成视频指令，立即设置isGenerating为true
     if (content === '生成分段视频' || content === '合成完整视频') {
       setIsGenerating(true);
+      // 更新会话的isGenerating状态
+      setSessions(prev => prev.map(s => 
+        s.id === sessionClientId 
+          ? { ...s, isGenerating: true, updatedAt: new Date().toISOString() }
+          : s
+      ));
     }
 
     const assistantMessage: ChatMessage = {
@@ -1155,19 +1303,29 @@ export default function ChatAgentPage() {
       timestamp: new Date().toISOString(),
       isStreaming: true,
     };
+    
+    // 更新当前会话的消息列表
     setMessages(prev => [...prev, assistantMessage]);
+    
+    // 同时更新会话数据（用于后台持久化）
+    setSessions(prev => prev.map(s => 
+      s.id === sessionClientId 
+        ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date().toISOString() }
+        : s
+    ));
 
     try {
       const response = await fetch('/api/chat-agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId,
+          sessionId: backendSessionId,
           message: content,
           imageUrl,
           productName: sessionState.productName,
           voiceLanguage, // 传递配音语言参数
         }),
+        signal: abortController.signal, // 添加AbortController signal
       });
 
       if (!response.ok) throw new Error('请求失败');
@@ -1191,6 +1349,10 @@ export default function ChatAgentPage() {
             try {
               const eventData = JSON.parse(line.slice(6));
 
+              // 核心改动：根据sessionClientId更新对应会话的数据
+              // 如果是当前会话，同时更新当前状态
+              const isCurrentSession = sessionClientId === currentSessionId;
+
               switch (eventData.type) {
                 case 'text':
                   const textContent = eventData.content;
@@ -1199,29 +1361,56 @@ export default function ChatAgentPage() {
                       textContent.match(/^[{}\s":,]*$/)) {
                     break;
                   }
-                  setMessages(prev =>
-                    prev.map(m =>
+                  // 更新会话数据
+                  setSessions(prev => prev.map(s => {
+                    if (s.id !== sessionClientId) return s;
+                    const updatedMessages = s.messages.map(m =>
                       m.id === assistantMessage.id
                         ? { ...m, content: m.content + textContent }
                         : m
-                    )
-                  );
+                    );
+                    return { ...s, messages: updatedMessages, updatedAt: new Date().toISOString() };
+                  }));
+                  // 如果是当前会话，更新当前状态
+                  if (isCurrentSession) {
+                    setMessages(prev =>
+                      prev.map(m =>
+                        m.id === assistantMessage.id
+                          ? { ...m, content: m.content + textContent }
+                          : m
+                      )
+                    );
+                  }
                   break;
 
                 case 'progress':
-                  setMessages(prev =>
-                    prev.map(m =>
+                  // 更新会话数据
+                  setSessions(prev => prev.map(s => {
+                    if (s.id !== sessionClientId) return s;
+                    const updatedMessages = s.messages.map(m =>
                       m.id === assistantMessage.id
                         ? { ...m, content: m.content ? `${m.content}\n${eventData.content}` : eventData.content }
                         : m
-                    )
-                  );
+                    );
+                    return { ...s, messages: updatedMessages, updatedAt: new Date().toISOString() };
+                  }));
+                  if (isCurrentSession) {
+                    setMessages(prev =>
+                      prev.map(m =>
+                        m.id === assistantMessage.id
+                          ? { ...m, content: m.content ? `${m.content}\n${eventData.content}` : eventData.content }
+                          : m
+                      )
+                    );
+                  }
                   break;
 
                 case 'tool_result':
                   const toolData = eventData.data || {};
-                  setMessages(prev =>
-                    prev.map(m =>
+                  // 更新会话数据
+                  setSessions(prev => prev.map(s => {
+                    if (s.id !== sessionClientId) return s;
+                    const updatedMessages = s.messages.map(m =>
                       m.id === assistantMessage.id
                         ? {
                             ...m,
@@ -1229,54 +1418,130 @@ export default function ChatAgentPage() {
                             state: { ...m.state, ...toolData },
                           }
                         : m
-                    )
-                  );
-                  setSessionState(prev => ({ ...prev, ...toolData }));
+                    );
+                    return { ...s, messages: updatedMessages, state: { ...s.state, ...toolData }, updatedAt: new Date().toISOString() };
+                  }));
+                  if (isCurrentSession) {
+                    setMessages(prev =>
+                      prev.map(m =>
+                        m.id === assistantMessage.id
+                          ? {
+                              ...m,
+                              content: m.content ? `${m.content}\n${eventData.content}` : eventData.content,
+                              state: { ...m.state, ...toolData },
+                            }
+                          : m
+                      )
+                    );
+                    setSessionState(prev => ({ ...prev, ...toolData }));
+                  }
                   break;
 
                 case 'state_update':
-                  setSessionId(eventData.sessionId);
+                  const newBackendSessionId = eventData.sessionId;
                   const stateData = eventData.data || {};
-                  setMessages(prev =>
-                    prev.map(m =>
+                  // 更新会话数据（保存后端会话ID）
+                  setSessions(prev => prev.map(s => {
+                    if (s.id !== sessionClientId) return s;
+                    const updatedMessages = s.messages.map(m =>
                       m.id === assistantMessage.id
                         ? { ...m, state: { ...m.state, ...stateData } }
                         : m
-                    )
-                  );
-                  setSessionState(prev => ({ ...prev, ...stateData }));
+                    );
+                    return { 
+                      ...s, 
+                      messages: updatedMessages, 
+                      state: { ...s.state, ...stateData },
+                      backendSessionId: newBackendSessionId,
+                      updatedAt: new Date().toISOString() 
+                    };
+                  }));
+                  if (isCurrentSession) {
+                    setSessionId(newBackendSessionId);
+                    setMessages(prev =>
+                      prev.map(m =>
+                        m.id === assistantMessage.id
+                          ? { ...m, state: { ...m.state, ...stateData } }
+                          : m
+                      )
+                    );
+                    setSessionState(prev => ({ ...prev, ...stateData }));
+                  }
                   break;
 
                 case 'wait_feedback':
                   const feedbackState = eventData.data?.state || {};
-                  setMessages(prev =>
-                    prev.map(m =>
+                  // 更新会话数据
+                  setSessions(prev => prev.map(s => {
+                    if (s.id !== sessionClientId) return s;
+                    const updatedMessages = s.messages.map(m =>
                       m.id === assistantMessage.id
                         ? { ...m, state: { ...m.state, ...feedbackState }, isStreaming: false }
                         : m
-                    )
-                  );
-                  setSessionState(prev => ({ ...prev, ...feedbackState }));
-                  setIsLoading(false);
-                  setIsGenerating(false);
-                  setGenerationProgress(prev => ({
-                    ...prev,
-                    currentStage: 0,
-                    stageName: '',
+                    );
+                    return { 
+                      ...s, 
+                      messages: updatedMessages, 
+                      state: { ...s.state, ...feedbackState },
+                      isGenerating: false,
+                      updatedAt: new Date().toISOString() 
+                    };
                   }));
+                  if (isCurrentSession) {
+                    setMessages(prev =>
+                      prev.map(m =>
+                        m.id === assistantMessage.id
+                          ? { ...m, state: { ...m.state, ...feedbackState }, isStreaming: false }
+                          : m
+                      )
+                    );
+                    setSessionState(prev => ({ ...prev, ...feedbackState }));
+                    setIsLoading(false);
+                    setIsGenerating(false);
+                    setGenerationProgress(prev => ({
+                      ...prev,
+                      currentStage: 0,
+                      stageName: '',
+                    }));
+                  }
+                  // 更新后台任务状态
+                  if (backgroundTasksRef.current.has(sessionClientId)) {
+                    const currentTask = backgroundTasksRef.current.get(sessionClientId);
+                    if (currentTask) {
+                      currentTask.status = 'completed';
+                    }
+                  }
                   break;
 
                 // 视频生成进度事件
                 case 'generation_progress':
                   const progressData = eventData.data || {};
-                  setGenerationProgress(prev => ({
-                    currentStage: progressData.currentStage || prev.currentStage,
-                    stageName: progressData.stageName || prev.stageName,
-                    estimatedTime: progressData.estimatedTime,
-                    segmentStatus: progressData.segmentStatus || prev.segmentStatus,
+                  // 更新会话数据
+                  setSessions(prev => prev.map(s => {
+                    if (s.id !== sessionClientId) return s;
+                    const newProgress = {
+                      currentStage: progressData.currentStage || s.progress.currentStage,
+                      stageName: progressData.stageName || s.progress.stageName,
+                      estimatedTime: progressData.estimatedTime,
+                      segmentStatus: progressData.segmentStatus || s.progress.segmentStatus,
+                    };
+                    return { 
+                      ...s, 
+                      progress: newProgress,
+                      isGenerating: progressData.isGenerating || s.isGenerating,
+                      updatedAt: new Date().toISOString() 
+                    };
                   }));
-                  if (progressData.isGenerating) {
-                    setIsGenerating(true);
+                  if (isCurrentSession) {
+                    setGenerationProgress(prev => ({
+                      currentStage: progressData.currentStage || prev.currentStage,
+                      stageName: progressData.stageName || prev.stageName,
+                      estimatedTime: progressData.estimatedTime,
+                      segmentStatus: progressData.segmentStatus || prev.segmentStatus,
+                    }));
+                    if (progressData.isGenerating) {
+                      setIsGenerating(true);
+                    }
                   }
                   break;
 
@@ -1284,35 +1549,77 @@ export default function ChatAgentPage() {
                 case 'segment_status':
                   const segId = eventData.segmentId;
                   const segStatus = eventData.status;
-                  setGenerationProgress(prev => ({
-                    ...prev,
-                    segmentStatus: {
-                      ...prev.segmentStatus,
+                  // 更新会话数据
+                  setSessions(prev => prev.map(s => {
+                    if (s.id !== sessionClientId) return s;
+                    const newSegmentStatus = {
+                      ...s.progress.segmentStatus,
                       [segId]: segStatus,
-                    },
+                    };
+                    return { 
+                      ...s, 
+                      progress: { ...s.progress, segmentStatus: newSegmentStatus },
+                      updatedAt: new Date().toISOString() 
+                    };
                   }));
+                  if (isCurrentSession) {
+                    setGenerationProgress(prev => ({
+                      ...prev,
+                      segmentStatus: {
+                        ...prev.segmentStatus,
+                        [segId]: segStatus,
+                      },
+                    }));
+                  }
                   break;
 
                 case 'complete':
-                  setMessages(prev =>
-                    prev.map(m =>
+                  // 更新会话数据
+                  setSessions(prev => prev.map(s => {
+                    if (s.id !== sessionClientId) return s;
+                    const updatedMessages = s.messages.map(m =>
                       m.id === assistantMessage.id
                         ? { ...m, isStreaming: false }
                         : m
-                    )
-                  );
-                  setIsLoading(false);
-                  setIsGenerating(false);
-                  setGenerationProgress(prev => ({
-                    ...prev,
-                    currentStage: 0,
-                    stageName: '',
+                    );
+                    return { 
+                      ...s, 
+                      messages: updatedMessages, 
+                      isGenerating: false,
+                      progress: { ...s.progress, currentStage: 0, stageName: '' },
+                      updatedAt: new Date().toISOString() 
+                    };
                   }));
+                  if (isCurrentSession) {
+                    setMessages(prev =>
+                      prev.map(m =>
+                        m.id === assistantMessage.id
+                          ? { ...m, isStreaming: false }
+                          : m
+                      )
+                    );
+                    setIsLoading(false);
+                    setIsGenerating(false);
+                    setGenerationProgress(prev => ({
+                      ...prev,
+                      currentStage: 0,
+                      stageName: '',
+                    }));
+                  }
+                  // 更新后台任务状态
+                  if (backgroundTasksRef.current.has(sessionClientId)) {
+                    const currentTask = backgroundTasksRef.current.get(sessionClientId);
+                    if (currentTask) {
+                      currentTask.status = 'completed';
+                    }
+                  }
                   break;
 
                 case 'error':
-                  setMessages(prev =>
-                    prev.map(m =>
+                  // 更新会话数据
+                  setSessions(prev => prev.map(s => {
+                    if (s.id !== sessionClientId) return s;
+                    const updatedMessages = s.messages.map(m =>
                       m.id === assistantMessage.id
                         ? {
                             ...m,
@@ -1320,9 +1627,35 @@ export default function ChatAgentPage() {
                             isStreaming: false,
                           }
                         : m
-                    )
-                  );
-                  setIsLoading(false);
+                    );
+                    return { 
+                      ...s, 
+                      messages: updatedMessages, 
+                      isGenerating: false,
+                      updatedAt: new Date().toISOString() 
+                    };
+                  }));
+                  if (isCurrentSession) {
+                    setMessages(prev =>
+                      prev.map(m =>
+                        m.id === assistantMessage.id
+                          ? {
+                              ...m,
+                              content: `错误: ${eventData.content}`,
+                              isStreaming: false,
+                            }
+                          : m
+                      )
+                    );
+                    setIsLoading(false);
+                  }
+                  // 更新后台任务状态
+                  if (backgroundTasksRef.current.has(sessionClientId)) {
+                    const currentTask = backgroundTasksRef.current.get(sessionClientId);
+                    if (currentTask) {
+                      currentTask.status = 'failed';
+                    }
+                  }
                   break;
               }
             } catch {
@@ -1332,9 +1665,18 @@ export default function ChatAgentPage() {
         }
       }
     } catch (error) {
+      // 如果是主动取消，不显示错误
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('请求已取消');
+        return;
+      }
+      
       console.error('发送消息失败:', error);
-      setMessages(prev =>
-        prev.map(m =>
+      
+      // 更新会话数据
+      setSessions(prev => prev.map(s => {
+        if (s.id !== sessionClientId) return s;
+        const updatedMessages = s.messages.map(m =>
           m.id === assistantMessage.id
             ? {
                 ...m,
@@ -1342,9 +1684,37 @@ export default function ChatAgentPage() {
                 isStreaming: false,
               }
             : m
-        )
-      );
-      setIsLoading(false);
+        );
+        return { 
+          ...s, 
+          messages: updatedMessages, 
+          isGenerating: false,
+          updatedAt: new Date().toISOString() 
+        };
+      }));
+      
+      if (sessionClientId === currentSessionId) {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantMessage.id
+              ? {
+                  ...m,
+                  content: `抱歉，处理时出现错误：${error instanceof Error ? error.message : '未知错误'}`,
+                  isStreaming: false,
+                }
+              : m
+          )
+        );
+        setIsLoading(false);
+      }
+      
+      // 更新后台任务状态
+      if (backgroundTasksRef.current.has(sessionClientId)) {
+        const currentTask = backgroundTasksRef.current.get(sessionClientId);
+        if (currentTask) {
+          currentTask.status = 'failed';
+        }
+      }
     }
   };
 
