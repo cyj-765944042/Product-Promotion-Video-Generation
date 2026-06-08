@@ -177,7 +177,8 @@ async function executeTool(
         input.productName as string,
         input.features as string[],
         input.productImageUrl as string | undefined,
-        customHeaders
+        customHeaders,
+        state.voiceLanguage // 传入配音语言，用于生成对应语言的口播文案
       );
     
     case "generateVideoSegments":

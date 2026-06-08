@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
   const productName = formData.get('productName') as string;
   const productSellingPoints = formData.get('productSellingPoints') as string;
   const productImageFile = formData.get('productImage') as File | null;
+  const voiceLanguage = formData.get('voiceLanguage') as string || 'mandarin'; // 配音语言
 
   if (!productName || !productSellingPoints) {
     return new Response(JSON.stringify({ error: '缺少必要参数' }), {
@@ -38,6 +39,16 @@ export async function POST(request: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
     });
   }
+
+  // 语言对应的文案语言指示
+  const LANGUAGE_MAP: Record<string, { name: string; instruction: string }> = {
+    'mandarin': { name: '普通话', instruction: '请使用中文生成口播文案' },
+    'cantonese': { name: '粤语', instruction: '请使用粤语风格生成口播文案（可用粤语常用表达）' },
+    'english': { name: '英语', instruction: '请使用英语生成口播文案，所有文案内容必须是英文' },
+    'japanese': { name: '日语', instruction: '请使用日语生成口播文案，所有文案内容必须是日文' },
+  };
+  const languageInfo = LANGUAGE_MAP[voiceLanguage] || LANGUAGE_MAP['mandarin'];
+  console.log(`[Generate Script] 使用配音语言: ${voiceLanguage}, 文案语言: ${languageInfo.name}`);
 
   // Create streaming response
   const stream = new ReadableStream({
@@ -112,16 +123,18 @@ export async function POST(request: NextRequest) {
 核心卖点：${productSellingPoints}
 ${productInfo ? `商品特征：${productInfo}` : ''}
 
+【重要】${languageInfo.instruction}
+
 要求：
 1. 生成4-5段口播文案，每段独立描述一个广告切片场景
-2. 每段文案12-21字，简洁有力，符合抖音短视频风格
+2. 每段文案12-21字（或对应语言的等效长度），简洁有力，符合抖音短视频风格
 3. 分段逻辑建议：
    - 第1段：吸引注意力的开场钩子（如疑问句、痛点直击）
    - 第2-3段：展示核心卖点和使用场景
    - 第4段：展示更多细节或使用效果
    - 最后一段：引导购买的号召性结尾
 4. 每段要有明确的画面感，方便后续视频制作
-5. 适当加入表情符号增加亲和力
+5. 口播文案必须使用${languageInfo.name}，不能混用其他语言
 
 请严格按照以下JSON格式输出，不要有任何其他说明文字：
 {
