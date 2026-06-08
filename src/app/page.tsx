@@ -569,37 +569,14 @@ export default function ChatAgentPage() {
           )}
           
           {/* 文案列表 */}
-          <div className="space-y-3">
+          <div className="space-y-2">
             {msgState.scripts.map(script => (
-              <div 
-                key={script.id} 
-                className="bg-white rounded-lg p-4 shadow-md border border-gray-100 hover:shadow-lg transition-shadow"
-              >
-                {/* 卡片头部：左上角标识 + 右上角操作按钮 */}
-                <div className="flex items-center justify-between mb-3">
-                  <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200 text-blue-600">文案 {script.id}</Badge>
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    className="text-xs text-blue-500 hover:text-blue-600 hover:bg-blue-50 h-6 px-2"
-                    onClick={() => sendMessage(`使用文案${script.id}`)}
-                    disabled={isLoading}
-                  >
-                    使用
-                  </Button>
+              <div key={script.id} className="bg-white rounded-lg p-3 shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <Badge variant="outline" className="text-xs">文案 {script.id}</Badge>
+                  <span className="text-xs text-gray-400">{script.prompt}</span>
                 </div>
-                
-                {/* 上半部分：镜头脚本（hover展开） */}
-                <div className="group relative mb-2">
-                  <div className="text-xs text-gray-400 line-clamp-1 group-hover:line-clamp-none transition-all cursor-pointer">
-                    📷 {script.prompt || '镜头描述'}
-                  </div>
-                </div>
-                
-                {/* 下半部分：口播文案（加粗突出） */}
-                <p className="text-sm font-medium text-gray-700 leading-relaxed line-clamp-3">
-                  {script.script}
-                </p>
+                <p className="text-sm">{script.script}</p>
               </div>
             ))}
           </div>
