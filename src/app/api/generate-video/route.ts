@@ -174,6 +174,54 @@ function sleep(ms: number): Promise<void> {
 // Key: cache key (segment identifier), Value: Promise of video generation result
 const videoTaskCache = new Map<string, Promise<{ videoUrl: string; taskId: string }>>();
 
+// 全局请求队列和限流控制（防止多会话并发触发429）
+const MAX_CONCURRENT_VIDEO_REQUESTS = 2; // 最大并发视频生成请求数
+const MIN_REQUEST_INTERVAL = 3000; // 最小请求间隔（毫秒）
+const requestQueue: Array<{
+  execute: () => Promise<{ videoUrl: string; taskId: string }>;
+  resolve: (result: { videoUrl: string; taskId: string }) => void;
+  reject: (error: Error) => void;
+}> = [];
+let activeRequests = 0;
+let lastRequestTime = 0;
+
+// 处理队列中的请求
+async function processQueue(): Promise<void> {
+  while (requestQueue.length > 0 && activeRequests < MAX_CONCURRENT_VIDEO_REQUESTS) {
+    const now = Date.now();
+    const elapsed = now - lastRequestTime;
+    
+    // 确保请求间隔
+    if (elapsed < MIN_REQUEST_INTERVAL) {
+      await sleep(MIN_REQUEST_INTERVAL - elapsed);
+    }
+    
+    const task = requestQueue.shift();
+    if (!task) continue;
+    
+    activeRequests++;
+    lastRequestTime = Date.now();
+    
+    task.execute()
+      .then(task.resolve)
+      .catch(task.reject)
+      .finally(() => {
+        activeRequests--;
+        processQueue(); // 继续处理下一个请求
+      });
+  }
+}
+
+// 加入全局请求队列
+function enqueueVideoRequest(
+  execute: () => Promise<{ videoUrl: string; taskId: string }>
+): Promise<{ videoUrl: string; taskId: string }> {
+  return new Promise((resolve, reject) => {
+    requestQueue.push({ execute, resolve, reject });
+    processQueue();
+  });
+}
+
 // Generate cache key for video task
 function getVideoTaskCacheKey(segmentIndex: number, prompt: string, duration: number): string {
   return `${segmentIndex}_${prompt}_${duration}`;
@@ -202,14 +250,13 @@ async function generateVideoWithTaskCache(
     return existingTask;
   }
   
-  // Create new task promise
-  const taskPromise = (async (): Promise<{ videoUrl: string; taskId: string }> => {
-    const backoffDelays = [5000, 10000, 20000, 40000, 60000]; // 5s, 10s, 20s, 40s, 60s - 更长的等待时间应对429限流
-    let lastTaskId: string | null = null;
+  // Create new task promise (使用全局请求队列控制并发)
+  const taskPromise = enqueueVideoRequest(async () => {
+    const backoffDelays = [8000, 15000, 30000, 60000, 90000]; // 8s, 15s, 30s, 60s, 90s - 更长的等待时间应对429限流
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        console.log(`第 ${segmentIndex + 1} 段视频生成开始（尝试 ${attempt + 1}/${maxRetries + 1}）...`);
+        console.log(`第 ${segmentIndex + 1} 段视频生成开始（尝试 ${attempt + 1}/${maxRetries + 1}）... [队列状态: ${activeRequests}活跃, ${requestQueue.length}等待]`);
         console.log(`视频生成参数: content=${JSON.stringify(content)}, options=${JSON.stringify(options)}`);
         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -251,7 +298,7 @@ async function generateVideoWithTaskCache(
     // Clear cache on failure
     videoTaskCache.delete(cacheKey);
     throw new Error(`第 ${segmentIndex + 1} 段视频生成失败，已重试${maxRetries}次`);
-  })();
+  });
   
   // Store the promise in cache before execution
   videoTaskCache.set(cacheKey, taskPromise);
