@@ -944,10 +944,15 @@ export default function ChatAgentPage() {
     if (savedSessions) {
       try {
         const parsed = JSON.parse(savedSessions) as Session[];
-        setSessions(parsed);
+        // 页面刷新后，后台任务已不存在，所有会话的isGenerating应该重置为false
+        const sessionsWithResetGenerating = parsed.map(s => ({
+          ...s,
+          isGenerating: false, // 重置生成状态
+        }));
+        setSessions(sessionsWithResetGenerating);
         // 如果有会话，选择第一个并加载其数据
-        if (parsed.length > 0) {
-          const firstSession = parsed[0];
+        if (sessionsWithResetGenerating.length > 0) {
+          const firstSession = sessionsWithResetGenerating[0];
           setCurrentSessionId(firstSession.id);
           setMessages(firstSession.messages);
           setSessionState(firstSession.state);
@@ -2006,7 +2011,7 @@ export default function ChatAgentPage() {
                     ? '合成完整视频' 
                     : '生成分段视频'
                 )}
-                disabled={isLoading || isGenerating}
+                disabled={isGenerating}
               >
                 {isGenerating ? (
                   <>
