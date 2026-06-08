@@ -552,10 +552,14 @@ export async function composeFinalVideo(
     
     console.log(`[Tool] 创建临时目录: ${tmpDir}`);
     
+    // 按 ID 排序确保合成顺序正确
+    const sortedSegments = [...segments].sort((a, b) => (a.id || 0) - (b.id || 0));
+    console.log(`[Tool] 片段排序后的ID顺序: ${sortedSegments.map(s => s.id).join(', ')}`);
+    
     // Step 1: 下载所有视频和音频文件到本地
     const localSegments: Array<{ videoPath: string; audioPath: string; script: string; duration: number }> = [];
     
-    for (const segment of segments) {
+    for (const segment of sortedSegments) {
       const segId = segment.id;
       console.log(`[Tool] 处理片段 ${segId}...`);
       
