@@ -193,7 +193,7 @@ async function generateVideoWithTaskCache(
   },
   segmentIndex: number,
   cacheKey: string,
-  maxRetries: number = 3
+  maxRetries: number = 5
 ): Promise<{ videoUrl: string; taskId: string }> {
   // Check if there's already a task in progress for this segment
   const existingTask = videoTaskCache.get(cacheKey);
@@ -204,7 +204,7 @@ async function generateVideoWithTaskCache(
   
   // Create new task promise
   const taskPromise = (async (): Promise<{ videoUrl: string; taskId: string }> => {
-    const backoffDelays = [2000, 4000, 8000]; // 2s, 4s, 8s
+    const backoffDelays = [5000, 10000, 20000, 40000, 60000]; // 5s, 10s, 20s, 40s, 60s - 更长的等待时间应对429限流
     let lastTaskId: string | null = null;
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -556,7 +556,15 @@ export async function POST(request: NextRequest) {
         });
         
         // Create video generation promises for all segments
+        // 错开启动时间，避免并发触发429限流
         const videoGenerationPromises = segments.map(async (segment, i) => {
+          // 错开启动：每个任务延迟i*3秒启动（最多前5个）
+          const staggerDelay = i < 5 ? i * 3000 : 0;
+          if (staggerDelay > 0) {
+            console.log(`第 ${i + 1} 段视频延迟 ${staggerDelay/1000} 秒启动，避免限流...`);
+            await sleep(staggerDelay);
+          }
+          
           const audioInfo = audioInfos[i];
           
           const content: Array<
@@ -606,7 +614,7 @@ export async function POST(request: NextRequest) {
             },
             i,
             cacheKey,
-            3 // max retries
+            5, // max retries (增加到5次应对429限流)
           );
           
           return {
