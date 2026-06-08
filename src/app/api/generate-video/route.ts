@@ -731,6 +731,7 @@ export async function POST(request: NextRequest) {
               // 为分段视频添加字幕（从源头解决字幕同步问题）
               console.log(`为分段视频 ${i + 1} 添加字幕...`);
               try {
+                // 分段字幕配置：简体字、通透背景
                 const segmentSubtitleConfig = {
                   font_pos_config: {
                     pos_x: '0',
@@ -740,11 +741,11 @@ export async function POST(request: NextRequest) {
                   },
                   font_size: 36,
                   font_color: '#FFFFFFFF',
-                  font_type: '1525745',
-                  background_color: '#00000088',
+                  font_type: '1525745', // 系统默认字体，支持简体中文
+                  background_color: '#00000044', // 更通透的背景（约25%透明度）
                   background_border_width: 0,
                   border_width: 1,
-                  border_color: '#00000088',
+                  border_color: '#00000066', // 边框更通透
                 };
                 
                 // 该分段字幕从0开始，结束于音频时长
