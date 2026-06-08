@@ -683,7 +683,7 @@ export default function ChatAgentPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex flex-col">
-      <div className="max-w-4xl mx-auto p-4 pt-6 pb-2 flex-1 flex flex-col">
+      <div className="max-w-5xl mx-auto p-4 pt-6 pb-2 flex-1 flex flex-col">
         {/* 标题 */}
         <div className="text-center mb-4">
           <div className="flex items-center justify-center gap-2 mb-2">
@@ -779,7 +779,7 @@ export default function ChatAgentPage() {
 
       {/* 输入区域 - 固定在底部 */}
       <div className="sticky bottom-0 bg-gradient-to-t from-blue-50 to-transparent pt-2 pb-2">
-        <div className="max-w-4xl mx-auto px-4">
+        <div className="max-w-3xl mx-auto px-4">
           <Card className="bg-white/95 backdrop-blur p-3 shadow-lg">
             <div className="flex gap-2 items-center">
               {/* 图片上传 */}
