@@ -900,7 +900,8 @@ export default function ChatAgentPage() {
   const [sessionState, setSessionState] = useState<SessionState>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
+  // isGenerating 改为从当前会话计算，不再使用全局状态
+  // const [isGenerating, setIsGenerating] = useState(false);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [isAvatarUploading, setIsAvatarUploading] = useState(false);
   const [voiceLanguage, setVoiceLanguage] = useState<string>('mandarin'); // 配音语言
@@ -917,6 +918,10 @@ export default function ChatAgentPage() {
 
   // 后台任务管理器：存储每个会话的后台任务状态
   const backgroundTasksRef = useRef<Map<string, BackgroundTask>>(new Map());
+
+  // 从当前会话获取isGenerating状态（每个会话独立）
+  const currentSession = sessions.find(s => s.id === currentSessionId);
+  const isGenerating = currentSession?.isGenerating || false;
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -948,7 +953,7 @@ export default function ChatAgentPage() {
           setSessionState(firstSession.state);
           setGenerationProgress(firstSession.progress);
           setSessionId(firstSession.backendSessionId);
-          setIsGenerating(firstSession.isGenerating || false);
+          // isGenerating 现在从 currentSession 计算，无需单独设置
         }
       } catch (e) {
         console.error('解析会话数据失败:', e);
@@ -1069,7 +1074,7 @@ export default function ChatAgentPage() {
       segmentStatus: {},
     });
     setSessionId(undefined);
-    setIsGenerating(false);
+    // isGenerating 现在从 currentSession 计算，无需单独设置
     setIsLoading(false);
   }, [currentSessionId, messages, sessionState, generationProgress, isGenerating, sessionId]);
 
@@ -1100,7 +1105,7 @@ export default function ChatAgentPage() {
       setSessionState(session.state);
       setGenerationProgress(session.progress);
       setSessionId(session.backendSessionId);
-      setIsGenerating(session.isGenerating || false);
+      // isGenerating 现在从 currentSession 计算，无需单独设置
     }
   }, [currentSessionId, sessions, messages, sessionState, generationProgress, isGenerating, sessionId]);
 
@@ -1125,7 +1130,7 @@ export default function ChatAgentPage() {
           setSessionState(firstSession.state);
           setGenerationProgress(firstSession.progress);
           setSessionId(firstSession.backendSessionId);
-          setIsGenerating(firstSession.isGenerating || false);
+          // isGenerating 现在从 currentSession 计算，无需单独设置
         } else {
           // 没有会话了，新建一个
           handleNewSession();
@@ -1249,6 +1254,15 @@ export default function ChatAgentPage() {
     if (!content.trim() && !imageUrl) return;
     if (!currentSessionId) return; // 确保有当前会话ID
 
+    // 获取目标会话的完整状态（从sessions数组中获取，而非当前的sessionState）
+    const targetSession = sessions.find(s => s.id === currentSessionId);
+    if (!targetSession) return;
+    
+    // 使用目标会话的后端sessionId和状态
+    const targetBackendSessionId = targetSession.backendSessionId;
+    const targetProductName = targetSession.state.productName;
+    const targetSessionState = targetSession.state;
+
     // 创建AbortController用于取消请求
     const abortController = new AbortController();
     
@@ -1262,7 +1276,6 @@ export default function ChatAgentPage() {
     backgroundTasksRef.current.set(currentSessionId, task);
 
     const sessionClientId = currentSessionId; // 保存当前会话ID，用于后台更新
-    const backendSessionId = sessionId; // 保存后端会话ID
 
     const userMessage: ChatMessage = {
       id: `user_${Date.now()}`,
@@ -1285,10 +1298,9 @@ export default function ChatAgentPage() {
     setInputValue('');
     setIsLoading(true);
     
-    // 如果发送的是生成视频或合成视频指令，立即设置isGenerating为true
+    // 如果发送的是生成视频或合成视频指令，立即设置isGenerating为true（仅更新目标会话）
     if (content === '生成分段视频' || content === '合成完整视频') {
-      setIsGenerating(true);
-      // 更新会话的isGenerating状态
+      // 只更新目标会话的isGenerating状态，不影响其他会话
       setSessions(prev => prev.map(s => 
         s.id === sessionClientId 
           ? { ...s, isGenerating: true, updatedAt: new Date().toISOString() }
@@ -1319,11 +1331,11 @@ export default function ChatAgentPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: backendSessionId,
+          sessionId: targetBackendSessionId, // 使用目标会话的后端sessionId
           message: content,
           imageUrl,
-          productName: sessionState.productName,
-          voiceLanguage, // 传递配音语言参数
+          productName: targetProductName, // 使用目标会话的productName
+          voiceLanguage, // 配音语言参数（全局设置）
         }),
         signal: abortController.signal, // 添加AbortController signal
       });
@@ -1497,7 +1509,12 @@ export default function ChatAgentPage() {
                     );
                     setSessionState(prev => ({ ...prev, ...feedbackState }));
                     setIsLoading(false);
-                    setIsGenerating(false);
+                    // 只更新目标会话的isGenerating状态为false
+                    setSessions(prev => prev.map(s => 
+                      s.id === sessionClientId 
+                        ? { ...s, isGenerating: false, updatedAt: new Date().toISOString() }
+                        : s
+                    ));
                     setGenerationProgress(prev => ({
                       ...prev,
                       currentStage: 0,
@@ -1539,9 +1556,7 @@ export default function ChatAgentPage() {
                       estimatedTime: progressData.estimatedTime,
                       segmentStatus: progressData.segmentStatus || prev.segmentStatus,
                     }));
-                    if (progressData.isGenerating) {
-                      setIsGenerating(true);
-                    }
+                    // isGenerating 已在 setSessions 中更新，无需单独设置
                   }
                   break;
 
@@ -1599,7 +1614,7 @@ export default function ChatAgentPage() {
                       )
                     );
                     setIsLoading(false);
-                    setIsGenerating(false);
+                    // isGenerating 已在 setSessions 中更新为false，无需单独设置
                     setGenerationProgress(prev => ({
                       ...prev,
                       currentStage: 0,
