@@ -44,7 +44,7 @@ function ScrollToBottomButton({
         transition-all duration-200 shadow-md
         ${isAtBottom 
           ? 'bg-gray-200/50 text-gray-300 cursor-default opacity-50' 
-          : 'bg-white hover:bg-[#1677ff]/10 text-[#1677ff] hover:text-[#0d5bb5] cursor-pointer'
+          : 'bg-white hover:bg-[#7c3aed]/10 text-[#7c3aed] hover:text-[#5b21b6] cursor-pointer'
         }`}
       style={{
         backdropFilter: 'blur(4px)',
@@ -1467,7 +1467,7 @@ export default function ChatAgentPage() {
             {/* 发送按钮 */}
             <Button
               size="icon"
-              className="w-[40px] h-[40px] rounded-full shrink-0 bg-[#1677ff] hover:bg-[#1677ff]/80 text-white"
+              className="w-[40px] h-[40px] rounded-full shrink-0 bg-[#7c3aed] hover:bg-[#7c3aed]/80 text-white"
               onClick={() => sendMessage(inputValue)}
               disabled={isLoading || !inputValue.trim()}
             >
