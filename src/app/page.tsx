@@ -23,10 +23,34 @@ import {
   AlertCircle,
   CheckCircle2,
   Circle,
+  Plus,
+  Trash2,
+  Pencil,
+  MessageSquare,
 } from 'lucide-react';
 
 // 用户头像本地存储key
 const USER_AVATAR_STORAGE_KEY = 'huxiaoying_user_avatar';
+
+// 会话存储key
+const SESSIONS_STORAGE_KEY = 'huxiaoying_sessions';
+
+// 会话类型定义
+interface Session {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  state: SessionState;
+  progress: {
+    currentStage: number;
+    stageName: string;
+    estimatedTime?: string;
+    segmentStatus: Record<number, 'pending' | 'processing' | 'completed' | 'failed'>;
+  };
+  createdAt: string;
+  updatedAt: string;
+  isGenerating?: boolean;
+}
 
 // 滚动到底部悬浮按钮组件
 function ScrollToBottomButton({
@@ -193,6 +217,183 @@ function LanguageSelector({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// 会话侧边栏组件
+function SessionSidebar({
+  sessions,
+  currentSessionId,
+  onSelectSession,
+  onNewSession,
+  onDeleteSession,
+  onRenameSession,
+}: {
+  sessions: Session[];
+  currentSessionId: string | null;
+  onSelectSession: (id: string) => void;
+  onNewSession: () => void;
+  onDeleteSession: (id: string) => void;
+  onRenameSession: (id: string, newTitle: string) => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+
+  // 分组会话：今天、最近
+  const groupSessions = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const todaySessions = sessions.filter(s => new Date(s.createdAt) >= today);
+    const recentSessions = sessions.filter(s => new Date(s.createdAt) < today);
+    
+    return { todaySessions, recentSessions };
+  };
+
+  const { todaySessions, recentSessions } = groupSessions();
+
+  const handleStartEdit = (session: Session) => {
+    setEditingId(session.id);
+    setEditingTitle(session.title);
+  };
+
+  const handleSaveEdit = () => {
+    if (editingId && editingTitle.trim()) {
+      onRenameSession(editingId, editingTitle.trim());
+    }
+    setEditingId(null);
+    setEditingTitle('');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingTitle('');
+  };
+
+  const SessionItem = ({ session }: { session: Session }) => {
+    const isSelected = session.id === currentSessionId;
+    const isEditing = editingId === session.id;
+
+    return (
+      <div
+        className={`group relative px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-200
+          ${isSelected 
+            ? 'bg-[#7c3aed]/20 text-white border border-[#7c3aed]/40' 
+            : 'hover:bg-gray-700/50 text-gray-300'
+          }`}
+        onClick={() => !isEditing && onSelectSession(session.id)}
+      >
+        <div className="flex items-center justify-between">
+          {isEditing ? (
+            <input
+              type="text"
+              value={editingTitle}
+              onChange={(e) => setEditingTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveEdit();
+                if (e.key === 'Escape') handleCancelEdit();
+              }}
+              className="w-full bg-gray-700 text-white px-2 py-1 rounded text-sm outline-none border border-[#7c3aed]"
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium truncate">{session.title}</div>
+              <div className="flex items-center gap-2 mt-0.5">
+                {session.isGenerating && (
+                  <span className="text-xs text-[#7c3aed] flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    生成中
+                  </span>
+                )}
+                <span className="text-xs text-gray-500">
+                  {new Date(session.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* hover操作图标 */}
+          {!isEditing && (
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleStartEdit(session);
+                }}
+                className="p-1 hover:bg-gray-600 rounded text-gray-400 hover:text-white"
+                title="重命名"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteSession(session.id);
+                }}
+                className="p-1 hover:bg-red-500/20 rounded text-gray-400 hover:text-red-400"
+                title="删除"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="w-[260px] h-full bg-gray-800 flex flex-col border-r border-gray-700">
+      {/* 新建对话按钮 */}
+      <div className="p-4">
+        <button
+          onClick={onNewSession}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg
+            bg-[#7c3aed] hover:bg-[#5b21b6] text-white font-medium
+            transition-all duration-200 shadow-md hover:shadow-lg"
+        >
+          <Plus className="w-4 h-4" />
+          新建对话
+        </button>
+      </div>
+
+      {/* 会话列表 */}
+      <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-4">
+        {/* 今天 */}
+        {todaySessions.length > 0 && (
+          <div>
+            <div className="text-xs text-gray-500 font-medium mb-2 px-1">今天</div>
+            <div className="space-y-1">
+              {todaySessions.map(session => (
+                <SessionItem key={session.id} session={session} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 最近 */}
+        {recentSessions.length > 0 && (
+          <div>
+            <div className="text-xs text-gray-500 font-medium mb-2 px-1">最近</div>
+            <div className="space-y-1">
+              {recentSessions.map(session => (
+                <SessionItem key={session.id} session={session} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 空状态 */}
+        {sessions.length === 0 && (
+          <div className="text-center text-gray-500 py-8">
+            <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">暂无历史对话</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -684,6 +885,8 @@ function ScriptCard({
 // 主页面
 export default function ChatAgentPage() {
   // 状态
+  const [sessions, setSessions] = useState<Session[]>([]); // 所有会话列表
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null); // 当前会话ID
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
@@ -728,7 +931,119 @@ export default function ChatAgentPage() {
     if (savedLanguage) {
       setVoiceLanguage(savedLanguage);
     }
+    // 初始化会话列表（从localStorage读取）
+    const savedSessions = localStorage.getItem(SESSIONS_STORAGE_KEY);
+    if (savedSessions) {
+      try {
+        const parsed = JSON.parse(savedSessions) as Session[];
+        setSessions(parsed);
+        // 如果有会话，选择第一个
+        if (parsed.length > 0) {
+          setCurrentSessionId(parsed[0].id);
+        }
+      } catch (e) {
+        console.error('解析会话数据失败:', e);
+      }
+    }
   }, []);
+
+  // 保存会话列表到localStorage
+  useEffect(() => {
+    if (sessions.length > 0) {
+      localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
+    }
+  }, [sessions]);
+
+  // 新建会话
+  const handleNewSession = useCallback(() => {
+    const newId = `session_${Date.now()}`;
+    const newSession: Session = {
+      id: newId,
+      title: '新对话',
+      messages: [{
+        id: 'welcome',
+        role: 'assistant',
+        content: '您好！我是「货小影」，您的专业带货视频智能助手。\n\n我可以帮您：\n1. 上传商品图片，自动识别商品和卖点\n2. 分段创作口播文案与画面提示词\n3. 生成带货视频片段\n4. 合成成片\n\n请上传您的商品图片或描述，开始创作吧！',
+        timestamp: new Date().toISOString(),
+      }],
+      state: {},
+      progress: {
+        currentStage: 0,
+        stageName: '',
+        segmentStatus: {},
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setSessions(prev => [newSession, ...prev]);
+    setCurrentSessionId(newId);
+    setMessages(newSession.messages);
+    setSessionState({});
+    setGenerationProgress({
+      currentStage: 0,
+      stageName: '',
+      segmentStatus: {},
+    });
+    setSessionId(undefined);
+  }, []);
+
+  // 切换会话
+  const handleSelectSession = useCallback((id: string) => {
+    const session = sessions.find(s => s.id === id);
+    if (session) {
+      setCurrentSessionId(id);
+      setMessages(session.messages);
+      setSessionState(session.state);
+      setGenerationProgress(session.progress);
+      setSessionId(undefined);
+      setIsGenerating(session.isGenerating || false);
+    }
+  }, [sessions]);
+
+  // 删除会话
+  const handleDeleteSession = useCallback((id: string) => {
+    setSessions(prev => {
+      const newSessions = prev.filter(s => s.id !== id);
+      // 如果删除的是当前会话，切换到第一个或新建
+      if (id === currentSessionId) {
+        if (newSessions.length > 0) {
+          const firstSession = newSessions[0];
+          setCurrentSessionId(firstSession.id);
+          setMessages(firstSession.messages);
+          setSessionState(firstSession.state);
+          setGenerationProgress(firstSession.progress);
+        } else {
+          // 没有会话了，新建一个
+          handleNewSession();
+        }
+      }
+      // 更新localStorage
+      if (newSessions.length > 0) {
+        localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(newSessions));
+      } else {
+        localStorage.removeItem(SESSIONS_STORAGE_KEY);
+      }
+      return newSessions;
+    });
+  }, [currentSessionId, handleNewSession]);
+
+  // 重命名会话
+  const handleRenameSession = useCallback((id: string, newTitle: string) => {
+    setSessions(prev => prev.map(s => 
+      s.id === id ? { ...s, title: newTitle, updatedAt: new Date().toISOString() } : s
+    ));
+  }, []);
+
+  // 更新当前会话数据
+  const updateCurrentSession = useCallback((updates: Partial<Session>) => {
+    if (currentSessionId) {
+      setSessions(prev => prev.map(s => 
+        s.id === currentSessionId 
+          ? { ...s, ...updates, updatedAt: new Date().toISOString() }
+          : s
+      ));
+    }
+  }, [currentSessionId]);
 
   // 上传用户头像
   const handleAvatarUpload = async (file: File) => {
@@ -1413,131 +1728,146 @@ export default function ChatAgentPage() {
       {/* 全屏背景 */}
       <div className="fixed inset-0 bg-gray-100" />
       
-      {/* 悬浮弹窗 */}
+      {/* 左右分栏布局 */}
       <div 
-        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl overflow-hidden flex"
         style={{
-          width: '82vw',
-          minWidth: '580px',
-          maxWidth: '1200px',
+          width: 'calc(82vw + 260px)',
+          minWidth: '840px',
+          maxWidth: '1460px',
           height: isCollapsed ? '56px' : '88vh',
           minHeight: isCollapsed ? '56px' : '480px',
           maxHeight: isCollapsed ? '56px' : '92vh',
           transition: 'height 0.3s ease',
         }}
       >
-        {/* 顶部导航栏 - 固定56px */}
-        <div className="h-[56px] bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-between px-4 shrink-0">
-          <div className="flex items-center gap-3">
-            <img 
-              src="/assets/agent-avatar.png" 
-              alt="货小影" 
-              className="w-8 h-8 rounded-full object-cover border-2 border-white/30"
-            />
-            <div className="flex flex-col">
-              <span className="text-white font-medium text-sm">货小影</span>
-              <span className="text-blue-100 text-xs">带货视频智能助手</span>
+        {/* 左侧会话侧边栏 - 260px宽 */}
+        {!isCollapsed && (
+          <SessionSidebar
+            sessions={sessions}
+            currentSessionId={currentSessionId}
+            onSelectSession={handleSelectSession}
+            onNewSession={handleNewSession}
+            onDeleteSession={handleDeleteSession}
+            onRenameSession={handleRenameSession}
+          />
+        )}
+        
+        {/* 右侧聊天窗口 */}
+        <div className="flex-1 flex flex-col" style={{ width: isCollapsed ? '100%' : 'calc(100% - 260px)' }}>
+          {/* 顶部导航栏 - 固定56px */}
+          <div className="h-[56px] bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-between px-4 shrink-0">
+            <div className="flex items-center gap-3">
+              <img 
+                src="/assets/agent-avatar.png" 
+                alt="货小影" 
+                className="w-8 h-8 rounded-full object-cover border-2 border-white/30"
+              />
+              <div className="flex flex-col">
+                <span className="text-white font-medium text-sm">货小影</span>
+                <span className="text-blue-100 text-xs">带货视频智能助手</span>
+              </div>
+              {/* 配音语言选择器 */}
+              <LanguageSelector language={voiceLanguage} onChange={setVoiceLanguage} />
             </div>
-            {/* 配音语言选择器 */}
-            <LanguageSelector language={voiceLanguage} onChange={setVoiceLanguage} />
+            
+            {/* 右侧：用户头像 + 折叠按钮 */}
+            <div className="flex items-center gap-3">
+              {/* 用户头像 */}
+              <UserAvatar
+                avatarUrl={userAvatar}
+                onUpload={handleAvatarUpload}
+                onReset={handleAvatarReset}
+                isUploading={isAvatarUploading}
+              />
+              
+              {/* 折叠按钮 */}
+              <button
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                title={isCollapsed ? '展开' : '折叠'}
+              >
+                {isCollapsed ? (
+                  <ChevronUp className="w-5 h-5 text-white" />
+                ) : (
+                  <ChevronDown className="w-5 h-5 text-white" />
+                )}
+              </button>
+            </div>
           </div>
           
-          {/* 右侧：用户头像 + 折叠按钮 */}
-          <div className="flex items-center gap-3">
-            {/* 用户头像 */}
-            <UserAvatar
-              avatarUrl={userAvatar}
-              onUpload={handleAvatarUpload}
-              onReset={handleAvatarReset}
-              isUploading={isAvatarUploading}
-            />
-            
-            {/* 折叠按钮 */}
-            <button
-              onClick={() => setIsCollapsed(!isCollapsed)}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-              title={isCollapsed ? '展开' : '折叠'}
+          {/* 中间聊天区 - 弹性高度 */}
+          {!isCollapsed && (
+            <div 
+              ref={scrollAreaRef}
+              className="flex-1 min-h-0 bg-gray-100 overflow-y-auto p-4 relative"
+              style={{ overflowX: 'hidden' }}
+              onScroll={handleScroll}
             >
-              {isCollapsed ? (
-                <ChevronUp className="w-5 h-5 text-white" />
-              ) : (
-                <ChevronDown className="w-5 h-5 text-white" />
-              )}
-            </button>
-          </div>
-        </div>
-        
-        {/* 中间聊天区 - 弹性高度 */}
-        {!isCollapsed && (
-          <div 
-            ref={scrollAreaRef}
-            className="flex-1 min-h-0 bg-gray-100 overflow-y-auto p-4 relative"
-            style={{ overflowX: 'hidden' }}
-            onScroll={handleScroll}
-          >
-            {messages.map(renderMessage)}
-            
-            {/* 加载指示器 */}
-            {isLoading && messages[messages.length - 1]?.isStreaming && messages[messages.length - 1]?.content && (
-              <div className="flex justify-start mb-3">
-                <div className="bg-blue-50 rounded-2xl px-4 py-2 shadow-sm">
-                  <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+              {messages.map(renderMessage)}
+              
+              {/* 加载指示器 */}
+              {isLoading && messages[messages.length - 1]?.isStreaming && messages[messages.length - 1]?.content && (
+                <div className="flex justify-start mb-3">
+                  <div className="bg-blue-50 rounded-2xl px-4 py-2 shadow-sm">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-        
-        {/* 底部输入栏 - 固定70px */}
-        {!isCollapsed && (
-          <div className="h-[70px] bg-white border-t border-gray-200 flex items-center justify-center px-4 gap-3 shrink-0 relative">
-            {/* 滚动到底部按钮 - 输入框正上方 */}
-            {!isAtBottom && (
-              <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20">
-                <ScrollToBottomButton onClick={scrollToBottom} isAtBottom={isAtBottom} />
-              </div>
-            )}
-            
-            {/* 上传按钮 */}
-            <label className="cursor-pointer">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="hidden"
+              )}
+            </div>
+          )}
+          
+          {/* 底部输入栏 - 固定70px */}
+          {!isCollapsed && (
+            <div className="h-[70px] bg-white border-t border-gray-200 flex items-center justify-center px-4 gap-3 shrink-0 relative">
+              {/* 滚动到底部按钮 - 输入框正上方 */}
+              {!isAtBottom && (
+                <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20">
+                  <ScrollToBottomButton onClick={scrollToBottom} isAtBottom={isAtBottom} />
+                </div>
+              )}
+              
+              {/* 上传按钮 */}
+              <label className="cursor-pointer">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+                <div className="p-2.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
+                  <ImageIcon className="w-5 h-5 text-gray-600" />
+                </div>
+              </label>
+              
+              {/* 输入框 */}
+              <Input
+                ref={inputRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                placeholder="输入消息或上传商品图片..."
+                className="flex-1 max-w-[500px] h-[40px] rounded-full border-gray-300 focus:border-blue-500"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage(inputValue);
+                  }
+                }}
+                disabled={isLoading}
               />
-              <div className="p-2.5 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
-                <ImageIcon className="w-5 h-5 text-gray-600" />
-              </div>
-            </label>
-            
-            {/* 输入框 */}
-            <Input
-              ref={inputRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder="输入消息或上传商品图片..."
-              className="flex-1 max-w-[500px] h-[40px] rounded-full border-gray-300 focus:border-blue-500"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  sendMessage(inputValue);
-                }
-              }}
-              disabled={isLoading}
-            />
-            
-            {/* 发送按钮 */}
-            <Button
-              size="icon"
-              className="w-[40px] h-[40px] rounded-full shrink-0 bg-[#7c3aed] hover:bg-[#7c3aed]/80 text-white"
-              onClick={() => sendMessage(inputValue)}
-              disabled={isLoading || !inputValue.trim()}
-            >
-              <Send className="w-4 h-4" />
-            </Button>
-          </div>
-        )}
+              
+              {/* 发送按钮 */}
+              <Button
+                size="icon"
+                className="w-[40px] h-[40px] rounded-full shrink-0 bg-[#7c3aed] hover:bg-[#7c3aed]/80 text-white"
+                onClick={() => sendMessage(inputValue)}
+                disabled={isLoading || !inputValue.trim()}
+              >
+                <Send className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
     </>
   );
