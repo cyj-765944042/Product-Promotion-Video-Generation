@@ -160,8 +160,7 @@ async function executeTool(
   toolName: string,
   input: Record<string, unknown>,
   state: ChatAgentState,
-  customHeaders?: Record<string, string>,
-  onEvent?: (event: { type: string; content: unknown }) => void // 实时事件回调
+  customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
   console.log(`[Agent] 执行工具: ${toolName}`, input);
   
@@ -188,8 +187,7 @@ async function executeTool(
         input.productImageUrl as string,
         input.productName as string,
         customHeaders,
-        state.voiceLanguage, // 传入配音语言
-        onEvent // 传入实时事件回调
+        state.voiceLanguage // 传入配音语言
       );
     
     case "composeFinalVideo":
@@ -358,20 +356,8 @@ ${nextActionHint}
     const toolProgressMessage = getToolProgressMessage(toolCall.tool, state);
     yield { type: "progress", content: toolProgressMessage };
     
-    // 创建事件队列（用于实时发送segment_video事件）
-    const eventQueue: Array<{ type: string; content: unknown }> = [];
-    const onEvent = (event: { type: string; content: unknown }) => {
-      eventQueue.push(event);
-    };
-    
-    // 执行工具（传递事件回调）
-    const toolResult = await executeTool(toolCall.tool, toolCall.input, currentState, customHeaders, onEvent);
-    
-    // 立即发送队列中的所有事件（按顺序）
-    for (const event of eventQueue) {
-      yield event as AgentSSEMessage;
-      console.log(`[Agent] 发送事件: type=${event.type}`);
-    }
+    // 执行工具
+    const toolResult = await executeTool(toolCall.tool, toolCall.input, currentState, customHeaders);
     
     const segmentsLength = (toolResult.data as Record<string, unknown>)?.segments 
       ? ((toolResult.data as Record<string, unknown>).segments as Array<unknown>).length 
