@@ -25,6 +25,9 @@ import {
   Circle,
 } from 'lucide-react';
 
+// 用户头像本地存储key
+const USER_AVATAR_STORAGE_KEY = 'huxiaoying_user_avatar';
+
 // 滚动到底部悬浮按钮组件
 function ScrollToBottomButton({
   onClick,
@@ -49,6 +52,94 @@ function ScrollToBottomButton({
     >
       <ChevronDown className="w-5 h-5" />
     </button>
+  );
+}
+
+// 用户头像组件
+function UserAvatar({
+  avatarUrl,
+  onUpload,
+  onReset,
+  isUploading,
+}: {
+  avatarUrl: string | null;
+  onUpload: (file: File) => Promise<void>;
+  onReset: () => void;
+  isUploading: boolean;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  const handleClick = () => {
+    if (isUploading) return;
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await onUpload(file);
+    }
+    e.target.value = ''; // 清空以允许重复选择
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (avatarUrl && !isUploading) {
+      onReset();
+    }
+  };
+
+  return (
+    <div 
+      className="relative inline-block"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      {/* 头像容器 */}
+      <button
+        onClick={handleClick}
+        onContextMenu={handleContextMenu}
+        disabled={isUploading}
+        className={`w-9 h-9 rounded-full overflow-hidden border-2 border-white/50 shadow-sm
+          transition-all duration-200 ${isUploading ? 'cursor-default' : 'hover:border-blue-300 hover:shadow-md cursor-pointer'}`}
+        title="右键恢复默认头像"
+      >
+        {isUploading ? (
+          <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+            <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+          </div>
+        ) : avatarUrl ? (
+          <img 
+            src={avatarUrl} 
+            alt="用户头像" 
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full bg-gray-300 flex items-center justify-center">
+            <User className="w-4 h-4 text-gray-500" />
+          </div>
+        )}
+      </button>
+
+      {/* hover提示 */}
+      {showTooltip && !isUploading && (
+        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 z-50">
+          <div className="bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap">
+            {avatarUrl ? '点击更换头像 · 右键恢复默认' : '点击上传头像'}
+          </div>
+        </div>
+      )}
+
+      {/* 隐藏的文件输入 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+    </div>
   );
 }
 
@@ -553,6 +644,8 @@ export default function ChatAgentPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [userAvatar, setUserAvatar] = useState<string | null>(null);
+  const [isAvatarUploading, setIsAvatarUploading] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<{
     currentStage: number;
     stageName: string;
@@ -566,7 +659,76 @@ export default function ChatAgentPage() {
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true); // 是否滚动到底部
+
+  // 初始化用户头像（从localStorage读取）
+  useEffect(() => {
+    const savedAvatar = localStorage.getItem(USER_AVATAR_STORAGE_KEY);
+    if (savedAvatar) {
+      setUserAvatar(savedAvatar);
+    }
+  }, []);
+
+  // 上传用户头像
+  const handleAvatarUpload = async (file: File) => {
+    setIsAvatarUploading(true);
+    try {
+      // 创建canvas裁剪图片为圆形
+      const img = await createImageFromFile(file);
+      const canvas = document.createElement('canvas');
+      const size = 200; // 输出尺寸
+      canvas.width = size;
+      canvas.height = size;
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('无法创建canvas');
+
+      // 计算裁剪区域（居中裁剪）
+      const minDim = Math.min(img.width, img.height);
+      const sx = (img.width - minDim) / 2;
+      const sy = (img.height - minDim) / 2;
+      
+      // 绘制圆形裁剪
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      
+      ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+      
+      // 转为base64存储
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      localStorage.setItem(USER_AVATAR_STORAGE_KEY, dataUrl);
+      setUserAvatar(dataUrl);
+    } catch (error) {
+      console.error('头像上传失败:', error);
+      alert('头像上传失败，请重试');
+    } finally {
+      setIsAvatarUploading(false);
+    }
+  };
+
+  // 从File创建Image对象
+  const createImageFromFile = (file: File): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // 恢复默认头像
+  const handleAvatarReset = () => {
+    localStorage.removeItem(USER_AVATAR_STORAGE_KEY);
+    setUserAvatar(null);
+  };
 
   // 滚动到底部（平滑滚动）
   const scrollToBottom = useCallback(() => {
@@ -1131,8 +1293,16 @@ export default function ChatAgentPage() {
           </div>
           {/* 用户头像 - 仅纯文本消息显示 */}
           {isPlainText && (
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shadow-sm shrink-0 ring-2 ring-white/50">
-              <User className="w-4 h-4 text-white" />
+            <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-300 flex items-center justify-center shadow-sm shrink-0 ring-2 ring-white/50">
+              {userAvatar ? (
+                <img 
+                  src={userAvatar} 
+                  alt="用户头像" 
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <User className="w-4 h-4 text-gray-500" />
+              )}
             </div>
           )}
         </div>
@@ -1209,18 +1379,29 @@ export default function ChatAgentPage() {
             </div>
           </div>
           
-          {/* 折叠按钮 */}
-          <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-            title={isCollapsed ? '展开' : '折叠'}
-          >
-            {isCollapsed ? (
-              <ChevronUp className="w-5 h-5 text-white" />
-            ) : (
-              <ChevronDown className="w-5 h-5 text-white" />
-            )}
-          </button>
+          {/* 右侧：用户头像 + 折叠按钮 */}
+          <div className="flex items-center gap-3">
+            {/* 用户头像 */}
+            <UserAvatar
+              avatarUrl={userAvatar}
+              onUpload={handleAvatarUpload}
+              onReset={handleAvatarReset}
+              isUploading={isAvatarUploading}
+            />
+            
+            {/* 折叠按钮 */}
+            <button
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              title={isCollapsed ? '展开' : '折叠'}
+            >
+              {isCollapsed ? (
+                <ChevronUp className="w-5 h-5 text-white" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-white" />
+              )}
+            </button>
+          </div>
         </div>
         
         {/* 中间聊天区 - 弹性高度 */}
