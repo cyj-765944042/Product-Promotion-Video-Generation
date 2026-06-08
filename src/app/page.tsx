@@ -1614,8 +1614,14 @@ export default function ChatAgentPage() {
                   // 更新会话数据中的segments数组
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
-                    // 找到最后一条助手消息并更新其segments
-                    const lastAssistantIdx = s.messages.findIndex(m => m.role === 'assistant');
+                    // 找到最后一条助手消息并更新其segments（从后往前查找）
+                    let lastAssistantIdx = -1;
+                    for (let i = s.messages.length - 1; i >= 0; i--) {
+                      if (s.messages[i].role === 'assistant') {
+                        lastAssistantIdx = i;
+                        break;
+                      }
+                    }
                     if (lastAssistantIdx === -1) return s;
                     const targetMsg = s.messages[lastAssistantIdx];
                     const existingSegments = targetMsg.state?.segments || [];
