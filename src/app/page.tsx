@@ -916,7 +916,7 @@ export default function ChatAgentPage() {
                     videoUrl={segment.videoUrl}
                     localVideoPath={segment.localVideoPath}
                     audioUrl={segment.audioUrl}
-                    showControls={false}
+                    showControls={true}
                   />
                 </div>
                 {/* 文案与操作区 */}
