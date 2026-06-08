@@ -408,6 +408,9 @@ export async function generateVideoSegments(
       localVideoPath?: string; // 本地视频路径（用于播放）
     }> = [];
     
+    // 记录已处理的segmentId，避免重复下载
+    const processedSegmentIds = new Set<number>();
+    
     // 生成会话ID用于文件夹命名
     const sessionId = Date.now().toString();
     
@@ -419,10 +422,20 @@ export async function generateVideoSegments(
           if (data.type === 'segment_video' || data.type === 'segment_complete' || data.type === 'segment') {
             // segment_video 事件的 content 包含 segmentId, videoUrl, audioUrl, duration
             const segmentId = data.content?.segmentId || data.segmentIndex || data.id || data.segmentId || segments.length + 1;
+            
+            // 检查是否已处理，避免重复下载
+            if (processedSegmentIds.has(segmentId)) {
+              console.log(`[Tool] 片段 ${segmentId} 已处理，跳过重复事件`);
+              continue;
+            }
+            
             const videoUrl = data.content?.videoUrl || data.videoUrl || data.videoPath;
             const audioUrl = data.content?.audioUrl || data.audioUrl || data.audioPath; // 解析音频URL
             
             console.log(`[Tool] 解析视频片段事件: type=${data.type}, segmentId=${segmentId}, videoUrl=${videoUrl?.substring(0, 100)}..., audioUrl=${audioUrl?.substring(0, 100) || '无'}...`);
+            
+            // 标记为已处理
+            processedSegmentIds.add(segmentId);
             
             // 下载视频到本地（优先转存到对象存储）
             let localVideoPath: string | undefined;
@@ -448,12 +461,22 @@ export async function generateVideoSegments(
               localVideoPath: localVideoPath
             });
           }
-          // 处理 complete 事件（包含所有片段）
+          // 处理 complete 事件（包含所有片段）- 仅处理未被segment_video处理的片段
           if (data.type === 'complete' && data.content?.segmentVideos) {
             console.log(`[Tool] 解析 complete 事件，包含 ${data.content.segmentVideos.length} 个片段`);
             for (const sv of data.content.segmentVideos) {
               const segmentId = sv.id || segments.length + 1;
+              
+              // 检查是否已处理，避免重复下载
+              if (processedSegmentIds.has(segmentId)) {
+                console.log(`[Tool] 片段 ${segmentId} 已在segment_video事件中处理，跳过`);
+                continue;
+              }
+              
               const videoUrl = sv.videoUrl;
+              
+              // 标记为已处理
+              processedSegmentIds.add(segmentId);
               
               // 下载视频到本地
               let localVideoPath: string | undefined;
