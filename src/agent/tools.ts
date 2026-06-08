@@ -360,7 +360,8 @@ export async function generateVideoSegments(
   productImageUrl: string,
   productName: string,
   customHeaders?: Record<string, string>,
-  voiceLanguage?: string // 配音语言：mandarin, cantonese, english, japanese
+  voiceLanguage?: string, // 配音语言：mandarin, cantonese, english, japanese
+  onEvent?: (event: { type: string; content: unknown }) => void // 实时事件回调
 ): Promise<ToolResult> {
   console.log('[Tool] 调用 /api/generate-video，每段使用对应Prompt');
   
@@ -382,121 +383,116 @@ export async function generateVideoSegments(
       formData.append('voiceLanguage', voiceLanguage);
     }
     
-    // generate-video 是 SSE 流式接口
-    const response = await axios.post(
-      `${BASE_URL}/api/generate-video`,
-      formData,
-      { 
-        headers: { 
-          ...customHeaders,
-          'Content-Type': 'multipart/form-data'
-        },
-        responseType: 'text',
-        timeout: 300000 // 5 分钟超时
-      }
-    );
+    // generate-video 是 SSE 流式接口，使用 fetch 流式请求
+    const response = await fetch(`${BASE_URL}/api/generate-video`, {
+      method: 'POST',
+      headers: {
+        ...customHeaders,
+      },
+      body: formData,
+    });
     
-    // 解析 SSE 响应获取视频片段
-    const lines = response.data.split('\n');
+    if (!response.ok) {
+      throw new Error(`generate-video API failed: ${response.status}`);
+    }
+    
+    // 流式读取响应
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+    
+    const decoder = new TextDecoder();
+    let buffer = '';
+    
+    // 收集最终结果
     let segments: Array<{ 
       id: number; 
       script: string; 
-      videoPath?: string; 
-      audioPath?: string;
       videoUrl?: string;
-      audioUrl?: string; // 音频URL
-      localVideoPath?: string; // 本地视频路径（用于播放）
+      audioUrl?: string;
+      duration?: number;
     }> = [];
     
-    // 记录已处理的segmentId，避免重复下载
+    // 记录已处理的segmentId，避免重复
     const processedSegmentIds = new Set<number>();
     
-    // 生成会话ID用于文件夹命名
-    const sessionId = Date.now().toString();
+    // 按顺序发送队列（确保前序片段已发送）
+    const sentSegmentIds = new Set<number>();
+    const pendingSegments: Map<number, { id: number; videoUrl: string; audioUrl?: string; script: string; duration?: number }> = new Map();
     
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
+    // 检查并发送待发送的片段（按顺序）
+    const sendPendingSegments = () => {
+      // 检查是否有可以发送的片段（前序片段都已发送）
+      for (let i = 1; i <= scripts.length; i++) {
+        if (sentSegmentIds.has(i)) continue; // 已发送
+        if (!pendingSegments.has(i)) break; // 前序片段还没准备好，停止检查
+        
+        const seg = pendingSegments.get(i);
+        if (seg && onEvent) {
+          // 实时发送segment_video事件给前端
+          onEvent({
+            type: 'segment_video',
+            content: {
+              segmentId: seg.id,
+              videoUrl: seg.videoUrl,
+              audioUrl: seg.audioUrl,
+              script: seg.script,
+              duration: seg.duration,
+            }
+          });
+          console.log(`[Tool] 实时发送segment_video事件: segmentId=${seg.id}`);
+          sentSegmentIds.add(i);
+          segments.push(seg);
+        }
+      }
+    };
+    
+    // 流式读取 SSE 响应
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // 保留不完整的行
+      
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        
         try {
           const data = JSON.parse(line.slice(6));
-          // 匹配多种事件类型：segment_video, segment_complete, segment, complete
+          
+          // 处理 segment_video 事件
           if (data.type === 'segment_video' || data.type === 'segment_complete' || data.type === 'segment') {
-            // segment_video 事件的 content 包含 segmentId, videoUrl, audioUrl, duration
-            const segmentId = data.content?.segmentId || data.segmentIndex || data.id || data.segmentId || segments.length + 1;
+            const segmentId = data.content?.segmentId || data.segmentIndex || data.id || data.segmentId || scripts.length + 1;
             
-            // 检查是否已处理，避免重复下载
+            // 检查是否已处理，避免重复
             if (processedSegmentIds.has(segmentId)) {
               console.log(`[Tool] 片段 ${segmentId} 已处理，跳过重复事件`);
               continue;
             }
             
             const videoUrl = data.content?.videoUrl || data.videoUrl || data.videoPath;
-            const audioUrl = data.content?.audioUrl || data.audioUrl || data.audioPath; // 解析音频URL
+            const audioUrl = data.content?.audioUrl || data.audioUrl || data.audioPath;
             
-            console.log(`[Tool] 解析视频片段事件: type=${data.type}, segmentId=${segmentId}, videoUrl=${videoUrl?.substring(0, 100)}..., audioUrl=${audioUrl?.substring(0, 100) || '无'}...`);
+            console.log(`[Tool] 解析视频片段事件: type=${data.type}, segmentId=${segmentId}, videoUrl=${videoUrl?.substring(0, 100)}...`);
             
             // 标记为已处理
             processedSegmentIds.add(segmentId);
             
-            // 下载视频到本地（优先转存到对象存储）
-            let localVideoPath: string | undefined;
-            let signedVideoUrl: string | undefined;
+            // 添加到待发送队列
             if (videoUrl) {
-              const result = await downloadVideoToLocal(
-                videoUrl,
-                `segments/${sessionId}`,
-                `segment_${segmentId}.mp4`
-              );
-              localVideoPath = result.localPath || undefined;
-              signedVideoUrl = result.signedUrl || undefined;
-              console.log(`[Tool] 视频片段 ${segmentId} 下载结果: localPath=${localVideoPath}, signedUrl=${signedVideoUrl?.substring(0, 50)}...`);
-            }
-            
-            segments.push({
-              id: segmentId,
-              script: data.content?.script || data.script || scripts[segments.length]?.script || '',
-              videoPath: data.videoPath,
-              audioPath: data.audioPath,
-              videoUrl: signedVideoUrl || videoUrl, // 优先使用签名URL
-              audioUrl: audioUrl, // 添加音频URL
-              localVideoPath: localVideoPath
-            });
-          }
-          // 处理 complete 事件（包含所有片段）- 仅处理未被segment_video处理的片段
-          if (data.type === 'complete' && data.content?.segmentVideos) {
-            console.log(`[Tool] 解析 complete 事件，包含 ${data.content.segmentVideos.length} 个片段`);
-            for (const sv of data.content.segmentVideos) {
-              const segmentId = sv.id || segments.length + 1;
-              
-              // 检查是否已处理，避免重复下载
-              if (processedSegmentIds.has(segmentId)) {
-                console.log(`[Tool] 片段 ${segmentId} 已在segment_video事件中处理，跳过`);
-                continue;
-              }
-              
-              const videoUrl = sv.videoUrl;
-              
-              // 标记为已处理
-              processedSegmentIds.add(segmentId);
-              
-              // 下载视频到本地
-              let localVideoPath: string | undefined;
-              let signedVideoUrl: string | undefined;
-              if (videoUrl) {
-                const result = await downloadVideoToLocal(
-                  videoUrl,
-                  `segments/${sessionId}`,
-                  `segment_${segmentId}.mp4`
-                );
-                localVideoPath = result.localPath || undefined;
-                signedVideoUrl = result.signedUrl || undefined;
-              }
-              
-              segments.push({
+              pendingSegments.set(segmentId, {
                 id: segmentId,
-                script: sv.script || scripts[segments.length]?.script || '',
-                videoUrl: signedVideoUrl || videoUrl,
-                localVideoPath: localVideoPath
+                videoUrl,
+                audioUrl,
+                script: scripts[segmentId - 1]?.script || '',
+                duration: data.content?.duration,
               });
+              
+              // 尝试按顺序发送
+              sendPendingSegments();
             }
           }
         } catch {
@@ -505,49 +501,22 @@ export async function generateVideoSegments(
       }
     }
     
-    // 按ID排序片段
-    segments.sort((a, b) => a.id - b.id);
-    
-    // 输出调试日志
     console.log(`[Tool] 视频片段解析完成，共 ${segments.length} 个片段`);
-    segments.forEach((s, i) => {
-      console.log(`[Tool] 片段 ${i + 1}: id=${s.id}, videoUrl=${s.videoUrl?.substring(0, 80)}..., localPath=${s.localVideoPath}`);
-    });
-    
-    // 如果没有解析到，返回脚本信息（稍后可重试）
-    if (segments.length === 0) {
-      segments = scripts.map(s => ({
-        id: s.id,
-        script: s.script,
-        videoPath: undefined,
-        audioPath: undefined,
-        localVideoPath: undefined
-      }));
-    }
     
     return {
       success: true,
-      message: `视频片段生成完成，共 ${segments.length} 个（已下载到本地）`,
-      data: { 
+      message: `视频片段生成完成，共 ${segments.length} 个`,
+      data: {
         segments,
-        sessionId,
-        currentStage: "video_generated"
+        currentStage: 'video_generated'
       }
     };
   } catch (error) {
     console.error('[Tool] generate-video 失败:', error);
-    // 返回脚本信息（稍后可重试）
-    const segments = scripts.map(s => ({
-      id: s.id,
-      script: s.script,
-      videoPath: undefined,
-      audioPath: undefined
-    }));
     return {
       success: false,
-      message: '视频片段生成失败，稍后可重试',
-      data: { segments },
-      error: error instanceof Error ? error.message : '未知错误'
+      message: `视频生成失败: ${error instanceof Error ? error.message : '未知错误'}`,
+      data: undefined
     };
   }
 }

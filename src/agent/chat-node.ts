@@ -160,7 +160,8 @@ async function executeTool(
   toolName: string,
   input: Record<string, unknown>,
   state: ChatAgentState,
-  customHeaders?: Record<string, string>
+  customHeaders?: Record<string, string>,
+  onEvent?: (event: { type: string; content: unknown }) => void // 实时事件回调
 ): Promise<ToolResult> {
   console.log(`[Agent] 执行工具: ${toolName}`, input);
   
@@ -187,7 +188,8 @@ async function executeTool(
         input.productImageUrl as string,
         input.productName as string,
         customHeaders,
-        state.voiceLanguage // 传入配音语言
+        state.voiceLanguage, // 传入配音语言
+        onEvent // 传入实时事件回调
       );
     
     case "composeFinalVideo":
@@ -356,8 +358,20 @@ ${nextActionHint}
     const toolProgressMessage = getToolProgressMessage(toolCall.tool, state);
     yield { type: "progress", content: toolProgressMessage };
     
-    // 执行工具
-    const toolResult = await executeTool(toolCall.tool, toolCall.input, currentState, customHeaders);
+    // 创建事件队列（用于实时发送segment_video事件）
+    const eventQueue: Array<{ type: string; content: unknown }> = [];
+    const onEvent = (event: { type: string; content: unknown }) => {
+      eventQueue.push(event);
+    };
+    
+    // 执行工具（传递事件回调）
+    const toolResult = await executeTool(toolCall.tool, toolCall.input, currentState, customHeaders, onEvent);
+    
+    // 立即发送队列中的所有事件（按顺序）
+    for (const event of eventQueue) {
+      yield event as AgentSSEMessage;
+      console.log(`[Agent] 发送事件: type=${event.type}`);
+    }
     
     const segmentsLength = (toolResult.data as Record<string, unknown>)?.segments 
       ? ((toolResult.data as Record<string, unknown>).segments as Array<unknown>).length 
@@ -369,38 +383,6 @@ ${nextActionHint}
       currentState = { ...currentState, ...toolResult.data };
       const currentSegmentsLength = currentState.segments?.length || 0;
       console.log(`[Agent] currentState 更新后: segments=${currentSegmentsLength}, stage=${currentState.currentStage}`);
-    }
-    
-    // 如果工具返回了segments，逐个发送segment_video事件（实时显示）
-    if (toolCall.tool === 'generateVideoSegments' && toolResult.success && toolResult.data) {
-      const resultSegments = (toolResult.data as Record<string, unknown>).segments as Array<{
-        id: number;
-        videoUrl?: string;
-        audioUrl?: string;
-        script?: string;
-        duration?: number;
-        localVideoPath?: string;
-      }>;
-      
-      if (resultSegments && resultSegments.length > 0) {
-        console.log(`[Agent] 开始逐个发送 ${resultSegments.length} 个segment_video事件`);
-        for (const seg of resultSegments) {
-          if (seg.videoUrl) {
-            // 每个片段发送一个segment_video事件
-            yield {
-              type: "segment_video",
-              content: {
-                segmentId: seg.id,
-                videoUrl: seg.videoUrl,
-                audioUrl: seg.audioUrl,
-                script: seg.script,
-                duration: seg.duration,
-              }
-            };
-            console.log(`[Agent] 发送segment_video事件: segmentId=${seg.id}, videoUrl=${seg.videoUrl?.substring(0, 50)}...`);
-          }
-        }
-      }
     }
     
     // 发送工具执行结果（简洁消息）
