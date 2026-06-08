@@ -40,11 +40,16 @@ interface IntermediateFiles {
 }
 
 interface SSEEvent {
-  type: 'segment_start' | 'tts_start' | 'tts_complete' | 'segment_video' | 'audio_merge' | 'concat_start' | 'upload_start' | 'subtitle_start' | 'video_url' | 'subtitles' | 'complete' | 'done' | 'error' | 'intermediate_files';
+  type: 'segment_start' | 'tts_start' | 'tts_complete' | 'segment_video' | 'audio_merge' | 'concat_start' | 'upload_start' | 'subtitle_start' | 'video_url' | 'subtitles' | 'complete' | 'done' | 'error' | 'intermediate_files' | 'generation_progress' | 'segment_status';
   content: unknown;
   segmentId?: number;
   current?: number;
   total?: number;
+  currentStage?: number;
+  stageName?: string;
+  estimatedTime?: string;
+  status?: 'pending' | 'processing' | 'completed' | 'failed';
+  isGenerating?: boolean;
 }
 
 // 中间文件存储目录前缀（对象存储）
@@ -391,6 +396,27 @@ export async function POST(request: NextRequest) {
         // ==========================================
         // Step 1: Generate TTS audio for each segment
         // ==========================================
+        
+        // 发送开始生成进度事件
+        sendEvent(controller, {
+          type: 'generation_progress',
+          content: {},
+          currentStage: 1,
+          stageName: '正在批量生成配音',
+          estimatedTime: '约1分钟',
+          isGenerating: true,
+        });
+        
+        // 初始化所有镜头状态为processing
+        for (let i = 0; i < segments.length; i++) {
+          sendEvent(controller, {
+            type: 'segment_status',
+            content: {},
+            segmentId: segments[i].id,
+            status: 'processing',
+          });
+        }
+        
         interface AudioInfo {
           url: string;
           duration: number;
@@ -488,6 +514,17 @@ export async function POST(request: NextRequest) {
         // ==========================================
         // Step 2: Generate videos in parallel for efficiency
         // ==========================================
+        
+        // 发送视频生成进度事件
+        sendEvent(controller, {
+          type: 'generation_progress',
+          content: {},
+          currentStage: 2,
+          stageName: '多镜头视频画面并行渲染中',
+          estimatedTime: '约3-5分钟',
+          isGenerating: true,
+        });
+        
         const segmentVideoInfos: Array<{
           videoUrl: string;
           audioUrl: string;
@@ -605,6 +642,17 @@ export async function POST(request: NextRequest) {
         // ==========================================
         // Step 3: Merge audio and video for each segment
         // ==========================================
+        
+        // 发送音视频合并进度事件
+        sendEvent(controller, {
+          type: 'generation_progress',
+          content: {},
+          currentStage: 3,
+          stageName: '逐段音视频合并、校验与转存',
+          estimatedTime: '约2分钟',
+          isGenerating: true,
+        });
+        
         const mergedVideoUrls: string[] = [];
         const mergedDurations: number[] = []; // Store actual durations after merge
         
@@ -702,6 +750,14 @@ export async function POST(request: NextRequest) {
               fs.unlinkSync(localVideoPath);
               fs.unlinkSync(mergedFilePath);
               
+              // 发送segment_status更新为已完成
+              sendEvent(controller, {
+                type: 'segment_status',
+                content: {},
+                segmentId: segmentId,
+                status: 'completed',
+              });
+              
               // 发送segment_video事件，使用合并后的视频URL（已包含音频）
               sendEvent(controller, {
                 type: 'segment_video',
@@ -721,6 +777,14 @@ export async function POST(request: NextRequest) {
               // Fallback to original video URL and duration
               mergedVideoUrls.push(info.videoUrl);
               mergedDurations.push(info.videoDuration);
+              
+              // 发送segment_status更新为失败
+              sendEvent(controller, {
+                type: 'segment_status',
+                content: {},
+                segmentId: segmentId,
+                status: 'failed',
+              });
               
               // 发送segment_video事件（合并失败，使用原始URL）
               sendEvent(controller, {
@@ -745,6 +809,17 @@ export async function POST(request: NextRequest) {
         // ==========================================
         // Step 4: Concatenate all videos (skip if only one segment)
         // ==========================================
+        
+        // 发送视频拼接进度事件
+        sendEvent(controller, {
+          type: 'generation_progress',
+          content: {},
+          currentStage: 4,
+          stageName: '整体视频拼接、字幕合成',
+          estimatedTime: '约1分钟',
+          isGenerating: true,
+        });
+        
         if (segments.length === 1) {
           // Use audioDuration for subtitle timing (audio starts at 0)
           const audioDuration = segmentVideoInfos[0].audioDuration;
@@ -891,6 +966,17 @@ export async function POST(request: NextRequest) {
         // ==========================================
         // Step 5: Add subtitles to final video
         // ==========================================
+        
+        // 发送任务收尾进度事件
+        sendEvent(controller, {
+          type: 'generation_progress',
+          content: {},
+          currentStage: 5,
+          stageName: '片段链接分发、任务收尾',
+          estimatedTime: '约30秒',
+          isGenerating: true,
+        });
+        
         sendEvent(controller, {
           type: 'subtitle_start',
           content: '正在添加字幕到视频...',

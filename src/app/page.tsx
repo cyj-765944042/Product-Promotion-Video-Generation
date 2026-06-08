@@ -20,6 +20,9 @@ import {
   Camera,
   Play,
   User,
+  AlertCircle,
+  CheckCircle2,
+  Circle,
 } from 'lucide-react';
 
 // 客户端时间组件 - 避免 hydration 问题
@@ -44,6 +47,22 @@ interface ChatMessage {
   state?: Partial<SessionState>;
 }
 
+// 镜头片段状态
+interface SegmentProgress {
+  id: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  stage?: 'tts' | 'video' | 'merge' | 'upload';
+  error?: string;
+}
+
+// 全局进度状态
+interface ProgressState {
+  currentStage: number; // 1-5 对应5个主阶段
+  stageName: string;
+  estimatedTime?: string;
+  segmentProgress?: SegmentProgress[];
+}
+
 // 会话状态
 interface SessionState {
   productImageUrl?: string;
@@ -58,11 +77,13 @@ interface SessionState {
     videoUrl?: string;
     duration?: number;
     localVideoPath?: string;
+    status?: 'pending' | 'processing' | 'completed' | 'failed';
   }>;
   finalVideoUrl?: string;
   localVideoPath?: string;
   finalDuration?: number;
   currentStage?: 'idle' | 'identifying' | 'product_identified' | 'script_generated' | 'video_generated' | 'composing' | 'done';
+  progress?: ProgressState;
 }
 
 // 视频播放器组件（16:9固定比例，支持单独音频轨道，支持隐藏控制条）
@@ -192,6 +213,97 @@ function VideoPlayer({
   );
 }
 
+// 5阶段进度条组件
+const PROGRESS_STAGES = [
+  { key: 1, name: 'TTS音频生成', icon: 'mic' },
+  { key: 2, name: '视频画面生成', icon: 'video' },
+  { key: 3, name: '音视频合并', icon: 'merge' },
+  { key: 4, name: '整体拼接合成', icon: 'compose' },
+  { key: 5, name: '任务完成', icon: 'check' },
+];
+
+function ProgressTracker({
+  currentStage,
+  stageName,
+  estimatedTime,
+  isGenerating,
+}: {
+  currentStage: number;
+  stageName: string;
+  estimatedTime?: string;
+  isGenerating: boolean;
+}) {
+  if (!isGenerating || currentStage === 0) return null;
+
+  return (
+    <div className="bg-white rounded-lg border border-blue-100 shadow-sm p-4 mb-4">
+      {/* 进度条 */}
+      <div className="flex items-center gap-2 mb-3">
+        {PROGRESS_STAGES.map((stage, idx) => (
+          <div key={stage.key} className="flex items-center flex-1">
+            {/* 阶段节点 */}
+            <div className={`flex items-center justify-center w-8 h-8 rounded-full transition-all duration-300
+              ${currentStage >= stage.key 
+                ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white' 
+                : 'bg-gray-100 text-gray-400'}`}>
+              {currentStage === stage.key ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : currentStage > stage.key ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : (
+                <Circle className="w-4 h-4" />
+              )}
+            </div>
+            {/* 阶段名称 */}
+            <div className="ml-2 hidden sm:block">
+              <span className={`text-xs font-medium transition-colors
+                ${currentStage >= stage.key ? 'text-blue-600' : 'text-gray-400'}`}>
+                {stage.name}
+              </span>
+            </div>
+            {/* 连接线 */}
+            {idx < PROGRESS_STAGES.length - 1 && (
+              <div className={`flex-1 h-1 mx-2 rounded transition-all duration-300
+                ${currentStage > stage.key ? 'bg-gradient-to-r from-blue-500 to-purple-500' : 'bg-gray-200'}`} />
+            )}
+          </div>
+        ))}
+      </div>
+      
+      {/* 实时状态文字 */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+          <span className="text-sm text-blue-600 font-medium">{stageName}</span>
+        </div>
+        {estimatedTime && (
+          <span className="text-xs text-gray-500">预计等待 {estimatedTime}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 镜头卡片状态标签组件
+function SegmentStatusBadge({ status }: { status: 'pending' | 'processing' | 'completed' | 'failed' }) {
+  const statusConfig = {
+    pending: { color: 'text-gray-400', bg: 'bg-gray-100', icon: Circle, text: '待处理' },
+    processing: { color: 'text-blue-500', bg: 'bg-blue-50', icon: Loader2, text: '处理中' },
+    completed: { color: 'text-green-500', bg: 'bg-green-50', icon: CheckCircle2, text: '已完成' },
+    failed: { color: 'text-red-500', bg: 'bg-red-50', icon: AlertCircle, text: '失败' },
+  };
+
+  const config = statusConfig[status];
+  const Icon = config.icon;
+
+  return (
+    <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full ${config.bg} ${config.color}`}>
+      <Icon className={`w-3 h-3 ${status === 'processing' ? 'animate-spin' : ''}`} />
+      <span className="text-xs font-medium">{config.text}</span>
+    </div>
+  );
+}
+
 // 镜头文案卡片组件（支持编辑、状态标识、拖拽）
 function ScriptCard({
   script,
@@ -201,6 +313,8 @@ function ScriptCard({
   onRegenerate,
   onMoveUp,
   onMoveDown,
+  segmentStatus,
+  isGenerating,
 }: {
   script: { id: number; script: string; prompt: string };
   index: number;
@@ -209,6 +323,8 @@ function ScriptCard({
   onRegenerate: () => Promise<void>;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  segmentStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+  isGenerating?: boolean;
 }) {
   const [editingScript, setEditingScript] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState(false);
@@ -236,25 +352,50 @@ function ScriptCard({
   };
 
   const isLast = index === total - 1;
+  const status = segmentStatus || 'pending';
+  const disabled = isGenerating;
+
+  // 根据状态配置节点样式
+  const nodeStyle = {
+    pending: 'bg-blue-100 text-blue-600 border-2 border-blue-300',
+    processing: 'bg-blue-500 text-white border-2 border-blue-400',
+    completed: 'bg-green-500 text-white border-2 border-green-400',
+    failed: 'bg-red-500 text-white border-2 border-red-400',
+  };
 
   return (
     <div className="relative flex items-start gap-4 group">
       {/* 左侧流程线 */}
       <div className="flex flex-col items-center w-8 shrink-0">
         {/* 圆形节点 */}
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0
-          bg-blue-100 text-blue-600 border-2 border-blue-300`}>
-          {index + 1}
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0 transition-all duration-300 ${nodeStyle[status]}`}>
+          {status === 'processing' ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : status === 'completed' ? (
+            <CheckCircle2 className="w-4 h-4" />
+          ) : status === 'failed' ? (
+            <AlertCircle className="w-4 h-4" />
+          ) : (
+            index + 1
+          )}
         </div>
         {/* 连接线 */}
         {!isLast && (
-          <div className="w-0.5 h-full bg-blue-200 mt-1 flex-1 min-h-[20px]" />
+          <div className={`w-0.5 h-full mt-1 flex-1 min-h-[20px] transition-colors duration-300
+            ${status === 'completed' ? 'bg-green-300' : 'bg-blue-200'}`} />
         )}
       </div>
 
       {/* 卡片主体 */}
       <div className={`flex-1 bg-white rounded-lg border transition-all duration-200
-        ${editingScript || editingPrompt ? 'border-blue-300 shadow-md' : 'border-gray-100 shadow-sm group-hover:shadow-md'}`}>
+        ${editingScript || editingPrompt ? 'border-blue-300 shadow-md' : 'border-gray-100 shadow-sm group-hover:shadow-md'}
+        ${disabled ? 'opacity-70' : ''}`}>
+        
+        {/* 状态标签栏 */}
+        <div className="flex items-center justify-between px-3 py-1 bg-gray-50 rounded-t-lg border-b border-gray-100">
+          <span className="text-xs text-gray-400 font-medium">镜头 {index + 1}</span>
+          <SegmentStatusBadge status={status} />
+        </div>
         
         {/* 上半部分：镜头脚本编辑区 */}
         <div className="p-3 border-b border-gray-100">
@@ -263,7 +404,7 @@ function ScriptCard({
               <Camera className="w-4 h-4 text-gray-400" />
               <span className="text-xs text-gray-500 font-medium">镜头描述</span>
             </div>
-            {!editingPrompt && (
+            {!editingPrompt && !disabled && (
               <button
                 onClick={() => setEditingPrompt(true)}
                 className="text-xs text-gray-400 hover:text-blue-600 transition-colors"
@@ -299,8 +440,8 @@ function ScriptCard({
             </div>
           ) : (
             <div
-              onClick={() => setEditingPrompt(true)}
-              className="text-xs text-gray-500 cursor-pointer hover:text-gray-700"
+              onClick={() => !disabled && setEditingPrompt(true)}
+              className={`text-xs text-gray-500 ${disabled ? 'cursor-default' : 'cursor-pointer hover:text-gray-700'}`}
             >
               {script.prompt || '暂无镜头描述'}
             </div>
@@ -315,14 +456,16 @@ function ScriptCard({
               {!editingScript && (
                 <>
                   <button
-                    onClick={() => setEditingScript(true)}
-                    className="text-xs text-gray-400 hover:text-blue-600 transition-colors"
+                    onClick={() => !disabled && setEditingScript(true)}
+                    className={`text-xs ${disabled ? 'text-gray-300 cursor-default' : 'text-gray-400 hover:text-blue-600 transition-colors'}`}
+                    disabled={disabled}
                   >
                     编辑
                   </button>
                   <button
                     onClick={onRegenerate}
-                    className="text-xs text-blue-500 hover:text-blue-600 font-medium"
+                    className={`text-xs ${disabled ? 'text-gray-300 cursor-default' : 'text-blue-500 hover:text-blue-600 font-medium'}`}
+                    disabled={disabled}
                   >
                     重新生成
                   </button>
@@ -382,6 +525,17 @@ export default function ChatAgentPage() {
   const [sessionState, setSessionState] = useState<SessionState>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState<{
+    currentStage: number;
+    stageName: string;
+    estimatedTime?: string;
+    segmentStatus: Record<number, 'pending' | 'processing' | 'completed' | 'failed'>;
+  }>({
+    currentStage: 0,
+    stageName: '',
+    segmentStatus: {},
+  });
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -522,6 +676,39 @@ export default function ChatAgentPage() {
                   );
                   setSessionState(prev => ({ ...prev, ...feedbackState }));
                   setIsLoading(false);
+                  setIsGenerating(false);
+                  setGenerationProgress(prev => ({
+                    ...prev,
+                    currentStage: 0,
+                    stageName: '',
+                  }));
+                  break;
+
+                // 视频生成进度事件
+                case 'generation_progress':
+                  const progressData = eventData.data || {};
+                  setGenerationProgress(prev => ({
+                    currentStage: progressData.currentStage || prev.currentStage,
+                    stageName: progressData.stageName || prev.stageName,
+                    estimatedTime: progressData.estimatedTime,
+                    segmentStatus: progressData.segmentStatus || prev.segmentStatus,
+                  }));
+                  if (progressData.isGenerating) {
+                    setIsGenerating(true);
+                  }
+                  break;
+
+                // 镜头片段状态更新
+                case 'segment_status':
+                  const segId = eventData.segmentId;
+                  const segStatus = eventData.status;
+                  setGenerationProgress(prev => ({
+                    ...prev,
+                    segmentStatus: {
+                      ...prev.segmentStatus,
+                      [segId]: segStatus,
+                    },
+                  }));
                   break;
 
                 case 'complete':
@@ -533,6 +720,12 @@ export default function ChatAgentPage() {
                     )
                   );
                   setIsLoading(false);
+                  setIsGenerating(false);
+                  setGenerationProgress(prev => ({
+                    ...prev,
+                    currentStage: 0,
+                    stageName: '',
+                  }));
                   break;
 
                 case 'error':
@@ -743,6 +936,14 @@ export default function ChatAgentPage() {
             </Card>
           )}
           
+          {/* 全流程进度条 */}
+          <ProgressTracker
+            currentStage={generationProgress.currentStage}
+            stageName={generationProgress.stageName}
+            estimatedTime={generationProgress.estimatedTime}
+            isGenerating={isGenerating}
+          />
+          
           {/* 镜头序列引导语 */}
           <div className="text-xs text-gray-500 mb-3 p-2 bg-blue-50 rounded-lg">
             📹 以下是为你生成的连续镜头，可直接修改镜头描述和口播文案，调整顺序或单独重制某一镜头，再生成完整视频
@@ -763,6 +964,8 @@ export default function ChatAgentPage() {
                   script={script}
                   index={index}
                   total={msgState.scripts?.length || 0}
+                  segmentStatus={generationProgress.segmentStatus[script.id] || 'pending'}
+                  isGenerating={isGenerating}
                   onEdit={(field: 'script' | 'prompt', value: string) => {
                     // 更新文案内容
                     const updatedScripts = msgState.scripts?.map(s => 
@@ -792,14 +995,23 @@ export default function ChatAgentPage() {
           {/* 底部统一操作按钮 */}
           <div className="mt-4 p-3 bg-white rounded-lg shadow-sm border border-gray-100">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">确认所有镜头内容后，点击生成完整视频</span>
+              <span className="text-sm text-gray-600">
+                {isGenerating ? '正在生成中，请稍候...' : '确认所有镜头内容后，点击生成完整视频'}
+              </span>
               <Button
                 size="sm"
                 className="bg-blue-500 hover:bg-blue-600 text-white"
                 onClick={() => sendMessage('确认文案，开始生成视频')}
-                disabled={isLoading}
+                disabled={isLoading || isGenerating}
               >
-                🎬 生成完整视频
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                    生成中...
+                  </>
+                ) : (
+                  '🎬 生成完整视频'
+                )}
               </Button>
             </div>
           </div>
