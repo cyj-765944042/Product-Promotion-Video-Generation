@@ -18,6 +18,7 @@ import {
   ChevronUp,
   Minimize2,
   Play,
+  User,
 } from 'lucide-react';
 
 // 客户端时间组件 - 避免 hydration 问题
@@ -639,10 +640,26 @@ export default function ChatAgentPage() {
   };
 
   // 渲染单条消息
+  // 判断是否是纯文本消息（无结构化数据）
+  const isPlainTextMessage = (message: ChatMessage) => {
+    const msgState = message.state || {};
+    // 如果有商品信息、文案、视频片段、最终视频等结构化数据，则不是纯文本
+    return !msgState.productName && 
+           !msgState.scripts?.length && 
+           !msgState.segments?.length && 
+           !msgState.finalVideoUrl && 
+           !msgState.localVideoPath;
+  };
+
+  // 渲染单条消息
   const renderMessage = (message: ChatMessage) => {
+    const isPlainText = isPlainTextMessage(message);
+    
     if (message.role === 'user') {
+      // 用户消息：头像在右侧
       return (
-        <div key={message.id} className="flex justify-end mb-3">
+        <div key={message.id} className="flex justify-end items-start gap-2 mb-3">
+          {/* 消息气泡 */}
           <div className="max-w-[72%] bg-blue-500 text-white rounded-2xl rounded-tr-md px-4 py-2.5 shadow-sm">
             {message.imageUrl && (
               <img 
@@ -656,22 +673,35 @@ export default function ChatAgentPage() {
               <ClientTime timestamp={message.timestamp} />
             </p>
           </div>
+          {/* 用户头像 - 仅纯文本消息显示 */}
+          {isPlainText && (
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shadow-sm shrink-0 ring-2 ring-white/50">
+              <User className="w-4 h-4 text-white" />
+            </div>
+          )}
         </div>
       );
     }
 
+    // Agent消息：头像在左侧
     return (
-      <div key={message.id} className="flex justify-start mb-3">
+      <div key={message.id} className="flex justify-start items-start gap-2 mb-3">
+        {/* Agent头像 - 仅纯文本消息显示 */}
+        {isPlainText && (
+          <img 
+            src="/assets/agent-avatar.png" 
+            alt="货小影" 
+            className="w-8 h-8 rounded-full object-cover shadow-sm shrink-0 ring-2 ring-white/50"
+          />
+        )}
+        {/* 消息气泡 */}
         <div className="max-w-[72%] bg-blue-50 text-gray-800 rounded-2xl rounded-tl-md px-4 py-2.5 shadow-sm">
-          {/* Agent头像 */}
-          <div className="flex items-center gap-2 mb-2">
-            <img 
-              src="/assets/agent-avatar.png" 
-              alt="货小影" 
-              className="w-6 h-6 rounded-full object-cover"
-            />
-            <span className="text-xs font-medium text-blue-600">货小影</span>
-          </div>
+          {/* Agent名称标签 - 仅纯文本消息显示 */}
+          {isPlainText && (
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <span className="text-xs font-medium text-blue-600">货小影</span>
+            </div>
+          )}
           
           {/* 内容 */}
           {message.isStreaming && !message.content ? (
