@@ -210,6 +210,7 @@ async function generateVideoWithTaskCache(
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         console.log(`第 ${segmentIndex + 1} 段视频生成开始（尝试 ${attempt + 1}/${maxRetries + 1}）...`);
+        console.log(`视频生成参数: content=${JSON.stringify(content)}, options=${JSON.stringify(options)}`);
         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const videoResponse = await videoClient.videoGeneration(content as any, options as any);
@@ -228,6 +229,9 @@ async function generateVideoWithTaskCache(
           taskId: videoResponse.response.id 
         };
       } catch (error: unknown) {
+        console.error(`第 ${segmentIndex + 1} 段视频生成失败:`, error);
+        console.error(`失败时的参数: content=${JSON.stringify(content)}, options=${JSON.stringify(options)}`);
+        
         const is429Error = error instanceof Error && 
           (error.message.includes('429') || 
            (error as { statusCode?: number }).statusCode === 429);
