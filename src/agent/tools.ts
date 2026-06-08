@@ -631,94 +631,30 @@ export async function composeFinalVideo(
       };
     }
     
-    console.log(`[Tool] 共 ${localSegments.length} 个有效片段准备合成`);
+    // 分段视频已包含字幕，直接拼接即可
+    console.log(`[Tool] 共 ${localSegments.length} 个有效片段准备合成（分段视频已包含字幕）`);
     
-    // Step 2: 合并每个视频的音频（如果有单独音频）
+    // Step 2: 准备拼接视频列表（分段视频已有音频和字幕）
     const mergedVideos: string[] = [];
     
     for (const seg of localSegments) {
-      const mergedPath = seg.videoPath.replace('.mp4', '_merged.mp4');
-      
-      // 检查视频是否有音频轨道
-      const probeCmd = `ffprobe -v quiet -show_streams -select_streams a "${seg.videoPath}"`;
-      const probeOutput = execSync(probeCmd, { encoding: 'utf-8', timeout: 5000 });
-      const hasAudioInVideo = probeOutput.includes('codec_type=audio');
-      
-      if (hasAudioInVideo) {
-        // 视频已有音频，直接使用
-        console.log(`[Tool] 视频已有音频轨道，直接使用`);
-        fs.copyFileSync(seg.videoPath, mergedPath);
-      } else if (fs.existsSync(seg.audioPath) && fs.statSync(seg.audioPath).size > 0) {
-        // 合并音频和视频
-        console.log(`[Tool] FFmpeg合并音视频...`);
-        const mergeCmd = `ffmpeg -y -i "${seg.videoPath}" -i "${seg.audioPath}" -c:v copy -c:a aac -shortest "${mergedPath}"`;
-        execSync(mergeCmd, { stdio: 'pipe', timeout: 30000 });
-      } else {
-        // 无音频，直接使用视频
-        console.log(`[Tool] 无音频文件，使用原视频`);
-        fs.copyFileSync(seg.videoPath, mergedPath);
-      }
-      
-      mergedVideos.push(mergedPath);
+      // 分段视频已经包含音频和字幕，直接使用
+      console.log(`[Tool] 分段视频已包含音频和字幕，直接加入拼接列表`);
+      mergedVideos.push(seg.videoPath);
     }
     
-    // Step 3: 生成字幕文件
-    const srtPath = path.join(tmpDir, 'subtitles.srt');
-    let srtContent = '';
-    let currentTime = 0;
+    // 分段视频已包含字幕，直接拼接即可，无需额外添加字幕
     
-    const formatTime = (seconds: number) => {
-      const h = Math.floor(seconds / 3600);
-      const m = Math.floor((seconds % 3600) / 60);
-      const s = Math.floor(seconds % 60);
-      const ms = Math.floor((seconds % 1) * 1000);
-      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
-    };
-    
-    for (let i = 0; i < localSegments.length; i++) {
-      const seg = localSegments[i];
-      const startTime = currentTime;
-      const endTime = currentTime + seg.duration;
-      
-      srtContent += `${i + 1}\n`;
-      srtContent += `${formatTime(startTime)} --> ${formatTime(endTime)}\n`;
-      srtContent += `${seg.script}\n\n`;
-      
-      currentTime = endTime;
-    }
-    
-    fs.writeFileSync(srtPath, srtContent, 'utf-8');
-    console.log(`[Tool] 字幕文件生成完成: ${srtPath}`);
-    
-    // Step 4: 拼接视频
+    // Step 3: 拼接视频（分段视频已包含音频和字幕）
     const listPath = path.join(tmpDir, 'filelist.txt');
     const listContent = mergedVideos.map(v => `file '${v}'`).join('\n');
     fs.writeFileSync(listPath, listContent, 'utf-8');
     
-    const concatenatedPath = path.join(tmpDir, 'concatenated.mp4');
-    console.log(`[Tool] FFmpeg拼接视频...`);
-    const concatCmd = `ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${concatenatedPath}"`;
-    execSync(concatCmd, { stdio: 'pipe', timeout: 60000 });
-    console.log(`[Tool] 视频拼接完成: ${concatenatedPath}`);
-    
-    // Step 5: 添加字幕（可选）
     const finalPath = path.join(tmpDir, `final_${Date.now()}.mp4`);
-    
-    if (options?.embedSubtitle !== false) {
-      console.log(`[Tool] FFmpeg添加字幕...`);
-      // 字幕路径需要转义
-      const escapedSrtPath = srtPath.replace(/'/g, "'\\''");
-      const subtitleCmd = `ffmpeg -y -i "${concatenatedPath}" -vf "subtitles='${escapedSrtPath}'" -c:a copy "${finalPath}"`;
-      try {
-        execSync(subtitleCmd, { stdio: 'pipe', timeout: 60000 });
-        console.log(`[Tool] 字幕添加完成`);
-      } catch (subtitleError) {
-        console.error(`[Tool] 字幕添加失败，使用无字幕版本:`, subtitleError);
-        fs.copyFileSync(concatenatedPath, finalPath);
-      }
-    } else {
-      fs.copyFileSync(concatenatedPath, finalPath);
-    }
+    console.log(`[Tool] FFmpeg拼接视频（分段视频已包含字幕）...`);
+    const concatCmd = `ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${finalPath}"`;
+    execSync(concatCmd, { stdio: 'pipe', timeout: 60000 });
+    console.log(`[Tool] 视频拼接完成: ${finalPath}`);
     
     // 获取最终视频时长
     const durationCmd = `ffprobe -v quiet -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${finalPath}"`;
@@ -747,12 +683,11 @@ export async function composeFinalVideo(
     
     return {
       success: true,
-      message: `最终视频合成完成！时长 ${finalDuration}秒，已上传到对象存储`,
+      message: `最终视频合成完成！时长 ${finalDuration}秒，已上传到对象存储（分段视频已包含字幕）`,
       data: {
         finalVideoUrl: signedVideoUrl,
         finalVideoLocalPath: finalPath,
-        finalSubtitles: srtContent,
-        subtitleUrl: srtPath,
+        // 分段视频已包含字幕，无需单独字幕文件
         duration: finalDuration,
         currentStage: "done"
       }
