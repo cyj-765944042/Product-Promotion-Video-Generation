@@ -486,10 +486,14 @@ export async function POST(request: NextRequest) {
         
         // FFmpeg functions are defined at module level
         
-        const audioInfos: AudioInfo[] = [];
-        
-        for (let i = 0; i < segments.length; i++) {
-          const segment = segments[i];
+        // 音频并行生成（错开启动避免限流）
+        const audioGenerationPromises = segments.map(async (segment, i) => {
+          // 错开启动：每个任务延迟i*2秒启动（最多前5个）
+          const staggerDelay = i < 5 ? i * 2000 : 0;
+          if (staggerDelay > 0) {
+            console.log(`第 ${i + 1} 段音频延迟 ${staggerDelay/1000} 秒启动，避免限流...`);
+            await sleep(staggerDelay);
+          }
           
           sendEvent(controller, {
             type: 'tts_start',
@@ -530,13 +534,6 @@ export async function POST(request: NextRequest) {
                 realDuration = Math.max(5, Math.min(15, Math.ceil(charCount / 4)));
               }
               
-              audioInfos.push({
-                url: ttsResponse.audioUri,
-                duration: realDuration,
-                segmentId: segment.id,
-                localPath: localAudioPath,
-              });
-              
               sendEvent(controller, {
                 type: 'tts_complete',
                 content: { 
@@ -556,20 +553,44 @@ export async function POST(request: NextRequest) {
                 duration: realDuration,
                 script: segment.script,
               });
+              
+              return {
+                index: i,
+                url: ttsResponse.audioUri,
+                duration: realDuration,
+                segmentId: segment.id,
+                localPath: localAudioPath,
+              };
             } else {
               throw new Error('TTS未返回音频URL');
             }
           } catch (ttsError) {
             console.error(`TTS生成失败 (${i + 1}):`, ttsError);
             // Use default duration if TTS fails
-            audioInfos.push({
+            return {
+              index: i,
               url: '',
               duration: segment.duration || 5,
               segmentId: segment.id,
               localPath: '',
-            });
+              error: String(ttsError),
+            };
           }
-        }
+        });
+        
+        // 等待所有音频并行生成完成
+        const audioResults = await Promise.all(audioGenerationPromises);
+        
+        // 按index排序，确保顺序正确
+        audioResults.sort((a, b) => a.index - b.index);
+        
+        // 按顺序构建audioInfos数组
+        const audioInfos: AudioInfo[] = audioResults.map(result => ({
+          url: result.url,
+          duration: result.duration,
+          segmentId: result.segmentId,
+          localPath: result.localPath,
+        }));
 
         // ==========================================
         // Step 2: Generate videos in parallel for efficiency
