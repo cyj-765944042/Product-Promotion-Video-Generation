@@ -25,6 +25,33 @@ import {
   Circle,
 } from 'lucide-react';
 
+// 滚动到底部悬浮按钮组件
+function ScrollToBottomButton({
+  onClick,
+  isAtBottom,
+}: {
+  onClick: () => void;
+  isAtBottom: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={isAtBottom}
+      className={`w-9 h-9 rounded-full flex items-center justify-center
+        transition-all duration-200 shadow-md
+        ${isAtBottom 
+          ? 'bg-gray-200/50 text-gray-300 cursor-default opacity-50' 
+          : 'bg-gray-100/80 hover:bg-gray-200/90 text-gray-500 hover:text-blue-500 cursor-pointer'
+        }`}
+      style={{
+        backdropFilter: 'blur(4px)',
+      }}
+    >
+      <ChevronDown className="w-5 h-5" />
+    </button>
+  );
+}
+
 // 客户端时间组件 - 避免 hydration 问题
 function ClientTime({ timestamp }: { timestamp: string }) {
   const [time, setTime] = useState<string>('');
@@ -539,17 +566,31 @@ export default function ChatAgentPage() {
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true); // 是否滚动到底部
 
-  // 滚动到底部
+  // 滚动到底部（平滑滚动）
   const scrollToBottom = useCallback(() => {
     if (scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+      scrollAreaRef.current.scrollTo({
+        top: scrollAreaRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
+  }, []);
+
+  // 监听滚动位置，判断是否到达底部
+  const handleScroll = useCallback(() => {
+    if (scrollAreaRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollAreaRef.current;
+      const isBottom = scrollHeight - scrollTop - clientHeight < 10; // 10px容差
+      setIsAtBottom(isBottom);
     }
   }, []);
 
   // 自动滚动（新消息时）
   useEffect(() => {
     scrollToBottom();
+    setIsAtBottom(true);
   }, [messages, scrollToBottom]);
 
   // 发送消息
@@ -1186,8 +1227,9 @@ export default function ChatAgentPage() {
         {!isCollapsed && (
           <div 
             ref={scrollAreaRef}
-            className="flex-1 min-h-0 bg-gray-100 overflow-y-auto p-4"
+            className="flex-1 min-h-0 bg-gray-100 overflow-y-auto p-4 relative"
             style={{ overflowX: 'hidden' }}
+            onScroll={handleScroll}
           >
             {messages.map(renderMessage)}
             
@@ -1199,6 +1241,11 @@ export default function ChatAgentPage() {
                 </div>
               </div>
             )}
+            
+            {/* 滚动到底部悬浮按钮 */}
+            <div className="absolute bottom-4 right-4">
+              <ScrollToBottomButton onClick={scrollToBottom} isAtBottom={isAtBottom} />
+            </div>
           </div>
         )}
         
