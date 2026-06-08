@@ -214,7 +214,6 @@ function ScriptCard({
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [scriptValue, setScriptValue] = useState(script.script);
   const [promptValue, setPromptValue] = useState(script.prompt);
-  const [promptExpanded, setPromptExpanded] = useState(false);
 
   const handleSaveScript = () => {
     onEdit('script', scriptValue);
@@ -280,36 +279,28 @@ function ScriptCard({
                 value={promptValue}
                 onChange={(e) => setPromptValue(e.target.value)}
                 className="w-full p-2 text-sm border border-gray-200 rounded-md focus:border-blue-300 focus:ring-1 focus:ring-blue-200 resize-none"
-                rows={promptExpanded ? 4 : 2}
+                rows={4}
                 placeholder="输入镜头描述..."
               />
-              <div className="flex items-center justify-between">
+              <div className="flex justify-end gap-2">
                 <button
-                  onClick={() => setPromptExpanded(!promptExpanded)}
-                  className="text-xs text-gray-400 hover:text-gray-600"
+                  onClick={handleCancelPrompt}
+                  className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded"
                 >
-                  {promptExpanded ? '收起' : '展开'}
+                  取消
                 </button>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleCancelPrompt}
-                    className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded"
-                  >
-                    取消
-                  </button>
-                  <button
-                    onClick={handleSavePrompt}
-                    className="px-2 py-1 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded"
-                  >
-                    保存
-                  </button>
-                </div>
+                <button
+                  onClick={handleSavePrompt}
+                  className="px-2 py-1 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded"
+                >
+                  保存
+                </button>
               </div>
             </div>
           ) : (
             <div
-              onClick={() => setPromptExpanded(!promptExpanded)}
-              className={`text-xs text-gray-400 cursor-pointer ${promptExpanded ? '' : 'line-clamp-1'}`}
+              onClick={() => setEditingPrompt(true)}
+              className="text-xs text-gray-500 cursor-pointer hover:text-gray-700"
             >
               {script.prompt || '暂无镜头描述'}
             </div>
