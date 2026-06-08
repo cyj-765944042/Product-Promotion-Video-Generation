@@ -764,10 +764,10 @@ export async function POST(request: NextRequest) {
                   font_size: 36,
                   font_color: '#FFFFFFFF',
                   font_type: '1525745', // 系统默认字体，支持简体中文
-                  background_color: '#00000044', // 更通透的背景（约25%透明度）
+                  background_color: '#00000000', // 完全透明背景（无背景）
                   background_border_width: 0,
-                  border_width: 1,
-                  border_color: '#00000066', // 边框更通透
+                  border_width: 2, // 增加描边宽度，让文字更清晰
+                  border_color: '#000000AA', // 文字描边颜色（半透明黑色）
                 };
                 
                 // 该分段字幕从0开始，结束于音频时长
