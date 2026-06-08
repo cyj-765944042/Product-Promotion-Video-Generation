@@ -560,12 +560,13 @@ export async function POST(request: NextRequest) {
             | { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' }
           > = [];
           
-          // Use product image as reference for video generation
-          if (imageUrl) {
+          // Use product image as first frame for the first segment only
+          // 其他片段不使用图片参考，避免role参数问题导致400错误
+          if (imageUrl && i === 0) {
             content.push({
               type: 'image_url' as const,
               image_url: { url: imageUrl },
-              role: i === 0 ? 'first_frame' as const : undefined,
+              role: 'first_frame' as const,
             });
           }
           
