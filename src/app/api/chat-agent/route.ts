@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
   console.log("[Chat Agent API] 收到请求");
   
   const body = await request.json();
-  const { sessionId, message, imageUrl, productName } = body;
+  const { sessionId, message, imageUrl, productName, voiceLanguage } = body;
   
   // 获取或创建会话
   let state: ChatAgentState = sessionId ? sessions.get(sessionId) || getDefaultState() : getDefaultState();
@@ -34,6 +34,11 @@ export async function POST(request: NextRequest) {
   // 如果有商品名称，预存储
   if (productName) {
     state.productName = productName;
+  }
+  
+  // 如果有配音语言，预存储
+  if (voiceLanguage) {
+    state.voiceLanguage = voiceLanguage;
   }
   
   state.messages = [...state.messages, userMessage];

@@ -185,7 +185,8 @@ async function executeTool(
         state.scripts || input.scripts,
         input.productImageUrl as string,
         input.productName as string,
-        customHeaders
+        customHeaders,
+        state.voiceLanguage // 传入配音语言
       );
     
     case "composeFinalVideo":

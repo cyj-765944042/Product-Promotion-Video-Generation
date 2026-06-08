@@ -299,6 +299,17 @@ export async function POST(request: NextRequest) {
   const segmentsJson = formData.get('segments') as string;
   let imageUrl = formData.get('imageUrl') as string | null;
   const productImageFile = formData.get('productImage') as File | null;
+  const voiceLanguage = formData.get('voiceLanguage') as string || 'mandarin'; // 配音语言
+
+  // 配音语言对应的TTS语音模型
+  const TTS_VOICE_MAP: Record<string, string> = {
+    'mandarin': 'zh_female_mizai_saturn_bigtts', // 普通话女声
+    'cantonese': 'zh_female_mizai_saturn_bigtts', // 粤语暂用普通话模型
+    'english': 'en_female_rmqhrrhmt_moon_bigtts', // 英语女声
+    'japanese': 'ja_female_rmqhrrhmt_moon_bigtts', // 日语女声
+  };
+  const ttsVoice = TTS_VOICE_MAP[voiceLanguage] || TTS_VOICE_MAP['mandarin'];
+  console.log(`使用配音语言: ${voiceLanguage}, TTS语音模型: ${ttsVoice}`);
 
   // Upload product image BEFORE creating the stream (if needed)
   if (!imageUrl && productImageFile && productImageFile.size > 0) {
@@ -444,7 +455,7 @@ export async function POST(request: NextRequest) {
             const ttsResponse = await ttsClient.synthesize({
               uid: `user_${Date.now()}`,
               text: segment.script,
-              speaker: 'zh_female_mizai_saturn_bigtts', // Video dubbing female voice
+              speaker: ttsVoice, // 使用用户选择的配音语言对应的语音模型
               audioFormat: 'mp3',
               speechRate: 0,
             });

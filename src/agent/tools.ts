@@ -356,7 +356,8 @@ export async function generateVideoSegments(
   scripts: Array<{ id: number; script: string; prompt?: string }>,
   productImageUrl: string,
   productName: string,
-  customHeaders?: Record<string, string>
+  customHeaders?: Record<string, string>,
+  voiceLanguage?: string // 配音语言：mandarin, cantonese, english, japanese
 ): Promise<ToolResult> {
   console.log('[Tool] 调用 /api/generate-video，每段使用对应Prompt');
   
@@ -372,6 +373,11 @@ export async function generateVideoSegments(
       prompt: s.prompt || `${productName}产品展示，专业拍摄`
     }));
     formData.append('segments', JSON.stringify(segmentsForRequest));
+    
+    // 添加配音语言参数
+    if (voiceLanguage) {
+      formData.append('voiceLanguage', voiceLanguage);
+    }
     
     // generate-video 是 SSE 流式接口
     const response = await axios.post(

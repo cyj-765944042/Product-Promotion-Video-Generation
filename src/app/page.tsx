@@ -143,6 +143,60 @@ function UserAvatar({
   );
 }
 
+// 配音语言选择器组件
+const VOICE_LANGUAGES = [
+  { code: 'mandarin', label: '普通话', ttsVoice: 'zh_female_shuangkuaisisi_moon_bigtts' },
+  { code: 'cantonese', label: '粤语', ttsVoice: 'zh_female_shuangkuaisisi_moon_bigtts' }, // 粤语暂用普通话模型
+  { code: 'english', label: '英语', ttsVoice: 'en_female_rmqhrrhmt_moon_bigtts' },
+  { code: 'japanese', label: '日语', ttsVoice: 'ja_female_rmqhrrhmt_moon_bigtts' },
+];
+
+function LanguageSelector({
+  language,
+  onChange,
+}: {
+  language: string;
+  onChange: (lang: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const currentLang = VOICE_LANGUAGES.find(l => l.code === language) || VOICE_LANGUAGES[0];
+
+  const handleSelect = (langCode: string) => {
+    onChange(langCode);
+    localStorage.setItem('voiceLanguage', langCode);
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+      >
+        <span className="font-medium">配音语言：</span>
+        <span>{currentLang.label}</span>
+        <ChevronDown className="w-3 h-3" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[120px]">
+          {VOICE_LANGUAGES.map((lang) => (
+            <button
+              key={lang.code}
+              onClick={() => handleSelect(lang.code)}
+              className={`w-full px-3 py-2 text-left text-sm hover:bg-blue-50 transition-colors ${
+                lang.code === language ? 'text-blue-600 font-medium bg-blue-50' : 'text-gray-700'
+              }`}
+            >
+              {lang.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 客户端时间组件 - 避免 hydration 问题
 function ClientTime({ timestamp }: { timestamp: string }) {
   const [time, setTime] = useState<string>('');
@@ -646,6 +700,7 @@ export default function ChatAgentPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [isAvatarUploading, setIsAvatarUploading] = useState(false);
+  const [voiceLanguage, setVoiceLanguage] = useState<string>('mandarin'); // 配音语言
   const [generationProgress, setGenerationProgress] = useState<{
     currentStage: number;
     stageName: string;
@@ -667,6 +722,11 @@ export default function ChatAgentPage() {
     const savedAvatar = localStorage.getItem(USER_AVATAR_STORAGE_KEY);
     if (savedAvatar) {
       setUserAvatar(savedAvatar);
+    }
+    // 初始化配音语言（从localStorage读取）
+    const savedLanguage = localStorage.getItem('voiceLanguage');
+    if (savedLanguage) {
+      setVoiceLanguage(savedLanguage);
     }
   }, []);
 
@@ -788,6 +848,7 @@ export default function ChatAgentPage() {
           message: content,
           imageUrl,
           productName: sessionState.productName,
+          voiceLanguage, // 传递配音语言参数
         }),
       });
 
@@ -1377,6 +1438,8 @@ export default function ChatAgentPage() {
               <span className="text-white font-medium text-sm">货小影</span>
               <span className="text-blue-100 text-xs">带货视频智能助手</span>
             </div>
+            {/* 配音语言选择器 */}
+            <LanguageSelector language={voiceLanguage} onChange={setVoiceLanguage} />
           </div>
           
           {/* 右侧：用户头像 + 折叠按钮 */}

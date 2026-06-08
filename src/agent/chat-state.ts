@@ -11,6 +11,9 @@ export interface ChatAgentState {
   category?: string;
   features: string[];
   
+  // 配音语言（普通话/粤语/英语/日语）
+  voiceLanguage?: string;
+  
   // 文案信息（包含画面 Prompt）
   scripts: Array<{ id: number; script: string; feature: string; prompt?: string }>;
   
