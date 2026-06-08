@@ -165,6 +165,65 @@ async function mergeVideoAudioFFmpeg(
   });
 }
 
+// Add subtitle to video using FFmpeg (hard subtitle)
+async function addSubtitleToVideo(
+  videoPath: string, 
+  outputPath: string, 
+  subtitleText: string,
+  videoDuration: number
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // Create temporary SRT subtitle file
+    const tempDir = videoPath.substring(0, videoPath.lastIndexOf('/'));
+    const srtPath = `${tempDir}/subtitle.srt`;
+    
+    // Generate SRT content (full duration subtitle)
+    const srtContent = `1
+00:00:00,000 --> 00:00:${Math.floor(videoDuration).toString().padStart(2, '0')},${Math.floor((videoDuration % 1) * 1000).toString().padStart(3, '0')}
+${subtitleText}
+`;
+    
+    fs.writeFileSync(srtPath, srtContent, 'utf-8');
+    
+    const ffmpeg = spawn('ffmpeg', [
+      '-y', // Overwrite output
+      '-i', videoPath,
+      '-vf', `subtitles='${srtPath}':force_style='FontName=SimHei,FontSize=24,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,Outline=1,Shadow=0,MarginV=40,Alignment=2'`,
+      '-c:a', 'copy', // Copy audio stream
+      outputPath
+    ]);
+    
+    let errorOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+    
+    ffmpeg.on('close', (code) => {
+      // Clean up SRT file
+      try {
+        fs.unlinkSync(srtPath);
+      } catch {
+        // Ignore cleanup errors
+      }
+      
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg subtitle failed with code ${code}: ${errorOutput}`));
+      }
+    });
+    
+    ffmpeg.on('error', (err) => {
+      try {
+        fs.unlinkSync(srtPath);
+      } catch {
+        // Ignore cleanup errors
+      }
+      reject(err);
+    });
+  });
+}
+
 // Sleep utility for exponential backoff
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -728,7 +787,8 @@ export async function POST(request: NextRequest) {
               const tempDir = `/tmp/segment_${Date.now()}_${segmentId}`;
               const videoPath = `${tempDir}/video.mp4`;
               const audioPath = `${tempDir}/audio.mp3`;
-              const outputPath = `${tempDir}/merged.mp4`;
+              const mergedPath = `${tempDir}/merged.mp4`;
+              const finalPath = `${tempDir}/final.mp4`;
               
               // Create temp directory
               fs.mkdirSync(tempDir, { recursive: true });
@@ -741,35 +801,45 @@ export async function POST(request: NextRequest) {
               console.log(`下载第 ${segmentId} 段音频到本地...`);
               await downloadFile(result.audioUrl, audioPath);
               
-              // Merge audio and video using FFmpeg
+              // Step 1: Merge audio and video using FFmpeg
               console.log(`使用FFmpeg合并第 ${segmentId} 段音视频...`);
-              await mergeVideoAudioFFmpeg(videoPath, audioPath, outputPath);
+              await mergeVideoAudioFFmpeg(videoPath, audioPath, mergedPath);
               
-              // Upload merged video to object storage
-              console.log(`上传第 ${segmentId} 段合并后的视频到对象存储...`);
+              // Step 2: Add subtitle to merged video
+              console.log(`为第 ${segmentId} 段视频添加字幕...`);
+              sendEvent(controller, {
+                type: 'audio_merge',
+                content: `正在为第 ${segmentId}/${segments.length} 段视频添加字幕...`,
+                segmentId: segmentId,
+              });
+              
+              await addSubtitleToVideo(mergedPath, finalPath, result.script || '', result.audioDuration || 5);
+              
+              // Upload final video (with audio and subtitle) to object storage
+              console.log(`上传第 ${segmentId} 段完整视频到对象存储...`);
               const storage = new S3Storage();
-              const mergedBuffer = fs.readFileSync(outputPath);
-              const mergedKey = await storage.uploadFile({
-                fileContent: mergedBuffer,
-                fileName: `videos/merged_segment_${segmentId}_${Date.now()}.mp4`,
+              const finalBuffer = fs.readFileSync(finalPath);
+              const finalKey = await storage.uploadFile({
+                fileContent: finalBuffer,
+                fileName: `videos/final_segment_${segmentId}_${Date.now()}.mp4`,
                 contentType: 'video/mp4',
               });
-              const mergedVideoUrl = await storage.generatePresignedUrl({
-                key: mergedKey,
+              const finalVideoUrl = await storage.generatePresignedUrl({
+                key: finalKey,
                 expireTime: 86400,
               });
               
-              console.log(`第 ${segmentId} 段视频合并完成: ${mergedVideoUrl}`);
+              console.log(`第 ${segmentId} 段视频完整制作完成: ${finalVideoUrl}`);
               
               // Store completed segment
               completedSegments.set(segmentId, {
-                mergedVideoUrl: mergedVideoUrl,
+                mergedVideoUrl: finalVideoUrl,
                 duration: result.audioDuration,
                 script: result.script,
                 audioUrl: result.audioUrl,
               });
               
-              mergedVideoUrls.push(mergedVideoUrl);
+              mergedVideoUrls.push(finalVideoUrl);
               mergedDurations.push(result.audioDuration);
               
               // Try to send in order
@@ -779,10 +849,10 @@ export async function POST(request: NextRequest) {
               fs.rmSync(tempDir, { recursive: true, force: true });
               
             } catch (mergeError) {
-              console.error(`第 ${segmentId} 段音视频合并失败:`, mergeError);
+              console.error(`第 ${segmentId} 段视频制作失败:`, mergeError);
               sendEvent(controller, {
                 type: 'segment_status',
-                content: `第 ${segmentId} 段视频合并失败`,
+                content: `第 ${segmentId} 段视频制作失败`,
                 segmentId: segmentId,
                 status: 'failed',
               });
