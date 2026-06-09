@@ -284,6 +284,16 @@ async function generateVideoWithTaskCache(
           taskId: videoResponse.response.id 
         };
       } catch (error: unknown) {
+        // 详细记录错误信息
+        const errorDetails = {
+          message: error instanceof Error ? error.message : String(error),
+          statusCode: (error as { statusCode?: number }).statusCode,
+          response: (error as { response?: unknown }).response,
+          content: JSON.stringify(content),
+          options: JSON.stringify(options),
+        };
+        console.error(`第 ${segmentIndex + 1} 段视频生成失败详情:`, JSON.stringify(errorDetails, null, 2));
+        
         const is429Error = error instanceof Error && 
           (error.message.includes('429') || 
            (error as { statusCode?: number }).statusCode === 429);
