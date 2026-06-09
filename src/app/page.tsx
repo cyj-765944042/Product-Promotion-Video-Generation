@@ -2098,8 +2098,8 @@ export default function ChatAgentPage() {
               }}>
                 {(msgState.segments || [])
                   .sort((a, b) => (a.id || 0) - (b.id || 0))
-                  .map(segment => (
-                    <div key={segment.id} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+                  .map((segment, index) => (
+                    <div key={`segment-${segment.id || index}-${segment.videoUrl || segment.localVideoPath || 'no-video'}`} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
                       {/* 视频预览区 - 16:9比例 */}
                       <div className="relative aspect-video bg-gray-900 group">
                         <VideoPlayer
