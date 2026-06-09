@@ -1,3 +1,6 @@
+// 设置API路由最大执行时间为120秒（视频生成需要较长时间）
+export const maxDuration = 120;
+
 import { NextRequest } from 'next/server';
 import { Config, VideoGenerationClient, VideoEditClient, S3Storage, TTSClient } from 'coze-coding-dev-sdk';
 import * as fs from 'fs';
