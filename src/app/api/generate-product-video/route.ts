@@ -140,9 +140,7 @@ export async function POST(request: NextRequest) {
     const videoResult = await generateVideoSegments(
       segmentsInput,
       productImageUrl,
-      identifiedProductName,
-      language,
-      sessionId
+      identifiedProductName
     );
     
     if (!videoResult.success) {

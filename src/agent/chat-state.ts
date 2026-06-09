@@ -11,9 +11,6 @@ export interface ChatAgentState {
   category?: string;
   features: string[];
   
-  // 配音语言（普通话/粤语/英语/日语）
-  voiceLanguage?: string;
-  
   // 文案信息（包含画面 Prompt）
   scripts: Array<{ id: number; script: string; feature: string; prompt?: string }>;
   
@@ -41,6 +38,9 @@ export interface ChatAgentState {
   finalDuration?: number;
   subtitleUrl?: string;
   
+  // 配音语言
+  voiceLanguage?: string;
+  
   // 当前阶段（更细化的阶段划分）
   currentStage: "idle" | "identifying" | "product_identified" | "script_generated" | "video_generated" | "composing" | "done";
   
@@ -57,14 +57,8 @@ export interface ToolResult {
 
 // Agent 消息类型（用于 SSE）
 export interface AgentSSEMessage {
-  type: "text" | "tool_call" | "tool_result" | "progress" | "state_update" | "wait_feedback" | "complete" | "error" | "segment_video";
-  content: string | {
-    segmentId: number;
-    videoUrl: string;
-    audioUrl?: string;
-    script?: string;
-    duration?: number;
-  };
+  type: "text" | "tool_call" | "tool_result" | "progress" | "state_update" | "wait_feedback" | "complete" | "error";
+  content: string;
   data?: Record<string, unknown>;
   sessionId?: string;
 }

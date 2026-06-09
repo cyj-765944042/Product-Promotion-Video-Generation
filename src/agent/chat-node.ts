@@ -177,8 +177,7 @@ async function executeTool(
         input.productName as string,
         input.features as string[],
         input.productImageUrl as string | undefined,
-        customHeaders,
-        state.voiceLanguage // 传入配音语言，用于生成对应语言的口播文案
+        customHeaders
       );
     
     case "generateVideoSegments":
@@ -186,8 +185,7 @@ async function executeTool(
         state.scripts || input.scripts,
         input.productImageUrl as string,
         input.productName as string,
-        customHeaders,
-        state.voiceLanguage // 传入配音语言
+        customHeaders
       );
     
     case "composeFinalVideo":
@@ -369,36 +367,6 @@ ${nextActionHint}
       currentState = { ...currentState, ...toolResult.data };
       const currentSegmentsLength = currentState.segments?.length || 0;
       console.log(`[Agent] currentState 更新后: segments=${currentSegmentsLength}, stage=${currentState.currentStage}`);
-    }
-    
-    // 如果是generateVideoSegments工具且返回了segments，逐个发送segment_video事件
-    if (toolCall.tool === "generateVideoSegments" && toolResult.success && currentState.segments) {
-      const segments = currentState.segments as Array<{
-        id: number;
-        script?: string;
-        prompt?: string;
-        videoUrl?: string;
-        audioUrl?: string;
-        duration?: number;
-        status?: string;
-      }>;
-      
-      // 按顺序发送每个segment_video事件
-      for (const segment of segments) {
-        if (segment.videoUrl) {
-          console.log(`[Agent] 发送 segment_video 事件: segmentId=${segment.id}, videoUrl=${segment.videoUrl?.substring(0, 50)}...`);
-          yield {
-            type: "segment_video",
-            content: {
-              segmentId: segment.id,
-              videoUrl: segment.videoUrl,
-              audioUrl: segment.audioUrl,
-              script: segment.script,
-              duration: segment.duration
-            }
-          };
-        }
-      }
     }
     
     // 发送工具执行结果（简洁消息）
