@@ -76,10 +76,15 @@ export async function POST(request: NextRequest) {
       const generator = chatNodeStream(state, customHeaders);
       
       for await (const agentMessage of generator) {
-        // 记录每个事件类型
-        console.log(`[chat-agent API] 发送事件: type=${agentMessage.type}`);
+        // 记录每个事件类型（写入到日志文件）
+        const eventLog = `[chat-agent API] 发送事件: type=${agentMessage.type}`;
+        console.log(eventLog);
+        // 同时写入到app.log（通过info日志）
+        console.info(`[chat-agent API] 发送事件: type=${agentMessage.type}`);
+        
         if (agentMessage.type === 'segment_video') {
-          console.log(`[chat-agent API] segment_video事件: content=${JSON.stringify(agentMessage.content)}`);
+          const segContent = agentMessage.content as { segmentId?: number; videoUrl?: string };
+          console.log(`[chat-agent API] segment_video详情: segmentId=${segContent.segmentId}, videoUrl=${segContent.videoUrl?.substring(0, 100)}`);
         }
         
         const eventData = JSON.stringify({
@@ -89,7 +94,12 @@ export async function POST(request: NextRequest) {
           sessionId: newSessionId
         });
         
-        await writer.write(encoder.encode(`data: ${eventData}\n\n`));
+        // 写入SSE流
+        try {
+          await writer.write(encoder.encode(`data: ${eventData}\n\n`));
+        } catch (writeError) {
+          console.error(`[chat-agent API] 写入失败: ${writeError}`);
+        }
         
         // 收集状态更新
         if (agentMessage.type === "complete" && agentMessage.data) {

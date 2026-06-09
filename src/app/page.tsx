@@ -1720,7 +1720,12 @@ export default function ChatAgentPage() {
                   const videoSegUrl = eventData.content?.videoUrl;
                   const videoSegAudioUrl = eventData.content?.audioUrl;
                   const videoSegDuration = eventData.content?.duration;
-                  console.log(`收到片段视频事件: segmentId=${videoSegId}, videoUrl=${videoSegUrl}`);
+                  console.log(`[前端] 收到segment_video事件: segmentId=${videoSegId}, videoUrl=${videoSegUrl?.substring(0, 50)}`);
+                  
+                  // 确保videoSegId是number类型
+                  const videoSegIdNum = typeof videoSegId === 'number' ? videoSegId : parseInt(videoSegId as string, 10);
+                  console.log(`[前端] videoSegId转换: 原始=${videoSegId}(${typeof videoSegId}), 转换后=${videoSegIdNum}`);
+                  
                   // 更新会话数据中的segments数组
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
@@ -1732,12 +1737,22 @@ export default function ChatAgentPage() {
                         break;
                       }
                     }
-                    if (lastAssistantIdx === -1) return s;
+                    if (lastAssistantIdx === -1) {
+                      console.log(`[前端] segment_video: 未找到assistant消息`);
+                      return s;
+                    }
                     const targetMsg = s.messages[lastAssistantIdx];
                     const existingSegments = targetMsg.state?.segments || [];
+                    console.log(`[前端] segment_video: existingSegments数量=${existingSegments.length}, ids=${existingSegments.map(seg => seg.id).join(',')}`);
+                    
+                    // 检查是否有匹配的segment
+                    const matchedSegment = existingSegments.find(seg => seg.id === videoSegIdNum);
+                    console.log(`[前端] segment_video: 匹配结果=${matchedSegment ? `找到id=${matchedSegment.id}` : '未找到'}`);
+                    
                     // 更新对应segment的videoUrl
                     const updatedSegments = existingSegments.map(seg => {
-                      if (seg.id === videoSegId) {
+                      if (seg.id === videoSegIdNum) {
+                        console.log(`[前端] segment_video: 更新segment ${seg.id}的videoUrl`);
                         return {
                           ...seg,
                           videoUrl: videoSegUrl,
