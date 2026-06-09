@@ -160,6 +160,67 @@ async function mergeVideoAudioFFmpeg(
   });
 }
 
+// Add subtitle to segment video using FFmpeg (hard subtitle)
+async function addSubtitleToSegmentVideo(
+  videoPath: string,
+  outputPath: string,
+  subtitleText: string,
+  duration: number
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // Create ASS subtitle format with styling
+    const assContent = `[Script Info]
+ScriptType: v4.00+
+PlayResX: 1280
+PlayResY: 720
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,SimHei,24,&HFFFFFF,&HFFFFFF,&H000000,&H000000,0,0,0,0,100,100,0,0,1,1,0,2,20,20,40,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:${Math.floor(duration)}.${Math.round((duration % 1) * 100)},Default,,0,0,0,,${subtitleText}`;
+    
+    // Create temporary ASS file
+    const assPath = videoPath.replace('.mp4', '.ass');
+    fs.writeFileSync(assPath, assContent);
+    
+    const ffmpeg = spawn('ffmpeg', [
+      '-y', // Overwrite output
+      '-i', videoPath,
+      '-vf', `ass=${assPath}`,
+      '-c:a', 'copy', // Copy audio stream
+      outputPath
+    ]);
+    
+    let errorOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+    
+    ffmpeg.on('close', (code) => {
+      // Clean up temporary ASS file
+      if (fs.existsSync(assPath)) {
+        fs.unlinkSync(assPath);
+      }
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg subtitle failed with code ${code}: ${errorOutput}`));
+      }
+    });
+    
+    ffmpeg.on('error', (err) => {
+      // Clean up temporary ASS file
+      if (fs.existsSync(assPath)) {
+        fs.unlinkSync(assPath);
+      }
+      reject(err);
+    });
+  });
+}
+
 // Sleep utility for exponential backoff
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -667,21 +728,34 @@ export async function POST(request: NextRequest) {
               segmentVideoInfos[i].videoDuration = actualVideoDuration;
               mergedDurations.push(actualVideoDuration);
               
-              // Upload merged video to object storage
-              console.log('上传合并后的视频...');
-              const mergedVideoBuffer = fs.readFileSync(mergedFilePath);
-              const mergedVideoKey = await storage.uploadFile({
-                fileContent: mergedVideoBuffer,
-                fileName: `videos/merged_${segmentId}_${Date.now()}.mp4`,
+              // Add subtitle to the merged video
+              sendEvent(controller, {
+                type: 'audio_merge',
+                content: `正在为第 ${i + 1}/${segments.length} 段视频添加字幕...`,
+                segmentId: i + 1,
+              });
+              
+              const subtitleFileName = `subtitle_${segmentId}_${Date.now()}.mp4`;
+              const subtitleFilePath = `/tmp/${subtitleFileName}`;
+              
+              console.log(`FFmpeg添加字幕: ${subtitleFilePath}`);
+              await addSubtitleToSegmentVideo(mergedFilePath, subtitleFilePath, info.script || '', actualVideoDuration);
+              
+              // Upload video with subtitle to object storage
+              console.log('上传带字幕的视频...');
+              const finalVideoBuffer = fs.readFileSync(subtitleFilePath);
+              const finalVideoKey = await storage.uploadFile({
+                fileContent: finalVideoBuffer,
+                fileName: `videos/final_${segmentId}_${Date.now()}.mp4`,
                 contentType: 'video/mp4',
               });
-              const mergedVideoUrl = await storage.generatePresignedUrl({
-                key: mergedVideoKey,
+              const finalVideoUrl = await storage.generatePresignedUrl({
+                key: finalVideoKey,
                 expireTime: 86400,
               });
               
-              mergedVideoUrls.push(mergedVideoUrl);
-              console.log(`视频 ${i + 1} FFmpeg音视频合并成功，视频${actualVideoDuration}秒，音频${info.audioDuration}秒`);
+              mergedVideoUrls.push(finalVideoUrl);
+              console.log(`视频 ${i + 1} FFmpeg音视频合并+字幕添加成功，视频${actualVideoDuration}秒，音频${info.audioDuration}秒`);
               
               // 验证合并后的视频是否有音频轨道（同步执行）
               try {
@@ -701,15 +775,17 @@ export async function POST(request: NextRequest) {
               // Clean up temp files (验证完成后再删除)
               fs.unlinkSync(localVideoPath);
               fs.unlinkSync(mergedFilePath);
+              fs.unlinkSync(subtitleFilePath);
               
-              // 发送segment_video事件，使用合并后的视频URL（已包含音频）
+              // 发送segment_video事件，使用带字幕的视频URL（已包含音频和字幕）
               sendEvent(controller, {
                 type: 'segment_video',
                 content: { 
                   segmentId: segmentId, 
-                  videoUrl: mergedVideoUrl, // 使用合并后的视频URL
+                  videoUrl: finalVideoUrl, // 使用带字幕的视频URL
                   audioUrl: null, // 合并后不再需要单独的音频URL
                   duration: actualVideoDuration,
+                  script: info.script,
                 },
                 segmentId: i + 1,
                 current: i + 1,
