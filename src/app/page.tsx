@@ -2215,13 +2215,19 @@ export default function ChatAgentPage() {
               </span>
               <Button
                 size="sm"
-                className="bg-[#B999F3] hover:bg-[#D4C2F6] text-white"
+                className="bg-[#B999F3] hover:bg-[#D4C2F6] text-white disabled:bg-gray-300 disabled:text-gray-500"
                 onClick={() => sendMessage(
                   msgState.currentStage === 'video_generated' 
                     ? '[COMPOSE_VIDEO] 请将所有分段视频合成为完整视频，添加背景音乐和字幕。' 
                     : '[GENERATE_SEGMENTS] 请根据文案生成分段视频，每个分段包含配音和画面。'
                 )}
-                disabled={isGenerating}
+                disabled={
+                  isGenerating || 
+                  // "生成分段视频"按钮：只在script_generated阶段可用
+                  (msgState.currentStage !== 'video_generated' && msgState.currentStage !== 'script_generated') ||
+                  // "合成完整视频"按钮：只在video_generated阶段可用（composing/done时按钮本身不会显示）
+                  false
+                }
               >
                 {isGenerating ? (
                   <>
@@ -2261,9 +2267,9 @@ export default function ChatAgentPage() {
           </Card>
           <Button
             size="sm"
-            className="bg-[#B999F3] hover:bg-[#D4C2F6] text-white"
+            className="bg-[#B999F3] hover:bg-[#D4C2F6] text-white disabled:bg-gray-300 disabled:text-gray-500"
             onClick={() => sendMessage('请根据商品信息生成带货文案')}
-            disabled={isLoading}
+            disabled={isLoading || isGenerating || (msgState.currentStage && ['script_generated', 'video_generated', 'composing', 'done'].includes(msgState.currentStage))}
           >
             生成文案
           </Button>
