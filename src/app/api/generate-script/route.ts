@@ -115,7 +115,41 @@ export async function POST(request: NextRequest) {
         }
 
         // Step 2: Generate segmented sales script (分段式抖音带货口播文案)
-        const scriptPrompt = `你是一位专业的抖音带货主播和短视频导演，请为以下商品生成一段吸引人的分段式口播文案。
+        // 根据语言选择不同的prompt模板
+        let scriptPrompt: string;
+        if (voiceLanguage === 'english') {
+          // 英文prompt
+          scriptPrompt = `You are a professional e-commerce livestream host and short video director. Generate an engaging segmented sales script for the following product.
+
+Product Name: ${productName}
+Key Selling Points: ${productSellingPoints}
+${productInfo ? `Product Features: ${productInfo}` : ''}
+
+【CRITICAL】You must generate ALL content in English. Do NOT use any Chinese characters.
+
+Requirements:
+1. Generate 5 script segments, each describing a distinct ad scene
+2. Each segment length: 10-25 words, with complete expression and rhythm
+3. Segment logic:
+   - Segment 1: Attention-grabbing opening hook (question, pain point, or stunning opening)
+   - Segment 2: Showcase the first key selling point and usage scenario
+   - Segment 3: Showcase the second key selling point and actual results
+   - Segment 4: Highlight more details or competitive advantages
+   - Segment 5: Call-to-action closing (limited offer, buy now, etc.)
+4. Each segment should have clear visual imagery for video production
+5. The script must be persuasive and engaging to drive purchases
+
+Output strictly in the following JSON format without any other text:
+{
+  "segments": [
+    {"id": 1, "script": "Segment 1 content in English"},
+    {"id": 2, "script": "Segment 2 content in English"},
+    ...
+  ]
+}`;
+        } else {
+          // 中文prompt
+          scriptPrompt = `你是一位专业的抖音带货主播和短视频导演，请为以下商品生成一段吸引人的分段式口播文案。
 
 商品名称：${productName}
 核心卖点：${productSellingPoints}
@@ -125,8 +159,7 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
 
 要求：
 1. 生成5段口播文案，每段独立描述一个广告切片场景
-2. 每段文案长度要求：
-   ${languageInfo.name === '英语' ? '- 英文文案每段10-25个单词，要有完整的表达和节奏感' : '- 中文文案每段15-30字，简洁有力'}
+2. 每段文案长度要求：中文文案每段15-30字，简洁有力
 3. 分段逻辑建议：
    - 第1段：吸引注意力的开场钩子（如疑问句、痛点直击、震撼开场）
    - 第2段：展示第一个核心卖点和使用场景
@@ -134,7 +167,7 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
    - 第4段：展示更多细节或对比优势
    - 第5段：引导购买的号召性结尾（限时优惠、立即下单等）
 4. 每段要有明确的画面感，方便后续视频制作
-5. 口播文案必须使用${languageInfo.name}，不能混用其他语言
+5. 口播文案必须使用中文，不能混用其他语言
 6. 文案要有带货感染力，能激发观众购买欲望
 
 请严格按照以下JSON格式输出，不要有任何其他说明文字：
@@ -145,6 +178,7 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
     ...
   ]
 }`;
+        }
 
         const scriptMessages = [{ role: 'user' as const, content: scriptPrompt }];
         const scriptStream = await llmClient.stream(scriptMessages, {
@@ -202,7 +236,27 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
           });
 
           // Generate video prompt for this segment
-          const videoPromptText = `你是一位专业的短视频导演，请为以下商品片段生成火山引擎图生视频API的镜头描述。
+          // 根据语言选择不同的prompt模板
+          let videoPromptText: string;
+          if (voiceLanguage === 'english') {
+            videoPromptText = `You are a professional short video director. Generate a camera shot description for the video generation API.
+
+Product Name: ${productName}
+Script Segment: ${segment.script}
+${productInfo ? `Product Features: ${productInfo}` : ''}
+
+Requirements:
+1. The shot description should vividly showcase the scene and selling point described in the script
+2. Professional, clear footage with bright lighting
+3. Clean and elegant background, highlighting the product
+4. Smooth and natural camera movement
+5. Duration 4-7 seconds
+6. Be specific, including camera angle, movement style, and product display focus
+
+Output the shot description directly without any other explanatory text. Example format:
+"Camera starts with a close-up of the product front, slowly pushing in to show details, background blurred to highlight the product, soft side lighting revealing texture"`;
+          } else {
+            videoPromptText = `你是一位专业的短视频导演，请为以下商品片段生成火山引擎图生视频API的镜头描述。
 
 商品名称：${productName}
 口播文案片段：${segment.script}
@@ -218,6 +272,7 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
 
 请直接输出镜头描述，不要包含任何其他说明文字。示例格式：
 "镜头从商品正面特写开始，缓慢推进展示商品细节，背景虚化突出商品主体，柔和侧光照射展现质感"`;
+          }
 
           const videoPromptMessages = [{ role: 'user' as const, content: videoPromptText }];
           const videoPromptStream = await llmClient.stream(videoPromptMessages, {

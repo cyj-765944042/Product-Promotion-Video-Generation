@@ -314,14 +314,24 @@ export async function generateScripts(
       }
     }
     
-    // 如果没有解析到，使用默认文案+Prompt
+    // 如果没有解析到，使用默认文案+Prompt（根据语言选择）
+    const lang = voiceLanguage || 'mandarin';
     if (scripts.length === 0) {
-      scripts.push(
-        { id: 1, script: `${productName}太棒了，强烈推荐！`, prompt: `${productName}全景展示，吸引眼球` },
-        { id: 2, script: `${features[0] || '品质'}过硬，性价比超高`, prompt: `${productName}细节特写，品质展示` },
-        { id: 3, script: `设计时尚，颜值爆表`, prompt: `${productName}外观展示，设计美感` },
-        { id: 4, script: `现在下单，限时优惠！`, prompt: `${productName}购买引导，促销氛围` }
-      );
+      if (lang === 'english') {
+        scripts.push(
+          { id: 1, script: `${productName} is amazing, highly recommended!`, prompt: `${productName} panoramic display, eye-catching` },
+          { id: 2, script: `${features[0] || 'Quality'} is excellent, great value!`, prompt: `${productName} close-up details, quality showcase` },
+          { id: 3, script: `Fashionable design, stunning appearance!`, prompt: `${productName} exterior display, design aesthetics` },
+          { id: 4, script: `Order now, limited time offer!`, prompt: `${productName} purchase guide, promotional atmosphere` }
+        );
+      } else {
+        scripts.push(
+          { id: 1, script: `${productName}太棒了，强烈推荐！`, prompt: `${productName}全景展示，吸引眼球` },
+          { id: 2, script: `${features[0] || '品质'}过硬，性价比超高`, prompt: `${productName}细节特写，品质展示` },
+          { id: 3, script: `设计时尚，颜值爆表`, prompt: `${productName}外观展示，设计美感` },
+          { id: 4, script: `现在下单，限时优惠！`, prompt: `${productName}购买引导，促销氛围` }
+        );
+      }
     }
     
     return {
@@ -334,8 +344,14 @@ export async function generateScripts(
     };
   } catch (error) {
     console.error('[Tool] generate-script 失败:', error);
-    // 降级返回默认文案
-    const scripts = [
+    // 降级返回默认文案（根据语言选择）
+    const lang = voiceLanguage || 'mandarin';
+    const scripts = lang === 'english' ? [
+      { id: 1, script: `${productName} is amazing, highly recommended!` },
+      { id: 2, script: `Quality is excellent, great value!` },
+      { id: 3, script: `Fashionable design, stunning appearance!` },
+      { id: 4, script: `Order now, limited time offer!` }
+    ] : [
       { id: 1, script: `${productName}太棒了，强烈推荐！` },
       { id: 2, script: `品质过硬，性价比超高` },
       { id: 3, script: `设计时尚，颜值爆表` },
