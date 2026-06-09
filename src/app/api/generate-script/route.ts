@@ -195,18 +195,23 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
         let scriptSegments: Array<{ id: number; script: string }> = [];
         try {
           // Extract JSON from response
+          console.log('[generate-script] LLM原始返回:', scriptResult.substring(0, 500));
           const jsonMatch = scriptResult.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
             scriptSegments = parsed.segments || [];
+            console.log('[generate-script] JSON解析成功, segments数量:', scriptSegments.length);
+            console.log('[generate-script] 每个segment的script长度:', scriptSegments.map(s => s.script.length));
           }
-        } catch {
+        } catch (e) {
           // Fallback: split by newlines or numbered list
+          console.log('[generate-script] JSON解析失败，使用fallback解析');
           const lines = scriptResult.split(/\n+/).filter((line: string) => line.trim());
           scriptSegments = lines.slice(0, 4).map((line: string, index: number) => ({
             id: index + 1,
             script: line.replace(/^\d+[\.、\)]\s*/, '').trim(),
           }));
+          console.log('[generate-script] Fallback解析, segments数量:', scriptSegments.length);
         }
 
         sendEvent(controller, { 
