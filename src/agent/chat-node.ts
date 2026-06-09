@@ -369,13 +369,14 @@ export async function* chatNodeStream(
         type: "state_update",
         content: {  // 使用content字段
           ...currentState,
-          scripts: scriptsToUse,
+          // 不发送scripts，避免在视频生成阶段显示文案
+          // scripts: scriptsToUse,  // 移除这行
           segments: initialSegments,
           currentStage: "video_generating"
         }
       };
       
-      console.log(`[Agent] yield state_update事件: segments=${initialSegments.length}个, stage=video_generating`);
+      console.log(`[Agent] yield state_update事件: segments=${initialSegments.length}个, stage=video_generating, 不包含scripts`);
       
       // 使用stream版本，实时yield事件
       const streamGenerator = generateVideoSegmentsStream(
