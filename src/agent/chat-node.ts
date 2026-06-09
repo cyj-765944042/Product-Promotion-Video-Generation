@@ -397,7 +397,7 @@ export async function* chatNodeStream(
           yield {
             type: "segment_video",
             content: {
-              id: segment.id,
+              segmentId: segment.id,
               videoUrl: segment.videoUrl,
               duration: segment.duration,
               script: segment.script
