@@ -2049,8 +2049,13 @@ export default function ChatAgentPage() {
       );
     }
 
-    // 视频片段网格
-    if (msgState.segments && msgState.segments.length > 0) {
+    // 文案内容（包含视频片段预览）
+    if (msgState.scripts && msgState.scripts.length > 0 || msgState.segments && msgState.segments.length > 0) {
+      // 判断是否有视频片段
+      const hasVideoSegments = msgState.segments && msgState.segments.length > 0;
+      // 判断是否已完成
+      const isDone = msgState.currentStage === 'done';
+      
       return (
         <div className="space-y-3">
           <p className="text-sm">{message.content}</p>
@@ -2073,81 +2078,6 @@ export default function ChatAgentPage() {
             </Card>
           )}
           
-          {/* 视频片段网格 - 自适应布局，最小260px，大屏优先2列 */}
-          <div className="grid gap-4" style={{
-            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-          }}>
-            {(msgState.segments || [])
-              .sort((a, b) => (a.id || 0) - (b.id || 0))
-              .map(segment => (
-              <div key={segment.id} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
-                {/* 视频预览区 - 16:9比例 */}
-                <div className="relative aspect-video bg-gray-900 group">
-                  <VideoPlayer
-                    videoUrl={segment.videoUrl}
-                    localVideoPath={segment.localVideoPath}
-                    audioUrl={segment.audioUrl}
-                    showControls={true}
-                  />
-                </div>
-                {/* 文案与操作区 */}
-                <div className="p-3 bg-[#F1F3F5]">
-                  <Badge variant="outline" className="mb-2 text-xs border-[#D4C2F6] text-[#B999F3]">片段 {segment.id}</Badge>
-                  <p className="text-sm text-[#333333] mt-1 line-clamp-2 leading-relaxed">{segment.script}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          
-          {/* 操作按钮 */}
-          <div className="flex gap-2 mt-3">
-            <Button
-              size="sm"
-              className="bg-[#B999F3] hover:bg-[#D4C2F6]"
-              onClick={() => sendMessage('请合成所有片段为最终视频')}
-              disabled={isLoading}
-            >
-              <Video className="w-4 h-4 mr-1" />
-              合成视频
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => sendMessage('重新生成所有视频片段')}
-              disabled={isLoading}
-            >
-              <RefreshCw className="w-4 h-4 mr-1" />
-              重新生成
-            </Button>
-          </div>
-        </div>
-      );
-    }
-
-    // 文案内容
-    if (msgState.scripts && msgState.scripts.length > 0) {
-      return (
-        <div className="space-y-3">
-          <p className="text-sm">{message.content}</p>
-          
-          {/* 商品信息卡片 */}
-          {msgState.productName && (
-            <Card className="bg-white shadow-sm max-w-[600px]">
-              <CardContent className="p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="secondary" className="bg-[#ECE6F7] text-[#B999F3]">商品</Badge>
-                  <span className="font-medium text-sm">{msgState.productName}</span>
-                </div>
-                {msgState.features && msgState.features.length > 0 && (
-                  <div className="text-xs text-[#666666]">
-                    <span className="font-medium">核心卖点：</span>
-                    {msgState.features.join('、')}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-          
           {/* 全流程进度条 */}
           <ProgressTracker
             currentStage={generationProgress.currentStage}
@@ -2156,92 +2086,132 @@ export default function ChatAgentPage() {
             isGenerating={isGenerating}
           />
           
-          {/* 镜头序列引导语 */}
-          <div className="text-xs text-[#666666] mb-3 p-2 bg-[#ECE6F7] rounded-lg">
-            📹 以下是为你生成的连续镜头，可直接修改镜头描述和口播文案，调整顺序或单独重制某一镜头，再生成完整视频
-          </div>
-          
-          {/* 镜头序列卡片 - 左侧流程线 + 纵向排列 */}
-          <div className="relative pl-8">
-            {/* 左侧垂直流程线 */}
-            <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-[#D4C2F6]" />
-            {/* 流程节点 */}
-            {msgState.scripts.map((script, index) => (
-              <div key={script.id} className="relative mb-4 last:mb-0">
-                {/* 左侧节点圆点 */}
-                <div className="absolute -left-5 top-4 w-3 h-3 rounded-full bg-[#B999F3] border-2 border-white shadow" />
-                
-                {/* 镜头卡片 */}
-                <ScriptCard
-                  script={script}
-                  index={index}
-                  total={msgState.scripts?.length || 0}
-                  segmentStatus={generationProgress.segmentStatus[script.id] || 'pending'}
-                  isGenerating={isGenerating}
-                  onEdit={(field: 'script' | 'prompt', value: string) => {
-                    // 更新文案内容
-                    const updatedScripts = msgState.scripts?.map(s => 
-                      s.id === script.id ? { ...s, [field]: value } : s
-                    ) || [];
-                    setSessionState(prev => ({
-                      ...prev,
-                      scripts: updatedScripts
-                    }));
-                  }}
-                  onRegenerate={() => sendMessage(`重新生成镜头${script.id}`)}
-                  onMoveUp={index > 0 ? () => {
-                    const newScripts = [...(msgState.scripts || [])];
-                    [newScripts[index - 1], newScripts[index]] = [newScripts[index], newScripts[index - 1]];
-                    setSessionState(prev => ({ ...prev, scripts: newScripts }));
-                  } : undefined}
-                  onMoveDown={index < (msgState.scripts?.length || 0) - 1 ? () => {
-                    const newScripts = [...(msgState.scripts || [])];
-                    [newScripts[index], newScripts[index + 1]] = [newScripts[index + 1], newScripts[index]];
-                    setSessionState(prev => ({ ...prev, scripts: newScripts }));
-                  } : undefined}
-                />
+          {/* 视频片段网格 - 当有视频片段时显示 */}
+          {hasVideoSegments && (
+            <div className="space-y-2 mb-4">
+              <div className="text-xs text-[#666666] p-2 bg-[#ECE6F7] rounded-lg">
+                🎬 分段视频已生成，点击下方按钮合成完整视频
               </div>
-            ))}
-          </div>
+              <div className="grid gap-4" style={{
+                gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+              }}>
+                {(msgState.segments || [])
+                  .sort((a, b) => (a.id || 0) - (b.id || 0))
+                  .map(segment => (
+                    <div key={segment.id} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+                      {/* 视频预览区 - 16:9比例 */}
+                      <div className="relative aspect-video bg-gray-900 group">
+                        <VideoPlayer
+                          videoUrl={segment.videoUrl}
+                          localVideoPath={segment.localVideoPath}
+                          audioUrl={segment.audioUrl}
+                          showControls={true}
+                        />
+                      </div>
+                      {/* 文案与操作区 */}
+                      <div className="p-3 bg-[#F1F3F5]">
+                        <Badge variant="outline" className="mb-2 text-xs border-[#D4C2F6] text-[#B999F3]">片段 {segment.id}</Badge>
+                        <p className="text-sm text-[#333333] mt-1 line-clamp-2 leading-relaxed">{segment.script}</p>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+          
+          {/* 镜头序列卡片 - 只有文案但没有视频片段时显示 */}
+          {!hasVideoSegments && msgState.scripts && msgState.scripts.length > 0 && (
+            <>
+              {/* 镜头序列引导语 */}
+              <div className="text-xs text-[#666666] mb-3 p-2 bg-[#ECE6F7] rounded-lg">
+                📹 以下是为你生成的连续镜头，可直接修改镜头描述和口播文案，调整顺序或单独重制某一镜头，再生成完整视频
+              </div>
+              
+              {/* 镜头序列卡片 - 左侧流程线 + 纵向排列 */}
+              <div className="relative pl-8">
+                {/* 左侧垂直流程线 */}
+                <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-[#D4C2F6]" />
+                {/* 流程节点 */}
+                {msgState.scripts.map((script, index) => (
+                  <div key={script.id} className="relative mb-4 last:mb-0">
+                    {/* 左侧节点圆点 */}
+                    <div className="absolute -left-5 top-4 w-3 h-3 rounded-full bg-[#B999F3] border-2 border-white shadow" />
+                    
+                    {/* 镜头卡片 */}
+                    <ScriptCard
+                      script={script}
+                      index={index}
+                      total={msgState.scripts?.length || 0}
+                      segmentStatus={generationProgress.segmentStatus[script.id] || 'pending'}
+                      isGenerating={isGenerating}
+                      onEdit={(field: 'script' | 'prompt', value: string) => {
+                        // 更新文案内容
+                        const updatedScripts = msgState.scripts?.map(s => 
+                          s.id === script.id ? { ...s, [field]: value } : s
+                        ) || [];
+                        setSessionState(prev => ({
+                          ...prev,
+                          scripts: updatedScripts
+                        }));
+                      }}
+                      onRegenerate={() => sendMessage(`重新生成镜头${script.id}`)}
+                      onMoveUp={index > 0 ? () => {
+                        const newScripts = [...(msgState.scripts || [])];
+                        [newScripts[index - 1], newScripts[index]] = [newScripts[index], newScripts[index - 1]];
+                        setSessionState(prev => ({ ...prev, scripts: newScripts }));
+                      } : undefined}
+                      onMoveDown={index < (msgState.scripts?.length || 0) - 1 ? () => {
+                        const newScripts = [...(msgState.scripts || [])];
+                        [newScripts[index], newScripts[index + 1]] = [newScripts[index + 1], newScripts[index]];
+                        setSessionState(prev => ({ ...prev, scripts: newScripts }));
+                      } : undefined}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
           
           {/* 底部统一操作按钮 */}
-          <div className="mt-4 p-3 bg-white rounded-lg shadow-sm border border-[#E5E5E5]">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-[#666666]">
-                {isGenerating ? '正在生成中，请稍候...' : 
-                  msgState.currentStage === 'video_generated' 
-                    ? '分段视频已生成，点击合成完整视频' 
-                    : '确认所有镜头内容后，点击生成分段视频'}
-              </span>
-              <Button
-                size="sm"
-                className="bg-[#B999F3] hover:bg-[#D4C2F6] text-white disabled:bg-gray-300 disabled:text-gray-500"
-                onClick={() => sendMessage(
-                  msgState.currentStage === 'video_generated' 
-                    ? '[COMPOSE_VIDEO] 请将所有分段视频合成为完整视频，添加背景音乐和字幕。' 
-                    : '[GENERATE_SEGMENTS] 请根据文案生成分段视频，每个分段包含配音和画面。'
-                )}
-                disabled={
-                  isGenerating || 
-                  // "生成分段视频"按钮：只在script_generated阶段可用
-                  (msgState.currentStage !== 'video_generated' && msgState.currentStage !== 'script_generated') ||
-                  // "合成完整视频"按钮：只在video_generated阶段可用（composing/done时按钮本身不会显示）
-                  false
-                }
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin mr-1" />
-                    生成中...
-                  </>
-                ) : (
-                  msgState.currentStage === 'video_generated' 
-                    ? '🎬 合成完整视频' 
-                    : '🎥 生成分段视频'
-                )}
-              </Button>
+          {!isDone && (
+            <div className="mt-4 p-3 bg-white rounded-lg shadow-sm border border-[#E5E5E5]">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-[#666666]">
+                  {isGenerating ? '正在生成中，请稍候...' : 
+                    hasVideoSegments 
+                      ? '分段视频已生成，点击合成完整视频' 
+                      : '确认所有镜头内容后，点击生成分段视频'}
+                </span>
+                <Button
+                  size="sm"
+                  className="bg-[#B999F3] hover:bg-[#D4C2F6] text-white disabled:bg-gray-300 disabled:text-gray-500"
+                  onClick={() => sendMessage(
+                    hasVideoSegments 
+                      ? '[COMPOSE_VIDEO] 请将所有分段视频合成为完整视频，添加背景音乐和字幕。' 
+                      : '[GENERATE_SEGMENTS] 请根据文案生成分段视频，每个分段包含配音和画面。'
+                  )}
+                  disabled={
+                    isGenerating || 
+                    // "生成分段视频"按钮：只在script_generated阶段可用
+                    (!hasVideoSegments && msgState.currentStage !== 'script_generated') ||
+                    // "合成完整视频"按钮：只在video_generated阶段可用
+                    (hasVideoSegments && msgState.currentStage !== 'video_generated')
+                  }
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                      生成中...
+                    </>
+                  ) : (
+                    hasVideoSegments 
+                      ? '🎬 合成完整视频' 
+                      : '🎥 生成分段视频'
+                  )}
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       );
     }
