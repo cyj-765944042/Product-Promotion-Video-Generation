@@ -253,14 +253,12 @@ export async function generateScripts(
     }
     
     // generate-script 是 SSE 流式接口，我们收集最终结果
+    // 注意：发送FormData时不要手动设置Content-Type，axios会自动设置正确的boundary
     const response = await axios.post(
       `${BASE_URL}/api/generate-script`,
       formData,
       { 
-        headers: { 
-          ...customHeaders,
-          'Content-Type': 'multipart/form-data'
-        },
+        headers: customHeaders,
         responseType: 'text'
       }
     );
