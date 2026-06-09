@@ -230,14 +230,16 @@ export async function generateScripts(
   productName: string,
   features: string[],
   productImageUrl?: string,
-  customHeaders?: Record<string, string>
+  customHeaders?: Record<string, string>,
+  voiceLanguage?: string // 配音语言：mandarin(普通话) 或 english(英语)
 ): Promise<ToolResult> {
-  console.log('[Tool] 调用 /api/generate-script');
+  console.log('[Tool] 调用 /api/generate-script，配音语言:', voiceLanguage || 'mandarin');
   
   try {
     const formData = new FormData();
     formData.append('productName', productName);
     formData.append('productSellingPoints', features.join(','));
+    formData.append('voiceLanguage', voiceLanguage || 'mandarin'); // 添加配音语言参数
     
     // 如果有图片，下载并上传
     if (productImageUrl && productImageUrl.startsWith('http')) {
