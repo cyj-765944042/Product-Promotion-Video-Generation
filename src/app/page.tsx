@@ -1345,6 +1345,14 @@ export default function ChatAgentPage() {
     if (!content.trim() && !imageUrl) return;
     if (!currentSessionId) return; // 确保有当前会话ID
 
+    // 先取消该会话之前的running任务，防止重复请求
+    const existingTask = backgroundTasksRef.current.get(currentSessionId);
+    if (existingTask && existingTask.status === 'running') {
+      console.log(`取消会话 ${currentSessionId} 的旧任务，开始新任务`);
+      existingTask.abortController.abort();
+      existingTask.status = 'cancelled';
+    }
+
     // 获取目标会话的完整状态（从sessions数组中获取，而非当前的sessionState）
     const targetSession = sessions.find(s => s.id === currentSessionId);
     if (!targetSession) return;
