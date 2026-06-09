@@ -59,6 +59,7 @@ interface Session {
   updatedAt: string;
   isGenerating?: boolean; // 是否正在生成中（后台任务运行）
   backendSessionId?: string; // 后端会话ID（用于恢复后端状态）
+  voiceLanguage?: string; // 配音语言（每个会话独立）
 }
 
 // 滚动到底部悬浮按钮组件
@@ -194,7 +195,7 @@ function LanguageSelector({
 
   const handleSelect = (langCode: string) => {
     onChange(langCode);
-    localStorage.setItem('voiceLanguage', langCode);
+    // 语言现在绑定到会话，会话保存时会自动保存到localStorage
     setIsOpen(false);
   };
 
@@ -904,7 +905,7 @@ export default function ChatAgentPage() {
   // const [isGenerating, setIsGenerating] = useState(false);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [isAvatarUploading, setIsAvatarUploading] = useState(false);
-  const [voiceLanguage, setVoiceLanguage] = useState<string>('mandarin'); // 配音语言
+  // 配音语言：从当前会话获取（每个会话独立）
   const [generationProgress, setGenerationProgress] = useState<{
     currentStage: number;
     stageName: string;
@@ -928,6 +929,16 @@ export default function ChatAgentPage() {
   // 从当前会话获取isGenerating状态（每个会话独立）
   const currentSession = sessions.find(s => s.id === currentSessionId);
   const isGenerating = currentSession?.isGenerating || false;
+  const voiceLanguage = currentSession?.voiceLanguage || 'mandarin'; // 从当前会话获取配音语言
+
+  // 更新当前会话的配音语言
+  const updateSessionVoiceLanguage = useCallback((lang: string) => {
+    if (currentSessionId) {
+      setSessions(prev => prev.map(s => 
+        s.id === currentSessionId ? { ...s, voiceLanguage: lang } : s
+      ));
+    }
+  }, [currentSessionId]);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -940,11 +951,7 @@ export default function ChatAgentPage() {
     if (savedAvatar) {
       setUserAvatar(savedAvatar);
     }
-    // 初始化配音语言（从localStorage读取）
-    const savedLanguage = localStorage.getItem('voiceLanguage');
-    if (savedLanguage) {
-      setVoiceLanguage(savedLanguage);
-    }
+    // 配音语言现在从会话中获取，不再使用localStorage存储全局设置
     // 初始化会话列表（从localStorage读取）
     const savedSessions = localStorage.getItem(SESSIONS_STORAGE_KEY);
     if (savedSessions) {
@@ -1075,6 +1082,7 @@ export default function ChatAgentPage() {
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      voiceLanguage: 'mandarin', // 默认配音语言
     };
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newId);
@@ -1274,6 +1282,7 @@ export default function ChatAgentPage() {
     const targetBackendSessionId = targetSession.backendSessionId;
     const targetProductName = targetSession.state.productName;
     const targetSessionState = targetSession.state;
+    const targetVoiceLanguage = targetSession.voiceLanguage || 'mandarin'; // 使用目标会话的配音语言
 
     // 创建AbortController用于取消请求
     const abortController = new AbortController();
@@ -1351,7 +1360,7 @@ export default function ChatAgentPage() {
           message: content,
           imageUrl,
           productName: targetProductName, // 使用目标会话的productName
-          voiceLanguage, // 配音语言参数（全局设置）
+          voiceLanguage: targetVoiceLanguage, // 使用目标会话的配音语言
         }),
         signal: abortController.signal, // 添加AbortController signal
       });
@@ -2330,7 +2339,7 @@ export default function ChatAgentPage() {
                 <span className="text-[#666666] text-xs">带货视频智能助手</span>
               </div>
               {/* 配音语言选择器 */}
-              <LanguageSelector language={voiceLanguage} onChange={setVoiceLanguage} />
+              <LanguageSelector language={voiceLanguage} onChange={updateSessionVoiceLanguage} />
             </div>
             
             {/* 右侧：用户头像 + 折叠按钮 */}
