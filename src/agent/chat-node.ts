@@ -537,8 +537,9 @@ ${nextActionHint}
       meaningfulText = fullContent.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim();
     }
     
-    // 只 yield 有意义的文本（非空）
-    if (meaningfulText && meaningfulText.length > 0) {
+    // 只 yield 有意义的文本（非空且没有工具调用）
+    // 注意：如果有工具调用，不yield文本内容，避免在视频生成时显示文案
+    if (meaningfulText && meaningfulText.length > 0 && !toolCall) {
       yield { type: "text", content: meaningfulText };
     }
     
