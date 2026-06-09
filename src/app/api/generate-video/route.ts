@@ -571,9 +571,8 @@ export async function POST(request: NextRequest) {
           const audioInfo = audioInfos[i];
           
           const content: Array<
-            | { type: 'text'; text: string }
-            | { type: 'image_url'; image_url: { url: string } }
-            | { type: 'image_url'; image_url: { url: string }; role: 'first_frame' }
+            { type: 'text'; text: string } | 
+            { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' | 'reference_image' }
           > = [];
           
           // Use product image as reference for video generation
@@ -788,6 +787,7 @@ export async function POST(request: NextRequest) {
               fs.unlinkSync(subtitleFilePath);
               
               // 发送segment_video事件，使用带字幕的视频URL（已包含音频和字幕）
+              console.log(`[API] 发送segment_video事件: segmentId=${segmentId}, videoUrl=${finalVideoUrl?.substring(0, 50)}...`);
               sendEvent(controller, {
                 type: 'segment_video',
                 content: { 

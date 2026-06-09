@@ -355,6 +355,29 @@ export async function* chatNodeStream(
       yield { type: "progress", content: "正在生成分段视频..." };
       
       const eventQueue: AgentSSEMessage[] = [];
+      // 先发送state_update初始化segments数组，确保前端可以接收segment_video事件
+      // 初始化segments数组，包含每个script对应的segment基础信息
+      const initialSegments = scriptsToUse.map((script, index) => ({
+        id: script.id || index + 1,
+        script: script.script || script.feature || '',
+        feature: script.feature || '',
+        prompt: script.prompt || '',
+        videoUrl: '', // 视频生成后通过segment_video事件更新
+        audioUrl: '', // 音频生成后通过segment_video事件更新
+      }));
+      
+      yield {
+        type: "state_update",
+        content: {
+          ...currentState,
+          scripts: scriptsToUse,
+          segments: initialSegments,
+          currentStage: "video_generating"
+        }
+      };
+      
+      console.log(`[Agent] 发送初始化segments: ${initialSegments.length}个片段`);
+      
       const toolResult = await generateVideoSegments(
         scriptsToUse,
         state.productImageUrl || currentState.productImageUrl || "",

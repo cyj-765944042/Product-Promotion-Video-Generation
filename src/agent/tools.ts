@@ -412,6 +412,7 @@ export async function generateVideoSegments(
     );
     
     // 解析 SSE 响应获取视频片段
+    console.log(`[Tool] 开始解析generate-video响应，长度=${response.data?.length || 0}`);
     const lines = response.data.split('\n');
     let segments: Array<{ 
       id: number; 
