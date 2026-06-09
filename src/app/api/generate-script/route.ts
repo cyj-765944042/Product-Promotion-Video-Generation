@@ -236,27 +236,8 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
           });
 
           // Generate video prompt for this segment
-          // 根据语言选择不同的prompt模板
-          let videoPromptText: string;
-          if (voiceLanguage === 'english') {
-            videoPromptText = `You are a professional short video director. Generate a camera shot description for the video generation API.
-
-Product Name: ${productName}
-Script Segment: ${segment.script}
-${productInfo ? `Product Features: ${productInfo}` : ''}
-
-Requirements:
-1. The shot description should vividly showcase the scene and selling point described in the script
-2. Professional, clear footage with bright lighting
-3. Clean and elegant background, highlighting the product
-4. Smooth and natural camera movement
-5. Duration 4-7 seconds
-6. Be specific, including camera angle, movement style, and product display focus
-
-Output the shot description directly without any other explanatory text. Example format:
-"Camera starts with a close-up of the product front, slowly pushing in to show details, background blurred to highlight the product, soft side lighting revealing texture"`;
-          } else {
-            videoPromptText = `你是一位专业的短视频导演，请为以下商品片段生成火山引擎图生视频API的镜头描述。
+          // 视频prompt始终使用中文，不随语言切换
+          const videoPromptText = `你是一位专业的短视频导演，请为以下商品片段生成火山引擎图生视频API的镜头描述。
 
 商品名称：${productName}
 口播文案片段：${segment.script}
@@ -272,7 +253,6 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
 
 请直接输出镜头描述，不要包含任何其他说明文字。示例格式：
 "镜头从商品正面特写开始，缓慢推进展示商品细节，背景虚化突出商品主体，柔和侧光照射展现质感"`;
-          }
 
           const videoPromptMessages = [{ role: 'user' as const, content: videoPromptText }];
           const videoPromptStream = await llmClient.stream(videoPromptMessages, {
