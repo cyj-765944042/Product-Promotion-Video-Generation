@@ -13,12 +13,22 @@ export async function POST(request: NextRequest) {
   console.log("[Chat Agent API] 收到请求");
   
   const body = await request.json();
-  const { sessionId, message, imageUrl, productName, voiceLanguage } = body;
+  const { sessionId, message, imageUrl, productName, voiceLanguage, scripts, segments } = body;
   
   // 获取或创建会话
   let state: ChatAgentState = sessionId ? sessions.get(sessionId) || getDefaultState() : getDefaultState();
   // 使用更唯一的ID生成方式（时间戳 + 随机数）
   const newSessionId = sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  
+  // 如果前端传递了scripts/segments数据，但state中没有，则使用前端数据作为备用
+  if (scripts && scripts.length > 0 && (!state.scripts || state.scripts.length === 0)) {
+    state.scripts = scripts;
+    console.log(`[API] 从前端恢复scripts: ${scripts.length} 段文案`);
+  }
+  if (segments && segments.length > 0 && (!state.segments || state.segments.length === 0)) {
+    state.segments = segments;
+    console.log(`[API] 从前端恢复segments: ${segments.length} 个视频片段`);
+  }
   
   console.log(`[API] 会话恢复: sessionId=${sessionId}, newSessionId=${newSessionId}, scripts=${state.scripts ? state.scripts.length : '无'}, stage=${state.currentStage}`);
   

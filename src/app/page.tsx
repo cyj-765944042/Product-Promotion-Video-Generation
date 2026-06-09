@@ -1433,6 +1433,8 @@ export default function ChatAgentPage() {
           imageUrl,
           productName: targetProductName, // 使用目标会话的productName
           voiceLanguage: targetVoiceLanguage, // 使用目标会话的配音语言
+          scripts: targetSessionState.scripts, // 发送scripts数据，避免会话状态丢失时无法生成视频
+          segments: targetSessionState.segments, // 发送segments数据
         }),
         signal: abortController.signal, // 添加AbortController signal
       });
