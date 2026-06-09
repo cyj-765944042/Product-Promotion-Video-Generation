@@ -351,12 +351,18 @@ export async function generateScripts(
  * 3. 生成视频片段
  * 调用 /api/generate-video (SSE 流式)
  * 使用每段的画面Prompt生成对应视频
+ * @param scripts 文案列表
+ * @param productImageUrl 商品图片URL
+ * @param productName 商品名称
+ * @param customHeaders 自定义请求头
+ * @param onSegmentComplete 单个片段完成时的回调（用于实时推送）
  */
 export async function generateVideoSegments(
   scripts: Array<{ id: number; script: string; prompt?: string }>,
   productImageUrl: string,
   productName: string,
-  customHeaders?: Record<string, string>
+  customHeaders?: Record<string, string>,
+  onSegmentComplete?: (segment: { id: number; videoUrl: string; audioUrl?: string; duration?: number; localVideoPath?: string; script: string }) => void
 ): Promise<ToolResult> {
   console.log('[Tool] 调用 /api/generate-video，每段使用对应Prompt');
   
@@ -429,15 +435,31 @@ export async function generateVideoSegments(
               console.log(`[Tool] 视频片段 ${segmentId} 下载结果: localPath=${localVideoPath}, signedUrl=${signedVideoUrl?.substring(0, 50)}...`);
             }
             
-            segments.push({
+            const newSegment = {
               id: segmentId,
               script: data.content?.script || data.script || scripts[segments.length]?.script || '',
               videoPath: data.videoPath,
               audioPath: data.audioPath,
               videoUrl: signedVideoUrl || videoUrl, // 优先使用签名URL
               audioUrl: audioUrl, // 添加音频URL
-              localVideoPath: localVideoPath
-            });
+              localVideoPath: localVideoPath,
+              duration: data.content?.duration || data.duration
+            };
+            
+            segments.push(newSegment);
+            
+            // 实时回调：通知单个片段完成
+            if (onSegmentComplete && videoUrl) {
+              console.log(`[Tool] 调用回调通知片段 ${segmentId} 完成`);
+              onSegmentComplete({
+                id: segmentId,
+                videoUrl: signedVideoUrl || videoUrl,
+                audioUrl: audioUrl,
+                duration: data.content?.duration || data.duration,
+                localVideoPath: localVideoPath,
+                script: data.content?.script || data.script || scripts[segments.length - 1]?.script || ''
+              });
+            }
           }
           // 处理 complete 事件（包含所有片段）
           if (data.type === 'complete' && data.content?.segmentVideos) {

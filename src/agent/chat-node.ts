@@ -155,12 +155,13 @@ function getToolProgressMessage(toolName: string, state?: ChatAgentState): strin
   }
 }
 
-// 执行工具
+// 执行工具（支持实时事件回调）
 async function executeTool(
   toolName: string,
   input: Record<string, unknown>,
   state: ChatAgentState,
-  customHeaders?: Record<string, string>
+  customHeaders?: Record<string, string>,
+  onEvent?: (event: AgentSSEMessage) => void
 ): Promise<ToolResult> {
   console.log(`[Agent] 执行工具: ${toolName}`, input);
   
@@ -181,11 +182,29 @@ async function executeTool(
       );
     
     case "generateVideoSegments":
+      // 传递回调函数，实时发送segment_video事件
       return await generateVideoSegments(
         state.scripts || input.scripts,
         input.productImageUrl as string,
         input.productName as string,
-        customHeaders
+        customHeaders,
+        (segment) => {
+          // 实时回调：yield segment_video事件
+          console.log(`[Agent] 实时发送segment_video事件: segmentId=${segment.id}`);
+          if (onEvent) {
+            onEvent({
+              type: "segment_video",
+              content: {
+                segmentId: segment.id,
+                videoUrl: segment.videoUrl,
+                audioUrl: segment.audioUrl,
+                duration: segment.duration,
+                localVideoPath: segment.localVideoPath,
+                script: segment.script
+              }
+            });
+          }
+        }
       );
     
     case "composeFinalVideo":
@@ -354,13 +373,30 @@ ${nextActionHint}
     const toolProgressMessage = getToolProgressMessage(toolCall.tool, state);
     yield { type: "progress", content: toolProgressMessage };
     
-    // 执行工具
-    const toolResult = await executeTool(toolCall.tool, toolCall.input, currentState, customHeaders);
+    // 创建事件队列，用于收集工具执行过程中的实时事件
+    const eventQueue: AgentSSEMessage[] = [];
+    
+    // 执行工具（传递回调函数，用于实时收集事件）
+    const toolResult = await executeTool(
+      toolCall.tool,
+      toolCall.input,
+      currentState,
+      customHeaders,
+      (event) => {
+        // 将实时事件推入队列
+        eventQueue.push(event);
+      }
+    );
+    
+    // 从队列中yield实时事件（segment_video等）
+    for (const event of eventQueue) {
+      yield event;
+    }
     
     const segmentsLength = (toolResult.data as Record<string, unknown>)?.segments 
       ? ((toolResult.data as Record<string, unknown>).segments as Array<unknown>).length 
       : 0;
-    console.log(`[Agent] 工具 ${toolCall.tool} 执行完成: success=${toolResult.success}, segments=${segmentsLength}`);
+    console.log(`[Agent] 工具 ${toolCall.tool} 执行完成: success=${toolResult.success}, segments=${segmentsLength}, 实时事件数=${eventQueue.length}`);
     
     // 更新状态
     if (toolResult.data) {

@@ -17,7 +17,8 @@ export async function POST(request: NextRequest) {
   
   // 获取或创建会话
   let state: ChatAgentState = sessionId ? sessions.get(sessionId) || getDefaultState() : getDefaultState();
-  const newSessionId = sessionId || `session_${Date.now()}`;
+  // 使用更唯一的ID生成方式（时间戳 + 随机数）
+  const newSessionId = sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   
   // 添加用户消息到历史
   const userMessage: { role: "user"; content: string } = {

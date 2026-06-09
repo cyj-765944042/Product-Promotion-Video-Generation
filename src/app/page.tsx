@@ -1056,7 +1056,8 @@ export default function ChatAgentPage() {
       ));
     }
     
-    const newId = `session_${Date.now()}`;
+    // 使用更唯一的ID生成方式（时间戳 + 随机数）
+    const newId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const newSession: Session = {
       id: newId,
       title: '新对话',
@@ -1852,7 +1853,8 @@ export default function ChatAgentPage() {
         };
       }));
       
-      if (sessionClientId === currentSessionId) {
+      // 使用ref获取最新的当前会话ID（不受React状态更新周期影响）
+      if (sessionClientId === currentSessionIdRef.current) {
         setMessages(prev =>
           prev.map(m =>
             m.id === assistantMessage.id
