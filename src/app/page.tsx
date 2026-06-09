@@ -841,19 +841,19 @@ function ScriptCard({
       </div>
 
       {/* 卡片主体 */}
-      <div className={`flex-1 bg-white rounded-lg border transition-all duration-200
-        ${editingScript || editingPrompt ? 'border-[#D4C2F6] shadow-md' : 'border-[#E5E5E5] shadow-sm group-hover:shadow-md'}
+      <div className={`flex-1 bg-white rounded-xl border transition-all duration-200
+        ${editingScript || editingPrompt ? 'border-[#D4C2F6] shadow-lg' : 'border-[#E5E5E5] shadow-sm group-hover:shadow-md'}
         ${disabled ? 'opacity-70' : ''}`}>
         
         {/* 状态标签栏 */}
-        <div className="flex items-center justify-between px-3 py-1 bg-[#F1F3F5] rounded-t-lg border-b border-[#E5E5E5]">
+        <div className="flex items-center justify-between px-4 py-2 bg-[#F1F3F5] rounded-t-xl border-b border-[#E5E5E5]">
           <span className="text-xs text-[#999999] font-medium">镜头 {index + 1}</span>
           <SegmentStatusBadge status={status} />
         </div>
         
         {/* 上半部分：镜头脚本编辑区 */}
-        <div className="p-3 border-b border-[#E5E5E5]">
-          <div className="flex items-center justify-between mb-2">
+        <div className="p-4 border-b border-[#E5E5E5]">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Camera className="w-4 h-4 text-[#7A7A7A]" />
               <span className="text-xs text-[#666666] font-medium">镜头描述</span>
@@ -903,8 +903,8 @@ function ScriptCard({
         </div>
 
         {/* 下半部分：口播文案编辑区 */}
-        <div className="p-3">
-          <div className="flex items-center justify-between mb-2">
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-3">
             <span className="text-xs text-[#666666] font-medium">口播文案</span>
             <div className="flex items-center gap-2">
               {!editingScript && (
@@ -953,7 +953,7 @@ function ScriptCard({
               </div>
             </div>
           ) : (
-            <p className="text-sm font-medium text-[#333333] line-clamp-3">
+            <p className="text-sm font-medium text-[#333333] leading-relaxed whitespace-pre-wrap">
               {script.script || '暂无口播文案'}
             </p>
           )}
@@ -2142,12 +2142,12 @@ export default function ChatAgentPage() {
               </div>
               
               {/* 镜头序列卡片 - 左侧流程线 + 纵向排列 */}
-              <div className="relative pl-8">
+              <div className="relative pl-8 py-2">
                 {/* 左侧垂直流程线 */}
-                <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-[#D4C2F6]" />
+                <div className="absolute left-3 top-2 bottom-2 w-0.5 bg-[#D4C2F6]" />
                 {/* 流程节点 */}
                 {msgState.scripts.map((script, index) => (
-                  <div key={script.id} className="relative mb-4 last:mb-0">
+                  <div key={script.id} className="relative mb-6 last:mb-2">
                     {/* 左侧节点圆点 */}
                     <div className="absolute -left-5 top-4 w-3 h-3 rounded-full bg-[#B999F3] border-2 border-white shadow" />
                     
