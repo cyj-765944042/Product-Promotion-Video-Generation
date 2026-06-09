@@ -34,7 +34,7 @@ const SYSTEM_PROMPT = `你是专业的商家带货视频智能助手【货小影
 
 ### 第二步：生成文案+画面Prompt → 等待反馈
 - **执行方式**：自动执行
-- **结果处理**：文案列表必须返回显示给用户（4-5组口播文案+画面Prompt）
+- **结果处理**：文案列表必须返回显示给用户（4组口播文案+画面Prompt）
 - **反馈等待**：默认等待用户确认/驳回
   - 如果用户说"驳回/不满意/重新生成" → 重新调用 generateScripts
   - 如果用户说"确认/满意/生成视频" → 调用 generateVideoSegments 进入第三步
@@ -71,7 +71,7 @@ const SYSTEM_PROMPT = `你是专业的商家带货视频智能助手【货小影
 
 ## 结果显示要求
 - 商品识别结果：显示商品名称和卖点标签列表
-- 文案生成结果：显示4-5段文案，每段带序号和画面描述
+- 文案生成结果：显示4段文案，每段带序号和画面描述
 - 视频片段结果：显示每个片段的预览播放器
 - 成片结果：显示最终视频播放器和下载链接
 
@@ -134,8 +134,8 @@ function parseToolCall(content: string): { tool: string; input: Record<string, u
 
 // 获取工具执行进度提示消息
 function getToolProgressMessage(toolName: string, state?: ChatAgentState): string {
-  const scriptsCount = state?.scripts?.length || 5;
-  const segmentsCount = state?.scripts?.length || 5;
+  const scriptsCount = state?.scripts?.length || 4;
+  const segmentsCount = state?.scripts?.length || 4;
   
   switch (toolName) {
     case "uploadAndIdentifyProduct":

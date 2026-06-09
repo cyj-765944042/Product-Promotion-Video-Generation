@@ -128,14 +128,13 @@ ${productInfo ? `Product Features: ${productInfo}` : ''}
 【CRITICAL】You must generate ALL content in English. Do NOT use any Chinese characters.
 
 Requirements:
-1. Generate 5 script segments, each describing a distinct ad scene
+1. Generate 4 script segments, each describing a distinct ad scene
 2. Each segment length: 10-25 words, with complete expression and rhythm
 3. Segment logic:
    - Segment 1: Attention-grabbing opening hook (question, pain point, or stunning opening)
-   - Segment 2: Showcase the first key selling point and usage scenario
-   - Segment 3: Showcase the second key selling point and actual results
-   - Segment 4: Highlight more details or competitive advantages
-   - Segment 5: Call-to-action closing (limited offer, buy now, etc.)
+   - Segment 2: Showcase the key selling point and usage scenario
+   - Segment 3: Highlight actual results or competitive advantages
+   - Segment 4: Call-to-action closing (limited offer, buy now, etc.)
 4. Each segment should have clear visual imagery for video production
 5. The script must be persuasive and engaging to drive purchases
 
@@ -158,14 +157,13 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
 【重要】${languageInfo.instruction}
 
 要求：
-1. 生成5段口播文案，每段独立描述一个广告切片场景
+1. 生成4段口播文案，每段独立描述一个广告切片场景
 2. 每段文案长度要求：中文文案每段15-30字，简洁有力
 3. 分段逻辑建议：
    - 第1段：吸引注意力的开场钩子（如疑问句、痛点直击、震撼开场）
-   - 第2段：展示第一个核心卖点和使用场景
-   - 第3段：展示第二个核心卖点和实际效果
-   - 第4段：展示更多细节或对比优势
-   - 第5段：引导购买的号召性结尾（限时优惠、立即下单等）
+   - 第2段：展示核心卖点和使用场景
+   - 第3段：展示实际效果或对比优势
+   - 第4段：引导购买的号召性结尾（限时优惠、立即下单等）
 4. 每段要有明确的画面感，方便后续视频制作
 5. 口播文案必须使用中文，不能混用其他语言
 6. 文案要有带货感染力，能激发观众购买欲望
@@ -205,7 +203,7 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
         } catch {
           // Fallback: split by newlines or numbered list
           const lines = scriptResult.split(/\n+/).filter((line: string) => line.trim());
-          scriptSegments = lines.slice(0, 6).map((line: string, index: number) => ({
+          scriptSegments = lines.slice(0, 4).map((line: string, index: number) => ({
             id: index + 1,
             script: line.replace(/^\d+[\.、\)]\s*/, '').trim(),
           }));
