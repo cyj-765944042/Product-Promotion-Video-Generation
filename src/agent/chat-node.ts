@@ -5,6 +5,7 @@ import {
   uploadAndIdentifyProduct,
   generateScripts,
   generateVideoSegments,
+  generateVideoSegmentsStream,
   composeFinalVideo,
   modifyScript,
   regenerateSegment,
@@ -354,9 +355,7 @@ export async function* chatNodeStream(
       console.log("[Agent] 检测到[GENERATE_SEGMENTS]意图，直接调用generateVideoSegments，scripts数量:", scriptsToUse.length);
       yield { type: "progress", content: "正在生成分段视频..." };
       
-      const eventQueue: AgentSSEMessage[] = [];
       // 先发送state_update初始化segments数组，确保前端可以接收segment_video事件
-      // 初始化segments数组，包含每个script对应的segment基础信息
       const initialSegments = scriptsToUse.map((script, index) => ({
         id: script.id || index + 1,
         script: script.script || script.feature || '',
@@ -378,35 +377,48 @@ export async function* chatNodeStream(
       
       console.log(`[Agent] 发送初始化segments: ${initialSegments.length}个片段`);
       
-      const toolResult = await generateVideoSegments(
+      // 使用stream版本，实时yield事件
+      const streamGenerator = generateVideoSegmentsStream(
         scriptsToUse,
         state.productImageUrl || currentState.productImageUrl || "",
         state.productName || currentState.productName || "",
-        customHeaders,
-        (segment) => {
-          eventQueue.push({
+        customHeaders
+      );
+      
+      let toolResult: ToolResult | null = null;
+      const segmentsFromStream: Array<{ id: number; videoUrl: string; duration?: number; script?: string }> = [];
+      
+      // 遍历stream，实时yield segment事件
+      for await (const event of streamGenerator) {
+        if (event.type === 'segment') {
+          const segment = event.data as { id: number; videoUrl: string; duration?: number; script?: string };
+          console.log(`[Agent] yield segment_video事件: id=${segment.id}`);
+          segmentsFromStream.push(segment);
+          yield {
             type: "segment_video",
             content: {
               id: segment.id,
               videoUrl: segment.videoUrl,
-              audioUrl: segment.audioUrl,
               duration: segment.duration,
-              localVideoPath: segment.localVideoPath,
               script: segment.script
             }
-          });
+          };
+        } else if (event.type === 'result') {
+          toolResult = event.data as ToolResult;
+          console.log(`[Agent] 收到最终结果: success=${toolResult.success}`);
         }
-      );
+      }
       
-      // yield实时事件
-      for (const event of eventQueue) {
-        yield event;
+      if (!toolResult) {
+        yield { type: "error", content: "视频生成结果未返回" };
+        yield { type: "complete", content: "生成失败" };
+        return;
       }
       
       if (toolResult.success) {
         currentState = {
           ...currentState,
-          segments: (toolResult.data?.segments || []) as Array<{
+          segments: (toolResult.data?.segments || segmentsFromStream) as Array<{
             id: number;
             script: string;
             feature: string;
@@ -432,7 +444,7 @@ export async function* chatNodeStream(
             tool: "generateVideoSegments",
             success: true,
             data: {
-              segments: toolResult.data?.segments,
+              segments: toolResult.data?.segments || segmentsFromStream,
               currentStage: "video_generated"
             }
           }

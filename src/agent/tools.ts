@@ -369,6 +369,202 @@ export async function generateScripts(
  * 3. 生成视频片段
  * 调用 /api/generate-video (SSE 流式)
  * 使用每段的画面Prompt生成对应视频
+ * @returns AsyncGenerator，实时yield segment事件，最后返回ToolResult
+ */
+export async function* generateVideoSegmentsStream(
+  scripts: Array<{ id: number; script: string; prompt?: string }>,
+  productImageUrl: string,
+  productName: string,
+  customHeaders?: Record<string, string>
+): AsyncGenerator<{ type: 'segment' | 'result'; data: unknown }> {
+  console.log('[Tool] 调用 /api/generate-video，每段使用对应Prompt');
+  console.log(`[Tool] scripts数量=${scripts.length}`);
+  
+  try {
+    const formData = new FormData();
+    formData.append('productName', productName);
+    formData.append('imageUrl', productImageUrl); // API 期望的参数名
+    
+    // 将文案转为 JSON（包含每段的prompt），API 期望的参数名是 segments
+    const segmentsForRequest = scripts.map(s => ({
+      id: s.id,
+      script: s.script,
+      prompt: s.prompt || `${productName}产品展示，专业拍摄`
+    }));
+    formData.append('segments', JSON.stringify(segmentsForRequest));
+    
+    // generate-video 是 SSE 流式接口，使用fetch处理流式响应
+    console.log(`[Tool] 调用generate-video API`);
+    
+    const fetchResponse = await fetch(`${BASE_URL}/api/generate-video`, {
+      method: 'POST',
+      headers: customHeaders,
+      body: formData
+    });
+    
+    if (!fetchResponse.ok) {
+      throw new Error(`generate-video API请求失败: ${fetchResponse.status} ${fetchResponse.statusText}`);
+    }
+    
+    // 使用ReadableStream处理SSE响应
+    const reader = fetchResponse.body?.getReader();
+    if (!reader) {
+      throw new Error('无法获取响应流');
+    }
+    
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const segments: Array<{ 
+      id: number; 
+      script: string; 
+      videoPath?: string; 
+      audioPath?: string;
+      videoUrl?: string;
+      audioUrl?: string;
+      localVideoPath?: string;
+      duration?: number;
+    }> = [];
+    const sessionId = Date.now().toString();
+    
+    // 逐行解析SSE事件
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // 保留最后一行（可能不完整）
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const dataStr = line.substring(6).trim();
+          if (!dataStr) continue;
+          
+          try {
+            const data = JSON.parse(dataStr);
+            console.log(`[Tool] 解析事件: type=${data.type}`);
+            
+            if (data.type === 'segment_video' || data.type === 'segment_complete' || data.type === 'segment') {
+              const segmentId = data.content?.segmentId || data.content?.id || data.segmentId;
+              const videoUrl = data.content?.videoUrl || data.videoUrl;
+              const duration = data.content?.duration || data.duration;
+              const scriptContent = data.content?.script || '';
+              
+              console.log(`[Tool] 解析视频片段: segmentId=${segmentId}, videoUrl=${videoUrl?.substring(0, 100)}...`);
+              
+              if (segmentId && videoUrl) {
+                // 下载视频到本地（优先转存到对象存储）
+                const videoFilename = `segment_${segmentId}_${Date.now()}.mp4`;
+                const { signedUrl } = await downloadVideoToLocal(
+                  videoUrl, 
+                  'segments', 
+                  videoFilename,
+                  3
+                );
+                
+                console.log(`[Tool] 视频 ${segmentId} 下载完成: signedUrl=${signedUrl?.substring(0, 50)}...`);
+                
+                const segment = {
+                  id: segmentId,
+                  script: scriptContent || scripts[segmentId - 1]?.script || '',
+                  videoUrl: signedUrl || videoUrl,
+                  localVideoPath: `/videos/segments/${videoFilename}`,
+                  duration: duration || 4
+                };
+                
+                segments.push(segment);
+                
+                // 实时yield segment事件
+                console.log(`[Tool] yield segment事件: id=${segmentId}`);
+                yield { type: 'segment', data: segment };
+              }
+            } else if (data.type === 'error') {
+              console.error(`[Tool] generate-video错误: ${data.content?.message || data.message}`);
+            } else if (data.type === 'complete') {
+              console.log(`[Tool] generate-video完成事件`);
+            }
+          } catch (parseError) {
+            console.error(`[Tool] JSON解析错误: ${parseError}, line=${line}`);
+          }
+        }
+      }
+    }
+    
+    console.log(`[Tool] 视频片段解析完成，共 ${segments.length} 个片段`);
+    
+    // 按ID排序片段
+    segments.sort((a, b) => a.id - b.id);
+    
+    // 检查是否有有效的视频URL
+    const hasValidVideos = segments.some(s => s.videoUrl && s.videoUrl.length > 0);
+    
+    if (!hasValidVideos) {
+      console.error('[Tool] 视频片段生成失败: 没有有效的视频URL');
+      yield { 
+        type: 'result', 
+        data: {
+          success: false,
+          message: '视频片段生成失败，视频服务可能暂时不可用，请稍后重试',
+          data: { 
+            segments: scripts.map(s => ({
+              id: s.id,
+              script: s.script,
+              videoUrl: undefined,
+              duration: 4
+            })),
+            sessionId,
+            currentStage: "script_generated"
+          },
+          error: '视频生成服务未返回有效视频URL'
+        }
+      };
+      return;
+    }
+    
+    // 输出调试日志
+    segments.forEach((s, i) => {
+      console.log(`[Tool] 片段 ${i + 1}: id=${s.id}, videoUrl=${s.videoUrl?.substring(0, 80)}...`);
+    });
+    
+    // yield最终结果
+    yield { 
+      type: 'result', 
+      data: {
+        success: true,
+        message: `视频片段生成完成，共 ${segments.length} 个`,
+        data: { 
+          segments,
+          sessionId,
+          currentStage: "video_generated"
+        }
+      }
+    };
+    
+  } catch (error) {
+    console.error('[Tool] generate-video 失败:', error);
+    yield { 
+      type: 'result', 
+      data: {
+        success: false,
+        message: '视频片段生成失败，稍后可重试',
+        data: { 
+          segments: scripts.map(s => ({
+            id: s.id,
+            script: s.script,
+            videoUrl: undefined,
+            duration: 4
+          }))
+        },
+        error: error instanceof Error ? error.message : '未知错误'
+      }
+    };
+  }
+}
+
+/**
+ * 3. 生成视频片段（兼容旧版本，保持回调接口）
+ * 调用 /api/generate-video (SSE 流式)
+ * 使用每段的画面Prompt生成对应视频
  * @param scripts 文案列表
  * @param productImageUrl 商品图片URL
  * @param productName 商品名称
