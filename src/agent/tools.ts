@@ -397,142 +397,136 @@ export async function generateVideoSegments(
     }));
     formData.append('segments', JSON.stringify(segmentsForRequest));
     
-    // generate-video 是 SSE 流式接口
-    const response = await axios.post(
-      `${BASE_URL}/api/generate-video`,
-      formData,
-      { 
-        headers: { 
-          ...customHeaders,
-          'Content-Type': 'multipart/form-data'
-        },
-        responseType: 'text',
-        timeout: 300000 // 5 分钟超时
-      }
-    );
+    // generate-video 是 SSE 流式接口，使用fetch处理流式响应
+    console.log(`[Tool] 调用generate-video API，scripts数量=${scripts.length}`);
     
-    // 解析 SSE 响应获取视频片段
-    console.log(`[Tool] 开始解析generate-video响应，长度=${response.data?.length || 0}`);
-    const lines = response.data.split('\n');
+    const fetchResponse = await fetch(`${BASE_URL}/api/generate-video`, {
+      method: 'POST',
+      headers: customHeaders,
+      body: formData
+    });
+    
+    if (!fetchResponse.ok) {
+      throw new Error(`generate-video API请求失败: ${fetchResponse.status} ${fetchResponse.statusText}`);
+    }
+    
+    // 使用ReadableStream处理SSE响应
+    const reader = fetchResponse.body?.getReader();
+    if (!reader) {
+      throw new Error('无法获取响应流');
+    }
+    
+    const decoder = new TextDecoder();
+    let buffer = '';
     let segments: Array<{ 
       id: number; 
       script: string; 
       videoPath?: string; 
       audioPath?: string;
       videoUrl?: string;
-      audioUrl?: string; // 音频URL
-      localVideoPath?: string; // 本地视频路径（用于播放）
+      audioUrl?: string;
+      localVideoPath?: string;
+      duration?: number;
     }> = [];
-    
-    // 生成会话ID用于文件夹命名
     const sessionId = Date.now().toString();
     
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        try {
-          const data = JSON.parse(line.slice(6));
-          // 匹配多种事件类型：segment_video, segment_complete, segment, complete
-          if (data.type === 'segment_video' || data.type === 'segment_complete' || data.type === 'segment') {
-            // segment_video 事件的 content 包含 segmentId, videoUrl, audioUrl, duration
-            const segmentId = data.content?.segmentId || data.segmentIndex || data.id || data.segmentId || segments.length + 1;
-            const videoUrl = data.content?.videoUrl || data.videoUrl || data.videoPath;
-            const audioUrl = data.content?.audioUrl || data.audioUrl || data.audioPath; // 解析音频URL
+    // 逐行解析SSE事件
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // 保留最后一行（可能不完整）
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const dataStr = line.substring(6).trim();
+          if (!dataStr) continue;
+          
+          try {
+            const data = JSON.parse(dataStr);
+            console.log(`[Tool] 解析视频片段事件: type=${data.type}`);
             
-            console.log(`[Tool] 解析视频片段事件: type=${data.type}, segmentId=${segmentId}, videoUrl=${videoUrl?.substring(0, 100)}..., audioUrl=${audioUrl?.substring(0, 100) || '无'}...`);
-            
-            // 下载视频到本地（优先转存到对象存储）
-            let localVideoPath: string | undefined;
-            let signedVideoUrl: string | undefined;
-            if (videoUrl) {
-              const result = await downloadVideoToLocal(
-                videoUrl,
-                `segments/${sessionId}`,
-                `segment_${segmentId}.mp4`
-              );
-              localVideoPath = result.localPath || undefined;
-              signedVideoUrl = result.signedUrl || undefined;
-              console.log(`[Tool] 视频片段 ${segmentId} 下载结果: localPath=${localVideoPath}, signedUrl=${signedVideoUrl?.substring(0, 50)}...`);
-            }
-            
-            const newSegment = {
-              id: segmentId,
-              script: data.content?.script || data.script || scripts[segments.length]?.script || '',
-              videoPath: data.videoPath,
-              audioPath: data.audioPath,
-              videoUrl: signedVideoUrl || videoUrl, // 优先使用签名URL
-              audioUrl: audioUrl, // 添加音频URL
-              localVideoPath: localVideoPath,
-              duration: data.content?.duration || data.duration
-            };
-            
-            segments.push(newSegment);
-            
-            // 实时回调：通知单个片段完成
-            if (onSegmentComplete && videoUrl) {
-              console.log(`[Tool] 调用回调通知片段 ${segmentId} 完成`);
-              onSegmentComplete({
-                id: segmentId,
-                videoUrl: signedVideoUrl || videoUrl,
-                audioUrl: audioUrl,
-                duration: data.content?.duration || data.duration,
-                localVideoPath: localVideoPath,
-                script: data.content?.script || data.script || scripts[segments.length - 1]?.script || ''
-              });
-            }
-          }
-          // 处理 complete 事件（包含所有片段）
-          if (data.type === 'complete' && data.content?.segmentVideos) {
-            console.log(`[Tool] 解析 complete 事件，包含 ${data.content.segmentVideos.length} 个片段`);
-            for (const sv of data.content.segmentVideos) {
-              const segmentId = sv.id || segments.length + 1;
-              const videoUrl = sv.videoUrl;
+            if (data.type === 'segment_video' || data.type === 'segment_complete' || data.type === 'segment') {
+              const segmentId = data.content?.segmentId || data.content?.id || data.segmentId;
+              const videoUrl = data.content?.videoUrl || data.videoUrl;
+              const duration = data.content?.duration || data.duration;
+              const scriptContent = data.content?.script || '';
               
-              // 下载视频到本地
-              let localVideoPath: string | undefined;
-              let signedVideoUrl: string | undefined;
-              if (videoUrl) {
-                const result = await downloadVideoToLocal(
-                  videoUrl,
-                  `segments/${sessionId}`,
-                  `segment_${segmentId}.mp4`
+              console.log(`[Tool] 解析视频片段事件: segmentId=${segmentId}, videoUrl=${videoUrl?.substring(0, 100)}..., duration=${duration}`);
+              
+              if (segmentId && videoUrl) {
+                // 下载视频到本地（优先转存到对象存储）
+                const videoFilename = `segment_${segmentId}_${Date.now()}.mp4`;
+                const { signedUrl } = await downloadVideoToLocal(
+                  videoUrl, 
+                  'segments', 
+                  videoFilename,
+                  3
                 );
-                localVideoPath = result.localPath || undefined;
-                signedVideoUrl = result.signedUrl || undefined;
+                
+                console.log(`[Tool] 视频片段 ${segmentId} 下载结果: signedUrl=${signedUrl?.substring(0, 50)}...`);
+                
+                const segment = {
+                  id: segmentId,
+                  script: scriptContent || scripts[segmentId - 1]?.script || '',
+                  videoUrl: signedUrl || videoUrl,
+                  localVideoPath: `/videos/segments/${videoFilename}`,
+                  duration: duration || 4
+                };
+                
+                segments.push(segment);
+                
+                // 回调通知单个片段完成
+                if (onSegmentComplete) {
+                  console.log(`[Tool] 回调通知片段 ${segmentId} 完成`);
+                  onSegmentComplete(segment);
+                }
               }
-              
-              segments.push({
-                id: segmentId,
-                script: sv.script || scripts[segments.length]?.script || '',
-                videoUrl: signedVideoUrl || videoUrl,
-                localVideoPath: localVideoPath
-              });
+            } else if (data.type === 'error') {
+              console.error(`[Tool] generate-video错误: ${data.content?.message || data.message}`);
+            } else if (data.type === 'complete') {
+              console.log(`[Tool] generate-video完成事件`);
             }
+          } catch (parseError) {
+            console.error(`[Tool] JSON解析错误: ${parseError}, line=${line}`);
           }
-        } catch {
-          // 忽略解析错误
         }
       }
     }
     
+    console.log(`[Tool] 视频片段解析完成，共 ${segments.length} 个片段`);
+    
     // 按ID排序片段
     segments.sort((a, b) => a.id - b.id);
     
+    // 检查是否有有效的视频URL
+    const hasValidVideos = segments.some(s => s.videoUrl && s.videoUrl.length > 0);
+    
+    if (!hasValidVideos) {
+      console.error('[Tool] 视频片段生成失败: 没有有效的视频URL');
+      return {
+        success: false,
+        message: '视频片段生成失败，视频服务可能暂时不可用，请稍后重试',
+        data: { 
+          segments: scripts.map(s => ({
+            id: s.id,
+            script: s.script,
+            videoUrl: undefined,
+            duration: 4
+          })),
+          sessionId,
+          currentStage: "script_generated"
+        },
+        error: '视频生成服务未返回有效视频URL'
+      };
+    }
+    
     // 输出调试日志
-    console.log(`[Tool] 视频片段解析完成，共 ${segments.length} 个片段`);
     segments.forEach((s, i) => {
       console.log(`[Tool] 片段 ${i + 1}: id=${s.id}, videoUrl=${s.videoUrl?.substring(0, 80)}..., localPath=${s.localVideoPath}`);
     });
-    
-    // 如果没有解析到，返回脚本信息（稍后可重试）
-    if (segments.length === 0) {
-      segments = scripts.map(s => ({
-        id: s.id,
-        script: s.script,
-        videoPath: undefined,
-        audioPath: undefined,
-        localVideoPath: undefined
-      }));
-    }
     
     return {
       success: true,
@@ -550,7 +544,8 @@ export async function generateVideoSegments(
       id: s.id,
       script: s.script,
       videoPath: undefined,
-      audioPath: undefined
+      audioPath: undefined,
+      duration: 4
     }));
     return {
       success: false,
