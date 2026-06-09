@@ -154,15 +154,23 @@ export async function POST(request: NextRequest) {
       
       await writer.close();
     } catch (error) {
-      console.error("[Chat Agent API] 流处理错误:", error);
-      try {
-        await writer.write(encoder.encode(`data: ${JSON.stringify({
-          type: "error",
-          content: error instanceof Error ? error.message : "处理失败"
-        })}\n\n`));
-        await writer.close();
-      } catch {
-        // Writer 已关闭，忽略
+      // 区分正常的用户取消和真正的错误
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes("ResponseAborted") || errorMessage.includes("aborted") || errorMessage.includes("cancel")) {
+        // 用户主动取消请求（切换会话、关闭页面等），属于正常行为，不打印错误日志
+        console.log("[Chat Agent API] 用户取消了请求");
+      } else {
+        // 真正的错误，打印错误日志
+        console.error("[Chat Agent API] 流处理错误:", error);
+        try {
+          await writer.write(encoder.encode(`data: ${JSON.stringify({
+            type: "error",
+            content: errorMessage || "处理失败"
+          })}\n\n`));
+          await writer.close();
+        } catch {
+          // Writer 已关闭，忽略
+        }
       }
     }
   })();
