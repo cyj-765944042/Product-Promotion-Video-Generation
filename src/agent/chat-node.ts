@@ -390,14 +390,13 @@ export async function* chatNodeStream(
       
       // 遍历stream，实时yield segment事件
       for await (const event of streamGenerator) {
-        if (event.type === 'segment') {
-          const segment = event.data as { id: number; videoUrl: string; duration?: number; script?: string };
-          console.log(`[Agent] yield segment_video事件: id=${segment.id}`);
-          segmentsFromStream.push(segment);
+        if (event.type === 'segment_video') {
+          const segment = event.content as { segmentId: number; videoUrl: string; duration?: number; script?: string };
+          console.log(`[Agent] yield segment_video事件: id=${segment.segmentId}`);
           yield {
             type: "segment_video",
             content: {
-              segmentId: segment.id,
+              segmentId: segment.segmentId,
               videoUrl: segment.videoUrl,
               duration: segment.duration,
               script: segment.script

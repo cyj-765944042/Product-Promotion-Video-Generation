@@ -374,7 +374,7 @@ export async function* generateVideoSegmentsStream(
   productImageUrl: string,
   productName: string,
   customHeaders?: Record<string, string>
-): AsyncGenerator<{ type: 'segment' | 'result'; data: unknown }> {
+): AsyncGenerator<{ type: 'segment_video' | 'result'; content?: unknown; data?: unknown }> {
   console.log('[Tool] 调用 /api/generate-video，每段使用对应Prompt');
   console.log(`[Tool] scripts数量=${scripts.length}`);
   
@@ -472,9 +472,9 @@ export async function* generateVideoSegmentsStream(
                 
                 segments.push(segment);
                 
-                // 实时yield segment事件
-                console.log(`[Tool] yield segment事件: id=${segmentId}`);
-                yield { type: 'segment', data: segment };
+                // 实时yield segment_video事件
+                console.log(`[Tool] yield segment_video事件: id=${segmentId}`);
+                yield { type: 'segment_video', content: segment };
               }
             } else if (data.type === 'error') {
               console.error(`[Tool] generate-video错误: ${data.content?.message || data.message}`);
