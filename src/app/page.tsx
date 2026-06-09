@@ -536,7 +536,7 @@ interface SessionState {
   finalVideoUrl?: string;
   localVideoPath?: string;
   finalDuration?: number;
-  currentStage?: 'idle' | 'identifying' | 'product_identified' | 'script_generated' | 'video_generated' | 'composing' | 'done';
+  currentStage?: 'idle' | 'identifying' | 'product_identified' | 'script_generated' | 'video_generating' | 'video_generated' | 'composing' | 'done';
   progress?: ProgressState;
 }
 
@@ -2067,9 +2067,63 @@ export default function ChatAgentPage() {
       const hasVideoSegments = msgState.segments && 
         msgState.segments.length > 0 && 
         msgState.segments.some(seg => seg.videoUrl && seg.videoUrl.length > 0);
+      // 判断是否正在生成视频
+      const isVideoGenerating = msgState.currentStage === 'video_generating';
       // 判断是否已完成
       const isDone = msgState.currentStage === 'done';
       
+      // 如果正在生成视频，显示进度提示而不是文案
+      if (isVideoGenerating && !hasVideoSegments) {
+        return (
+          <div className="space-y-3">
+            <p className="text-sm">{message.content}</p>
+            
+            {/* 商品信息卡片 */}
+            {msgState.productName && (
+              <Card className="bg-white shadow-sm max-w-[600px]">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="secondary" className="bg-[#ECE6F7] text-[#333333]">商品</Badge>
+                    <span className="font-medium text-sm">{msgState.productName}</span>
+                  </div>
+                  {msgState.features && msgState.features.length > 0 && (
+                    <div className="text-xs text-[#666666]">
+                      <span className="font-medium">核心卖点：</span>
+                      {msgState.features.join('、')}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+            
+            {/* 视频生成进度提示 */}
+            <div className="flex items-center gap-2 text-sm text-[#666666]">
+              <Loader2 className="h-4 w-4 animate-spin text-[#B999F3]" />
+              <span>正在生成分段视频，预计{msgState.segments?.length || 4}个片段，请稍候...</span>
+            </div>
+            
+            {/* 已生成的视频片段预览（实时更新） */}
+            {msgState.segments && msgState.segments.length > 0 && (
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                {msgState.segments
+                  .filter(seg => seg.videoUrl && seg.videoUrl.length > 0)
+                  .map(segment => (
+                    <div key={segment.id} className="bg-white rounded-xl shadow-md overflow-hidden">
+                      <div className="relative aspect-video bg-gray-900">
+                        <VideoPlayer videoUrl={segment.videoUrl} />
+                      </div>
+                      <div className="p-3">
+                        <p className="text-xs text-[#666666] line-clamp-2">{segment.script}</p>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+      
+      // 正常渲染：有视频片段或文案时
       return (
         <div className="space-y-3">
           <p className="text-sm">{message.content}</p>
