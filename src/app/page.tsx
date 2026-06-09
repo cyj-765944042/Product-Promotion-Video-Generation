@@ -309,31 +309,35 @@ function SessionSidebar({
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium truncate">{session.title}</div>
-              <div className="flex items-center gap-2 mt-0.5">
-                {session.isGenerating && (
-                  <span className="text-xs text-[#B999F3] flex items-center gap-1">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    生成中
+            <div className="flex items-center justify-between w-full">
+              {/* 左侧：标题和状态 */}
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate">{session.title}</div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  {session.isGenerating && (
+                    <span className="text-xs text-[#B999F3] flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      生成中
+                    </span>
+                  )}
+                  <span className="text-xs text-[#999999]">
+                    {new Date(session.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                   </span>
-                )}
-                {/* 配音语言标签 - 可点击切换 */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const newLang = session.voiceLanguage === 'english' ? 'mandarin' : 'english';
-                    onUpdateSessionVoiceLanguage(session.id, newLang);
-                  }}
-                  className="text-xs px-1.5 py-0.5 rounded bg-[#F1F3F5] text-[#666666] hover:bg-[#ECE6F7] hover:text-[#333333] transition-colors"
-                  title="点击切换配音语言"
-                >
-                  {session.voiceLanguage === 'english' ? '英语' : '普通话'}
-                </button>
-                <span className="text-xs text-[#999999]">
-                  {new Date(session.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                </span>
+                </div>
               </div>
+              
+              {/* 右侧：配音语言标签 */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const newLang = session.voiceLanguage === 'english' ? 'mandarin' : 'english';
+                  onUpdateSessionVoiceLanguage(session.id, newLang);
+                }}
+                className="text-xs px-2 py-1 rounded bg-[#F1F3F5] text-[#666666] hover:bg-[#ECE6F7] hover:text-[#333333] transition-colors ml-2"
+                title="点击切换配音语言"
+              >
+                {session.voiceLanguage === 'english' ? '英语' : '普通话'}
+              </button>
             </div>
           )}
 
