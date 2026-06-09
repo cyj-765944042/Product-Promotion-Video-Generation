@@ -464,9 +464,9 @@ export async function* generateVideoSegmentsStream(
                 
                 const segment = {
                   id: segmentId,
+                  segmentId: segmentId,
                   script: scriptContent || scripts[segmentId - 1]?.script || '',
                   videoUrl: signedUrl || videoUrl,
-                  localVideoPath: `/videos/segments/${videoFilename}`,
                   duration: duration || 4
                 };
                 
