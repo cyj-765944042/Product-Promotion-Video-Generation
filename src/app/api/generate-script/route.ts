@@ -220,13 +220,10 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
           segmentIndex: scriptSegments.length 
         });
 
-        // Step 3: Generate video prompt for each segment
-        const allSegments: ScriptSegment[] = [];
-        
+        // Step 3: Generate video prompts for all segments concurrently (并发生成所有画面Prompt)
+        // 先发送所有script_segment事件
         for (let i = 0; i < scriptSegments.length; i++) {
           const segment = scriptSegments[i];
-          
-          // Send script segment
           sendEvent(controller, {
             type: 'script_segment',
             content: {
@@ -237,8 +234,10 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
             },
             segmentIndex: i,
           });
+        }
 
-          // Generate video prompt for this segment
+        // 并发生成所有画面prompt
+        const videoPromptPromises = scriptSegments.map(async (segment, i) => {
           // 视频prompt始终使用中文，不随语言切换
           const videoPromptText = `你是一位专业的短视频导演，请为以下商品片段生成火山引擎图生视频API的镜头描述。
 
@@ -270,19 +269,30 @@ ${productInfo ? `商品特征：${productInfo}` : ''}
             }
           }
 
-          const segmentData: ScriptSegment = {
-            id: segment.id,
-            script: segment.script,
-            prompt: videoPrompt.trim(),
-            duration: 4 + Math.floor(Math.random() * 4), // 4-7秒
+          return {
+            index: i,
+            segmentData: {
+              id: segment.id,
+              script: segment.script,
+              prompt: videoPrompt.trim(),
+              duration: 4 + Math.floor(Math.random() * 4), // 4-7秒
+            }
           };
+        });
 
-          allSegments.push(segmentData);
-
+        // 等待所有画面prompt生成完成
+        const promptResults = await Promise.all(videoPromptPromises);
+        
+        // 按顺序排序并发送prompt_segment事件
+        promptResults.sort((a, b) => a.index - b.index);
+        
+        const allSegments: ScriptSegment[] = [];
+        for (const result of promptResults) {
+          allSegments.push(result.segmentData);
           sendEvent(controller, {
             type: 'prompt_segment',
-            content: segmentData,
-            segmentIndex: i,
+            content: result.segmentData,
+            segmentIndex: result.index,
           });
         }
 
