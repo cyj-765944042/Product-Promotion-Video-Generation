@@ -237,8 +237,7 @@ function SessionSidebar({
   onNewSession,
   onDeleteSession,
   onRenameSession,
-  voiceLanguage,
-  onVoiceLanguageChange,
+  onUpdateSessionVoiceLanguage,
 }: {
   sessions: Session[];
   currentSessionId: string | null;
@@ -246,8 +245,7 @@ function SessionSidebar({
   onNewSession: () => void;
   onDeleteSession: (id: string) => void;
   onRenameSession: (id: string, newTitle: string) => void;
-  voiceLanguage: string;
-  onVoiceLanguageChange: (lang: string) => void;
+  onUpdateSessionVoiceLanguage: (sessionId: string, lang: string) => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -320,6 +318,18 @@ function SessionSidebar({
                     生成中
                   </span>
                 )}
+                {/* 配音语言标签 - 可点击切换 */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newLang = session.voiceLanguage === 'english' ? 'mandarin' : 'english';
+                    onUpdateSessionVoiceLanguage(session.id, newLang);
+                  }}
+                  className="text-xs px-1.5 py-0.5 rounded bg-[#F1F3F5] text-[#666666] hover:bg-[#ECE6F7] hover:text-[#333333] transition-colors"
+                  title="点击切换配音语言"
+                >
+                  {session.voiceLanguage === 'english' ? '英语' : '普通话'}
+                </button>
                 <span className="text-xs text-[#999999]">
                   {new Date(session.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                 </span>
@@ -369,14 +379,6 @@ function SessionSidebar({
         <div className="flex flex-col">
           <span className="text-[#333333] font-semibold text-lg">货小影</span>
           <span className="text-[#666666] text-sm">带货视频智能助手</span>
-        </div>
-      </div>
-
-      {/* 配音语言选择器 */}
-      <div className="px-4 pb-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-[#666666]">配音语言</span>
-          <LanguageSelector language={voiceLanguage} onChange={onVoiceLanguageChange} />
         </div>
       </div>
 
@@ -956,14 +958,12 @@ export default function ChatAgentPage() {
   const isGenerating = currentSession?.isGenerating || false;
   const voiceLanguage = currentSession?.voiceLanguage || 'mandarin'; // 从当前会话获取配音语言
 
-  // 更新当前会话的配音语言
-  const updateSessionVoiceLanguage = useCallback((lang: string) => {
-    if (currentSessionId) {
-      setSessions(prev => prev.map(s => 
-        s.id === currentSessionId ? { ...s, voiceLanguage: lang } : s
-      ));
-    }
-  }, [currentSessionId]);
+  // 更新指定会话的配音语言
+  const updateSessionVoiceLanguage = useCallback((sessionId: string, lang: string) => {
+    setSessions(prev => prev.map(s => 
+      s.id === sessionId ? { ...s, voiceLanguage: lang } : s
+    ));
+  }, []);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -2346,8 +2346,7 @@ export default function ChatAgentPage() {
             onNewSession={handleNewSession}
             onDeleteSession={handleDeleteSession}
             onRenameSession={handleRenameSession}
-            voiceLanguage={voiceLanguage}
-            onVoiceLanguageChange={updateSessionVoiceLanguage}
+            onUpdateSessionVoiceLanguage={updateSessionVoiceLanguage}
           />
         )}
         
