@@ -237,6 +237,8 @@ function SessionSidebar({
   onNewSession,
   onDeleteSession,
   onRenameSession,
+  voiceLanguage,
+  onVoiceLanguageChange,
 }: {
   sessions: Session[];
   currentSessionId: string | null;
@@ -244,6 +246,8 @@ function SessionSidebar({
   onNewSession: () => void;
   onDeleteSession: (id: string) => void;
   onRenameSession: (id: string, newTitle: string) => void;
+  voiceLanguage: string;
+  onVoiceLanguageChange: (lang: string) => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -355,8 +359,29 @@ function SessionSidebar({
 
   return (
     <div className="w-[260px] h-full bg-gradient-to-b from-[#F5E6D3] to-[#FFFFFF] flex flex-col border-r border-[#E5E5E5]">
+      {/* 货小影Logo区域 */}
+      <div className="p-4 flex items-center gap-3">
+        <img 
+          src="/assets/agent-avatar.png" 
+          alt="货小影" 
+          className="w-12 h-12 rounded-full object-cover border-2 border-[#D4C2F6] shadow-sm"
+        />
+        <div className="flex flex-col">
+          <span className="text-[#333333] font-semibold text-lg">货小影</span>
+          <span className="text-[#666666] text-sm">带货视频智能助手</span>
+        </div>
+      </div>
+
+      {/* 配音语言选择器 */}
+      <div className="px-4 pb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-[#666666]">配音语言</span>
+          <LanguageSelector language={voiceLanguage} onChange={onVoiceLanguageChange} />
+        </div>
+      </div>
+
       {/* 新建对话按钮 */}
-      <div className="p-4">
+      <div className="px-4 pb-4">
         <button
           onClick={onNewSession}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg
@@ -2321,6 +2346,8 @@ export default function ChatAgentPage() {
             onNewSession={handleNewSession}
             onDeleteSession={handleDeleteSession}
             onRenameSession={handleRenameSession}
+            voiceLanguage={voiceLanguage}
+            onVoiceLanguageChange={updateSessionVoiceLanguage}
           />
         )}
         
@@ -2328,21 +2355,24 @@ export default function ChatAgentPage() {
         <div className="flex-1 flex flex-col" style={{ width: isCollapsed ? '100%' : 'calc(100% - 260px)' }}>
           {/* 顶部导航栏 - 固定56px */}
           <div className="h-[56px] bg-gradient-to-r from-[#F5E6D3] to-[#FFFFFF] flex items-center justify-between px-4 shrink-0 border-b border-[#E5E5E5]">
-            <div className="flex items-center gap-3">
-              <img 
-                src="/assets/agent-avatar.png" 
-                alt="货小影" 
-                className="w-8 h-8 rounded-full object-cover border-2 border-[#D4C2F6]"
-              />
-              <div className="flex flex-col">
-                <span className="text-[#333333] font-medium text-sm">货小影</span>
-                <span className="text-[#666666] text-xs">带货视频智能助手</span>
+            {/* 折叠时显示货小影logo */}
+            {isCollapsed && (
+              <div className="flex items-center gap-3">
+                <img 
+                  src="/assets/agent-avatar.png" 
+                  alt="货小影" 
+                  className="w-12 h-12 rounded-full object-cover border-2 border-[#D4C2F6] shadow-sm"
+                />
+                <div className="flex flex-col">
+                  <span className="text-[#333333] font-semibold text-lg">货小影</span>
+                  <span className="text-[#666666] text-sm">带货视频智能助手</span>
+                </div>
               </div>
-              {/* 配音语言选择器 */}
-              <LanguageSelector language={voiceLanguage} onChange={updateSessionVoiceLanguage} />
-            </div>
+            )}
+            {/* 非折叠时左侧留空 */}
+            {!isCollapsed && <div />}
             
-            {/* 右侧：用户头像 + 折叠按钮 */}
+            {/* 用户头像 + 折叠按钮 */}
             <div className="flex items-center gap-3">
               {/* 用户头像 */}
               <UserAvatar
