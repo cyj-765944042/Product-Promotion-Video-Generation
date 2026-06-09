@@ -92,12 +92,14 @@ export async function POST(request: NextRequest) {
         // 处理 tool_result 更新状态
         if (agentMessage.type === "tool_result" && agentMessage.data) {
           const toolData = agentMessage.data as Record<string, unknown>;
-          const segmentsData = toolData.segments as Array<unknown> | undefined;
-          console.log(`[API] tool_result 数据: segments=${segmentsData ? `${segmentsData.length}个` : '无'}`);
+          console.log(`[API] tool_result 收到: scripts=${toolData.scripts ? `${(toolData.scripts as Array<unknown>).length}段` : '无'}, segments=${toolData.segments ? `${(toolData.segments as Array<unknown>).length}个` : '无'}, stage=${toolData.currentStage || '无'}`);
           if (toolData.productImageUrl) state.productImageUrl = toolData.productImageUrl as string;
           if (toolData.productName) state.productName = toolData.productName as string;
           if (toolData.features) state.features = toolData.features as string[];
-          if (toolData.scripts) state.scripts = toolData.scripts as Array<{ id: number; script: string; feature: string; prompt?: string }>;
+          if (toolData.scripts) {
+            state.scripts = toolData.scripts as Array<{ id: number; script: string; feature: string; prompt?: string }>;
+            console.log(`[API] tool_result 更新 state.scripts: ${state.scripts.length} 段文案`);
+          }
           if (toolData.segments) {
             state.segments = toolData.segments as Array<{
               id: number;
