@@ -238,7 +238,7 @@ function getVideoTaskCacheKey(segmentIndex: number, prompt: string, duration: nu
 // Video generation with task caching to avoid duplicate generation
 async function generateVideoWithTaskCache(
   videoClient: VideoGenerationClient,
-  content: Array<{ type: string; text?: string; url?: string }>,
+  content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' | 'reference_image' }>,
   options: {
     model: string;
     duration: number;
