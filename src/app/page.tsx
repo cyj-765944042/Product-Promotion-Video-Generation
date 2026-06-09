@@ -919,6 +919,12 @@ export default function ChatAgentPage() {
   // 后台任务管理器：存储每个会话的后台任务状态
   const backgroundTasksRef = useRef<Map<string, BackgroundTask>>(new Map());
 
+  // 存储最新的currentSessionId，用于事件处理时获取最新值（不受React状态更新周期影响）
+  const currentSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    currentSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
+
   // 从当前会话获取isGenerating状态（每个会话独立）
   const currentSession = sessions.find(s => s.id === currentSessionId);
   const isGenerating = currentSession?.isGenerating || false;
@@ -1290,8 +1296,10 @@ export default function ChatAgentPage() {
       imageUrl: imageUrl,
     };
     
-    // 更新当前会话的消息列表
-    setMessages(prev => [...prev, userMessage]);
+    // 只有当前会话是发起请求的会话时，才更新显示的消息列表
+    if (currentSessionId === sessionClientId) {
+      setMessages(prev => [...prev, userMessage]);
+    }
     
     // 同时更新会话数据（用于后台持久化）
     setSessions(prev => prev.map(s => 
@@ -1321,8 +1329,10 @@ export default function ChatAgentPage() {
       isStreaming: true,
     };
     
-    // 更新当前会话的消息列表
-    setMessages(prev => [...prev, assistantMessage]);
+    // 只有当前会话是发起请求的会话时，才更新显示的消息列表
+    if (currentSessionId === sessionClientId) {
+      setMessages(prev => [...prev, assistantMessage]);
+    }
     
     // 同时更新会话数据（用于后台持久化）
     setSessions(prev => prev.map(s => 
@@ -1368,7 +1378,8 @@ export default function ChatAgentPage() {
 
               // 核心改动：根据sessionClientId更新对应会话的数据
               // 如果是当前会话，同时更新当前状态
-              const isCurrentSession = sessionClientId === currentSessionId;
+              // 使用currentSessionIdRef.current获取最新的当前会话ID（不受React状态更新周期影响）
+              const isCurrentSession = sessionClientId === currentSessionIdRef.current;
 
               switch (eventData.type) {
                 case 'text':
