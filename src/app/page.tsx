@@ -2063,8 +2063,10 @@ export default function ChatAgentPage() {
 
     // 文案内容（包含视频片段预览）
     if (msgState.scripts && msgState.scripts.length > 0 || msgState.segments && msgState.segments.length > 0) {
-      // 判断是否有视频片段
-      const hasVideoSegments = msgState.segments && msgState.segments.length > 0;
+      // 判断是否有视频片段（至少有一个segment有有效的videoUrl）
+      const hasVideoSegments = msgState.segments && 
+        msgState.segments.length > 0 && 
+        msgState.segments.some(seg => seg.videoUrl && seg.videoUrl.length > 0);
       // 判断是否已完成
       const isDone = msgState.currentStage === 'done';
       
