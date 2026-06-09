@@ -198,10 +198,9 @@ async function executeTool(
               type: "segment_video",
               content: {
                 segmentId: segment.id,
-                videoUrl: segment.videoUrl,
+                videoUrl: segment.videoUrl,  // 只使用对象存储URL
                 audioUrl: segment.audioUrl,
                 duration: segment.duration,
-                localVideoPath: segment.localVideoPath,
                 script: segment.script
               }
             });
