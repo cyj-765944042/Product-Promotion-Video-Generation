@@ -647,7 +647,8 @@ export async function POST(request: NextRequest) {
           });
           
           // Generate video with duration matching the audio (min 5 seconds for API limit)
-          const videoDuration = Math.max(5, audioInfo.duration);
+          // API requires integer duration, so round to nearest integer
+          const videoDuration = Math.max(5, Math.round(audioInfo.duration));
           
           console.log(`开始生成第 ${i + 1} 段视频（${videoDuration}秒）...`);
           
