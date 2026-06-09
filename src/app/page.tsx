@@ -1566,6 +1566,12 @@ export default function ChatAgentPage() {
                   const newBackendSessionId = eventData.sessionId;
                   // 同时检查content和data字段，兼容不同格式
                   const stateData = eventData.data || eventData.content as Record<string, unknown> || {};
+                  console.log('[前端] 收到state_update事件:', {
+                    currentStage: stateData.currentStage,
+                    scriptsCount: (stateData.scripts as unknown[])?.length || 0,
+                    segmentsCount: (stateData.segments as unknown[])?.length || 0,
+                    hasVideoUrl: (stateData.segments as unknown[])?.some(seg => (seg as {videoUrl?: string})?.videoUrl)
+                  });
                   // 更新会话数据（保存后端会话ID）
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;

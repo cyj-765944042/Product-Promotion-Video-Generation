@@ -375,7 +375,7 @@ export async function* chatNodeStream(
         }
       };
       
-      console.log(`[Agent] 发送初始化segments: ${initialSegments.length}个片段`);
+      console.log(`[Agent] yield state_update事件: segments=${initialSegments.length}个, stage=video_generating`);
       
       // 使用stream版本，实时yield事件
       const streamGenerator = generateVideoSegmentsStream(
