@@ -471,23 +471,22 @@ export async function POST(request: NextRequest) {
         
         // FFmpeg functions are defined at module level
         
-        const audioInfos: AudioInfo[] = [];
+        // 并发执行TTS生成，提高效率
+        console.log(`正在并发生成 ${segments.length} 段TTS音频...`);
+        sendEvent(controller, {
+          type: 'tts_start',
+          content: `正在并发生成 ${segments.length} 段配音...`,
+          segmentId: 0,
+          current: 0,
+          total: segments.length,
+        });
         
-        for (let i = 0; i < segments.length; i++) {
-          const segment = segments[i];
-          
-          sendEvent(controller, {
-            type: 'tts_start',
-            content: `正在生成第 ${i + 1}/${segments.length} 段配音...`,
-            segmentId: segment.id,
-            current: i + 1,
-            total: segments.length,
-          });
-          
+        // 创建所有TTS生成任务
+        const ttsPromises = segments.map(async (segment, i) => {
           try {
             // Generate TTS audio for the script using synthesize method
             const ttsResponse = await ttsClient.synthesize({
-              uid: `user_${Date.now()}`,
+              uid: `user_${Date.now()}_${i}`,
               text: segment.script,
               speaker: 'zh_female_mizai_saturn_bigtts', // Video dubbing female voice
               audioFormat: 'mp3',
@@ -500,61 +499,95 @@ export async function POST(request: NextRequest) {
               let localAudioPath = '';
               
               try {
-                console.log('正在下载音频并获取真实时长...');
+                console.log(`[TTS ${i + 1}] 正在下载音频并获取真实时长...`);
                 // Download audio to local temp file
-                localAudioPath = `/tmp/audio_${segment.id}_${Date.now()}.mp3`;
+                localAudioPath = `/tmp/audio_${segment.id}_${Date.now()}_${i}.mp3`;
                 await downloadFile(ttsResponse.audioUri, localAudioPath);
                 
                 // Use FFmpeg to get duration
                 realDuration = await getAudioDurationFFmpeg(localAudioPath);
-                console.log(`FFmpeg获取真实时长: ${realDuration}秒`);
+                console.log(`[TTS ${i + 1}] FFmpeg获取真实时长: ${realDuration}秒`);
               } catch (ffmpegError) {
-                console.warn('FFmpeg获取时长失败，使用估算值:', ffmpegError);
+                console.warn(`[TTS ${i + 1}] FFmpeg获取时长失败，使用估算值:`, ffmpegError);
                 // Fallback to estimation
                 const charCount = segment.script.length;
                 realDuration = Math.max(5, Math.min(15, Math.ceil(charCount / 4)));
               }
               
-              audioInfos.push({
+              console.log(`[TTS ${i + 1}] 音频生成成功, 真实时长 ${realDuration}秒`);
+              
+              return {
+                index: i,
+                segmentId: segment.id,
                 url: ttsResponse.audioUri,
                 duration: realDuration,
-                segmentId: segment.id,
                 localPath: localAudioPath,
-              });
-              
-              sendEvent(controller, {
-                type: 'tts_complete',
-                content: { 
-                  segmentId: segment.id, 
-                  audioUrl: ttsResponse.audioUri,
-                  duration: realDuration,
-                },
-                segmentId: i,
-              });
-              
-              console.log(`TTS音频 ${i + 1} 生成成功, 真实时长 ${realDuration}秒`);
-              
-              // 记录中间文件
-              intermediateFiles.audios.push({
-                segmentId: segment.id,
-                url: ttsResponse.audioUri,
-                duration: realDuration,
                 script: segment.script,
-              });
+                success: true,
+              };
             } else {
               throw new Error('TTS未返回音频URL');
             }
           } catch (ttsError) {
-            console.error(`TTS生成失败 (${i + 1}):`, ttsError);
+            console.error(`[TTS ${i + 1}] 生成失败:`, ttsError);
             // Use default duration if TTS fails
-            audioInfos.push({
+            return {
+              index: i,
+              segmentId: segment.id,
               url: '',
               duration: segment.duration || 5,
-              segmentId: segment.id,
               localPath: '',
-            });
+              script: segment.script,
+              success: false,
+              error: String(ttsError),
+            };
           }
+        });
+        
+        // 并发执行所有TTS任务
+        const ttsResults = await Promise.all(ttsPromises);
+        
+        // 按index排序，确保顺序正确
+        ttsResults.sort((a, b) => a.index - b.index);
+        
+        // 处理结果并发送事件
+        const audioInfos: AudioInfo[] = [];
+        for (const result of ttsResults) {
+          audioInfos.push({
+            url: result.url,
+            duration: result.duration,
+            segmentId: result.segmentId,
+            localPath: result.localPath,
+          });
+          
+          // 发送每段TTS完成事件
+          sendEvent(controller, {
+            type: 'tts_complete',
+            content: { 
+              segmentId: result.segmentId, 
+              audioUrl: result.url,
+              duration: result.duration,
+            },
+            segmentId: result.index,
+          });
+          
+          // 记录中间文件
+          intermediateFiles.audios.push({
+            segmentId: result.segmentId,
+            url: result.url,
+            duration: result.duration,
+            script: result.script,
+          });
         }
+        
+        // 发送TTS全部完成事件
+        sendEvent(controller, {
+          type: 'tts_complete',
+          content: `所有 ${segments.length} 段配音已生成完成`,
+          segmentId: 0,
+          current: segments.length,
+          total: segments.length,
+        });
 
         // ==========================================
         // Step 2: Generate videos in parallel for efficiency
