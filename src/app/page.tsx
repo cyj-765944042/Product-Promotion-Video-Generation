@@ -1564,7 +1564,8 @@ export default function ChatAgentPage() {
 
                 case 'state_update':
                   const newBackendSessionId = eventData.sessionId;
-                  const stateData = eventData.data || {};
+                  // 同时检查content和data字段，兼容不同格式
+                  const stateData = eventData.data || eventData.content as Record<string, unknown> || {};
                   // 更新会话数据（保存后端会话ID）
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;

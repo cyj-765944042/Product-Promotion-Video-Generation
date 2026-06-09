@@ -313,7 +313,7 @@ export async function* chatNodeStream(
         
         yield {
           type: "state_update",
-          content: currentState
+          content: currentState as unknown as Record<string, unknown>
         };
         
         yield {
@@ -367,7 +367,7 @@ export async function* chatNodeStream(
       
       yield {
         type: "state_update",
-        content: {
+        content: {  // 使用content字段
           ...currentState,
           scripts: scriptsToUse,
           segments: initialSegments,
@@ -435,7 +435,7 @@ export async function* chatNodeStream(
         
         yield {
           type: "state_update",
-          content: currentState
+          content: currentState as unknown as Record<string, unknown>
         };
         
         yield {
@@ -620,8 +620,7 @@ ${nextActionHint}
     // 发送状态更新
     yield {
       type: "state_update",
-      content: "状态已更新",
-      data: currentState as unknown as Record<string, unknown>
+      content: currentState as unknown as Record<string, unknown>
     };
     
     // 检查是否有自动执行的下一步

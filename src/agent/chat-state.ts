@@ -57,8 +57,8 @@ export interface ToolResult {
 
 // Agent 消息类型（用于 SSE）
 export interface AgentSSEMessage {
-  type: "text" | "tool_call" | "tool_result" | "progress" | "state_update" | "wait_feedback" | "segment_video" | "complete" | "error";
-  content: string | Record<string, unknown> | ChatAgentState;
+  type: "text" | "tool_call" | "tool_result" | "progress" | "state_update" | "wait_feedback" | "segment_video" | "complete" | "error" | "audio_merge";
+  content?: string | Record<string, unknown> | ChatAgentState;  // content改为可选
   data?: Record<string, unknown>;
   sessionId?: string;
 }
