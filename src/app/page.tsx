@@ -27,6 +27,7 @@ import {
   Trash2,
   Pencil,
   MessageSquare,
+  Globe,
 } from 'lucide-react';
 
 // 用户头像本地存储key
@@ -249,6 +250,7 @@ function SessionSidebar({
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [openLangDropdownId, setOpenLangDropdownId] = useState<string | null>(null);
 
   // 分组会话：今天、最近
   const groupSessions = () => {
@@ -280,6 +282,17 @@ function SessionSidebar({
     setEditingId(null);
     setEditingTitle('');
   };
+
+  // 点击外部关闭语言下拉
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setOpenLangDropdownId(null);
+    };
+    if (openLangDropdownId) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [openLangDropdownId]);
 
   const SessionItem = ({ session }: { session: Session }) => {
     const isSelected = session.id === currentSessionId;
@@ -326,18 +339,47 @@ function SessionSidebar({
                 </div>
               </div>
               
-              {/* 右侧：配音语言标签 */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const newLang = session.voiceLanguage === 'english' ? 'mandarin' : 'english';
-                  onUpdateSessionVoiceLanguage(session.id, newLang);
-                }}
-                className="text-xs px-2 py-1 rounded bg-[#F1F3F5] text-[#666666] hover:bg-[#ECE6F7] hover:text-[#333333] transition-colors ml-2"
-                title="点击切换配音语言"
-              >
-                {session.voiceLanguage === 'english' ? '英语' : '普通话'}
-              </button>
+              {/* 右侧：配音语言标签（图标+下拉） */}
+              <div className="relative ml-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenLangDropdownId(openLangDropdownId === session.id ? null : session.id);
+                  }}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-[#F9F9F9] text-[#7E22CE] hover:bg-[#F5F0FF] transition-colors"
+                  title="选择配音语言"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>{session.voiceLanguage === 'english' ? '英语' : '普通话'}</span>
+                </button>
+                
+                {/* 下拉选择 */}
+                {openLangDropdownId === session.id && (
+                  <div 
+                    className="absolute right-0 top-full mt-1 bg-white rounded-md shadow-lg border border-[#E5E5E5] z-50 min-w-[80px]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={() => {
+                        onUpdateSessionVoiceLanguage(session.id, 'mandarin');
+                        setOpenLangDropdownId(null);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-t-md ${session.voiceLanguage === 'mandarin' ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
+                    >
+                      普通话
+                    </button>
+                    <button
+                      onClick={() => {
+                        onUpdateSessionVoiceLanguage(session.id, 'english');
+                        setOpenLangDropdownId(null);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-b-md ${session.voiceLanguage === 'english' ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
+                    >
+                      英语
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
