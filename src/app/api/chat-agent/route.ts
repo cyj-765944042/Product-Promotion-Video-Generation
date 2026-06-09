@@ -76,6 +76,12 @@ export async function POST(request: NextRequest) {
       const generator = chatNodeStream(state, customHeaders);
       
       for await (const agentMessage of generator) {
+        // 记录每个事件类型
+        console.log(`[chat-agent API] 发送事件: type=${agentMessage.type}`);
+        if (agentMessage.type === 'segment_video') {
+          console.log(`[chat-agent API] segment_video事件: content=${JSON.stringify(agentMessage.content)}`);
+        }
+        
         const eventData = JSON.stringify({
           type: agentMessage.type,
           content: agentMessage.content,
