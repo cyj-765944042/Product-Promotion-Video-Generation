@@ -278,6 +278,9 @@ export async function* chatNodeStream(
   
   const llmClient = new LLMClient(new Config(), customHeaders);
   
+  // 当前状态（会被工具结果更新）
+  let currentState = state;
+  
   // 构建对话历史
   const conversationHistory: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
   
@@ -286,10 +289,143 @@ export async function* chatNodeStream(
     conversationHistory.push(...state.messages);
   }
   
+  // 检查用户消息是否包含意图标签，直接调用对应工具
+  const lastUserMessage = conversationHistory.filter(m => m.role === "user").pop();
+  if (lastUserMessage) {
+    // 检查合成视频意图
+    if (lastUserMessage.content.includes("[COMPOSE_VIDEO]") && state.segments && state.segments.length > 0) {
+      console.log("[Agent] 检测到[COMPOSE_VIDEO]意图，直接调用composeFinalVideo");
+      yield { type: "progress", content: "正在合成完整视频..." };
+      
+      const toolResult = await composeFinalVideo(state.segments, state.productName || "", undefined, customHeaders);
+      
+      if (toolResult.success) {
+        currentState = {
+          ...currentState,
+          finalVideoUrl: toolResult.data?.finalVideoUrl as string | undefined,
+          finalVideoPath: toolResult.data?.finalVideoPath as string | undefined,
+          finalDuration: toolResult.data?.finalDuration as number | undefined,
+          subtitleUrl: toolResult.data?.subtitleUrl as string | undefined,
+          currentStage: "done"
+        };
+        
+        yield {
+          type: "state_update",
+          content: currentState
+        };
+        
+        yield {
+          type: "tool_result",
+          content: {
+            tool: "composeFinalVideo",
+            success: true,
+            data: {
+              finalVideoUrl: toolResult.data?.finalVideoUrl,
+              finalVideoPath: toolResult.data?.finalVideoPath,
+              finalDuration: toolResult.data?.finalDuration,
+              subtitleUrl: toolResult.data?.subtitleUrl,
+              currentStage: "done"
+            }
+          }
+        };
+        
+        yield { type: "complete", content: "视频合成完成" };
+        return;
+      } else {
+        yield { type: "error", content: toolResult.message || "合成视频失败" };
+        yield { type: "complete", content: "合成失败" };
+        return;
+      }
+    }
+    
+    // 检查生成分段视频意图
+    if (lastUserMessage.content.includes("[GENERATE_SEGMENTS]") && state.scripts && state.scripts.length > 0) {
+      console.log("[Agent] 检测到[GENERATE_SEGMENTS]意图，直接调用generateVideoSegments");
+      yield { type: "progress", content: "正在生成分段视频..." };
+      
+      const eventQueue: AgentSSEMessage[] = [];
+      const toolResult = await generateVideoSegments(
+        state.scripts,
+        state.productImageUrl || "",
+        state.productName || "",
+        customHeaders,
+        (segment) => {
+          eventQueue.push({
+            type: "segment_video",
+            content: {
+              id: segment.id,
+              videoUrl: segment.videoUrl,
+              audioUrl: segment.audioUrl,
+              duration: segment.duration,
+              localVideoPath: segment.localVideoPath,
+              script: segment.script
+            }
+          });
+        }
+      );
+      
+      // yield实时事件
+      for (const event of eventQueue) {
+        yield event;
+      }
+      
+      if (toolResult.success) {
+        currentState = {
+          ...currentState,
+          segments: (toolResult.data?.segments || []) as Array<{
+            id: number;
+            script: string;
+            feature: string;
+            prompt?: string;
+            audioPath?: string;
+            audioUrl?: string;
+            videoPath?: string;
+            videoUrl?: string;
+            localVideoPath?: string;
+            duration: number;
+          }>,
+          currentStage: "video_generated"
+        };
+        
+        yield {
+          type: "state_update",
+          content: currentState
+        };
+        
+        yield {
+          type: "tool_result",
+          content: {
+            tool: "generateVideoSegments",
+            success: true,
+            data: {
+              segments: toolResult.data?.segments,
+              currentStage: "video_generated"
+            }
+          }
+        };
+        
+        // 发送等待反馈事件
+        yield {
+          type: "wait_feedback",
+          content: {
+            message: "分段视频已生成完成，请确认后合成完整视频。",
+            state: currentState
+          }
+        };
+        
+        yield { type: "complete", content: "分段视频生成完成" };
+        return;
+      } else {
+        yield { type: "error", content: toolResult.message || "生成分段视频失败" };
+        yield { type: "complete", content: "生成失败" };
+        return;
+      }
+    }
+  }
+  
   // 最多执行 5 轮工具调用，防止无限循环
   const MAX_ROUNDS = 5;
   let currentRound = 0;
-  let currentState = { ...state };
   
   while (currentRound < MAX_ROUNDS) {
     currentRound++;
@@ -439,7 +575,7 @@ ${nextActionHint}
     yield {
       type: "state_update",
       content: "状态已更新",
-      data: currentState
+      data: currentState as unknown as Record<string, unknown>
     };
     
     // 检查是否有自动执行的下一步

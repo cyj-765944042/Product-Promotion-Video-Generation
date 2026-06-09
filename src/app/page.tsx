@@ -2138,8 +2138,8 @@ export default function ChatAgentPage() {
                 className="bg-[#B999F3] hover:bg-[#D4C2F6] text-white"
                 onClick={() => sendMessage(
                   msgState.currentStage === 'video_generated' 
-                    ? '合成完整视频' 
-                    : '生成分段视频'
+                    ? '[COMPOSE_VIDEO] 请将所有分段视频合成为完整视频，添加背景音乐和字幕。' 
+                    : '[GENERATE_SEGMENTS] 请根据文案生成分段视频，每个分段包含配音和画面。'
                 )}
                 disabled={isGenerating}
               >
