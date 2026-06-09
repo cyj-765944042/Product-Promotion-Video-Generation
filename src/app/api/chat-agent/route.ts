@@ -20,6 +20,8 @@ export async function POST(request: NextRequest) {
   // 使用更唯一的ID生成方式（时间戳 + 随机数）
   const newSessionId = sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   
+  console.log(`[API] 会话恢复: sessionId=${sessionId}, newSessionId=${newSessionId}, scripts=${state.scripts ? state.scripts.length : '无'}, stage=${state.currentStage}`);
+  
   // 添加用户消息到历史
   const userMessage: { role: "user"; content: string } = {
     role: "user",

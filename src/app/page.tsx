@@ -1423,6 +1423,7 @@ export default function ChatAgentPage() {
     ));
 
     try {
+      console.log(`[前端] 发送请求: sessionId=${targetBackendSessionId}, message=${content.substring(0, 50)}, scripts=${targetSessionState.scripts ? targetSessionState.scripts.length : '无'}`);
       const response = await fetch('/api/chat-agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
