@@ -340,15 +340,25 @@ export async function* chatNodeStream(
     }
     
     // 检查生成分段视频意图
-    if (lastUserMessage.content.includes("[GENERATE_SEGMENTS]") && state.scripts && state.scripts.length > 0) {
-      console.log("[Agent] 检测到[GENERATE_SEGMENTS]意图，直接调用generateVideoSegments");
+    console.log(`[Agent] 检查[GENERATE_SEGMENTS]意图: hasTag=${lastUserMessage.content.includes("[GENERATE_SEGMENTS]")}, scripts=${state.scripts ? state.scripts.length : 'undefined'}, stage=${state.currentStage}`);
+    if (lastUserMessage.content.includes("[GENERATE_SEGMENTS]")) {
+      // 确保scripts存在，如果没有则从currentState获取或报错
+      const scriptsToUse = state.scripts || currentState.scripts;
+      if (!scriptsToUse || scriptsToUse.length === 0) {
+        console.error("[Agent] [GENERATE_SEGMENTS]意图检测失败: scripts为空");
+        yield { type: "error", content: "文案数据缺失，请先生成文案" };
+        yield { type: "complete", content: "生成失败" };
+        return;
+      }
+      
+      console.log("[Agent] 检测到[GENERATE_SEGMENTS]意图，直接调用generateVideoSegments，scripts数量:", scriptsToUse.length);
       yield { type: "progress", content: "正在生成分段视频..." };
       
       const eventQueue: AgentSSEMessage[] = [];
       const toolResult = await generateVideoSegments(
-        state.scripts,
-        state.productImageUrl || "",
-        state.productName || "",
+        scriptsToUse,
+        state.productImageUrl || currentState.productImageUrl || "",
+        state.productName || currentState.productName || "",
         customHeaders,
         (segment) => {
           eventQueue.push({
