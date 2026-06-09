@@ -572,16 +572,26 @@ export async function POST(request: NextRequest) {
           
           const content: Array<
             | { type: 'text'; text: string }
-            | { type: 'image_url'; image_url: { url: string }; role?: 'first_frame' | 'last_frame' }
+            | { type: 'image_url'; image_url: { url: string } }
+            | { type: 'image_url'; image_url: { url: string }; role: 'first_frame' }
           > = [];
           
           // Use product image as reference for video generation
+          // Only first segment uses first_frame role to ensure product appears at start
           if (imageUrl) {
-            content.push({
-              type: 'image_url' as const,
-              image_url: { url: imageUrl },
-              role: i === 0 ? 'first_frame' as const : undefined,
-            });
+            if (i === 0) {
+              content.push({
+                type: 'image_url' as const,
+                image_url: { url: imageUrl },
+                role: 'first_frame' as const,
+              });
+            } else {
+              // Other segments: reference image without role (API doesn't accept undefined role)
+              content.push({
+                type: 'image_url' as const,
+                image_url: { url: imageUrl },
+              });
+            }
           }
           
           // Add the visual prompt
