@@ -182,14 +182,14 @@ async function addSubtitleToSegmentVideo(
       // 竖版视频（1080x1920）
       playResX = 1080;
       playResY = 1920;
-      fontSize = 56;  // 竖版字体更大
-      marginV = 60;   // 底部边距更大
+      fontSize = 96;  // 竖版字体更大，占高度约5%
+      marginV = 80;   // 底部边距更大
     } else {
       // 横版视频（1920x1080）
       playResX = 1920;
       playResY = 1080;
-      fontSize = 48;  // 横版字体适中
-      marginV = 50;   // 底部边距适中
+      fontSize = 72;  // 横版字体适中，占高度约6.7%
+      marginV = 60;   // 底部边距适中
     }
     
     console.log(`[字幕] 视频比例=${ratio}, 分辨率=${playResX}x${playResY}, 字体大小=${fontSize}, 底部边距=${marginV}`);
@@ -202,7 +202,7 @@ PlayResY: ${playResY}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,SimHei,${fontSize},&HFFFFFF,&HFFFFFF,&H000000,&H000000,0,0,0,0,100,100,0,0,1,2,0,2,30,30,${marginV},1
+Style: Default,SimHei,${fontSize},&HFFFFFF,&HFFFFFF,&H000000,&H000000,-1,0,0,0,100,100,0,0,1,4,2,2,30,30,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
