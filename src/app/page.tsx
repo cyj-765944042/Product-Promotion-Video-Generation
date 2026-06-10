@@ -601,17 +601,19 @@ interface SessionState {
   pendingImages?: Array<{ id: string; imageUrl: string; thumbnail?: string }>;
 }
 
-// 视频播放器组件（16:9固定比例，支持单独音频轨道，支持隐藏控制条）
+// 视频播放器组件（支持16:9横版和9:16竖版比例）
 function VideoPlayer({
   videoUrl,
   localVideoPath,
   audioUrl,
   showControls = true,
+  ratio = '16:9',
 }: {
   videoUrl?: string;
   localVideoPath?: string;
   audioUrl?: string;
   showControls?: boolean;
+  ratio?: '16:9' | '9:16';
 }) {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -621,6 +623,9 @@ function VideoPlayer({
 
   const effectiveVideoUrl = localVideoPath || (videoUrl ? getAccessibleUrl(videoUrl) : '');
   const effectiveAudioUrl = audioUrl ? getAccessibleUrl(audioUrl) : '';
+
+  // 根据比例确定aspect ratio类名
+  const aspectClass = ratio === '9:16' ? 'aspect-[9/16]' : 'aspect-video';
 
   // 点击播放按钮
   const handlePlayClick = useCallback(() => {
@@ -663,7 +668,7 @@ function VideoPlayer({
   }, []);
 
   return (
-    <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
+    <div className={`relative bg-black rounded-lg overflow-hidden ${aspectClass}`}>
       {effectiveVideoUrl ? (
         <>
           <video
@@ -2341,11 +2346,12 @@ export default function ChatAgentPage() {
     // 最终视频
     if (msgState.finalVideoUrl || msgState.localVideoPath) {
       const videoSrc = msgState.localVideoPath || getAccessibleUrl(msgState.finalVideoUrl || '');
+      const videoRatio = (msgState.videoRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
       return (
         <div className="space-y-3">
           <p className="text-sm">{message.content}</p>
           <div className="bg-white rounded-xl p-3 shadow-sm">
-            <VideoPlayer videoUrl={msgState.finalVideoUrl} localVideoPath={msgState.localVideoPath} />
+            <VideoPlayer videoUrl={msgState.finalVideoUrl} localVideoPath={msgState.localVideoPath} ratio={videoRatio} />
             <div className="mt-2 flex gap-2">
               <a
                 href={videoSrc}
@@ -2416,16 +2422,19 @@ export default function ChatAgentPage() {
               <div className="grid grid-cols-2 gap-4 mt-4">
                 {msgState.segments
                   .filter(seg => seg.videoUrl && seg.videoUrl.length > 0)
-                  .map(segment => (
+                  .map(segment => {
+                    const segVideoRatio = (msgState.videoRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
+                    const segAspectClass = segVideoRatio === '9:16' ? 'aspect-[9/16]' : 'aspect-video';
+                    return (
                     <div key={segment.id} className="bg-white rounded-xl shadow-md overflow-hidden">
-                      <div className="relative aspect-video bg-gray-900">
-                        <VideoPlayer videoUrl={segment.videoUrl} />
+                      <div className={`relative ${segAspectClass} bg-gray-900`}>
+                        <VideoPlayer videoUrl={segment.videoUrl} ratio={segVideoRatio} />
                       </div>
                       <div className="p-3">
                         <p className="text-xs text-[#666666] line-clamp-2">{segment.script}</p>
                       </div>
                     </div>
-                  ))}
+                  );})}
               </div>
             )}
           </div>
@@ -2474,15 +2483,19 @@ export default function ChatAgentPage() {
               }}>
                 {(msgState.segments || [])
                   .sort((a, b) => (a.id || 0) - (b.id || 0))
-                  .map((segment, index) => (
+                  .map((segment, index) => {
+                    const segVideoRatio = (msgState.videoRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
+                    const segAspectClass = segVideoRatio === '9:16' ? 'aspect-[9/16]' : 'aspect-video';
+                    return (
                     <div key={`segment-${segment.id || index}-${segment.videoUrl || segment.localVideoPath || 'no-video'}`} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
-                      {/* 视频预览区 - 16:9比例 */}
-                      <div className="relative aspect-video bg-gray-900 group">
+                      {/* 视频预览区 - 根据比例适配 */}
+                      <div className={`relative ${segAspectClass} bg-gray-900 group`}>
                         <VideoPlayer
                           videoUrl={segment.videoUrl}
                           localVideoPath={segment.localVideoPath}
                           audioUrl={segment.audioUrl}
                           showControls={true}
+                          ratio={segVideoRatio}
                         />
                       </div>
                       {/* 文案与操作区 */}
@@ -2491,7 +2504,7 @@ export default function ChatAgentPage() {
                         <p className="text-sm text-[#333333] mt-1 line-clamp-2 leading-relaxed">{segment.script}</p>
                       </div>
                     </div>
-                  ))}
+                  );})}
               </div>
             </div>
           )}
