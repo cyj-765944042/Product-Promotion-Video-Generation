@@ -1043,7 +1043,7 @@ export async function regenerateSegment(
           ...customHeaders,
           'Content-Type': 'application/json'
         },
-        timeout: 180000 // 3 分钟超时
+        timeout: 300000 // 5 分钟超时
       }
     );
     

@@ -104,15 +104,15 @@ export async function POST(request: NextRequest) {
         const videoModelEP = process.env.VIDEO_MODEL_EP || 'ep-20260514120705-pqv86';
         
         // TTS 客户端使用默认配置
-        const defaultConfig = new Config({ timeout: 180000 });
+        const defaultConfig = new Config({ timeout: 300000 });
         const ttsClient = new TTSClient(defaultConfig, customHeaders);
         
         // 视频生成客户端使用火山方舟配置
         const videoGenConfig = arkApiKey ? new Config({ 
           apiKey: arkApiKey,
           baseUrl: arkBaseUrl,
-          timeout: 180000,
-        }) : new Config({ timeout: 180000 });
+          timeout: 300000,
+        }) : new Config({ timeout: 300000 });
         const videoClient = new VideoGenerationClient(videoGenConfig, arkApiKey ? undefined : customHeaders);
         
         const storage = new S3Storage();

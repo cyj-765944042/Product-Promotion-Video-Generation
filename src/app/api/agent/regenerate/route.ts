@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
         // 1. 生成 TTS (使用 SDK)
         sendEvent("tts_start", { segmentId });
         
-        const defaultConfig = new Config({ timeout: 180000 });
+        const defaultConfig = new Config({ timeout: 300000 });
         const finalHeaders = {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${COZE_API_KEY}`,
@@ -93,8 +93,8 @@ export async function POST(request: NextRequest) {
         const videoGenConfig = ARK_API_KEY ? new Config({ 
           apiKey: ARK_API_KEY,
           baseUrl: ARK_BASE_URL,
-          timeout: 180000,
-        }) : new Config({ timeout: 180000 });
+          timeout: 300000,
+        }) : new Config({ timeout: 300000 });
         
         const videoClient = new VideoGenerationClient(videoGenConfig, ARK_API_KEY ? undefined : finalHeaders);
         const videoModelEP = process.env.VIDEO_MODEL_EP || 'ep-20260514120705-pqv86';

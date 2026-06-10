@@ -92,15 +92,15 @@ async function generateSegment(
     console.log(`[Agent] 片段 ${index + 1}: 开始生成 TTS`);
     
     // SDK 配置
-    const defaultConfig = new Config({ timeout: 180000 });
+    const defaultConfig = new Config({ timeout: 300000 });
     const ttsClient = new TTSClient(defaultConfig);
     
     // 视频生成客户端使用火山方舟配置（如果有 API Key）
     const videoGenConfig = ARK_API_KEY ? new Config({
       apiKey: ARK_API_KEY,
       baseUrl: ARK_BASE_URL,
-      timeout: 180000,
-    }) : new Config({ timeout: 180000 });
+      timeout: 300000,
+    }) : new Config({ timeout: 300000 });
     const videoClient = new VideoGenerationClient(videoGenConfig);
     
     const storage = new S3Storage();

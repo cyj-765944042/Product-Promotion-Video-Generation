@@ -473,11 +473,11 @@ export async function POST(request: NextRequest) {
         const videoGenConfig = arkApiKey ? new Config({ 
           apiKey: arkApiKey,
           baseUrl: arkBaseUrl,
-          timeout: 180000, // 3 minutes for video processing
-        }) : new Config({ timeout: 180000 });
+          timeout: 300000, // 5 minutes for video processing
+        }) : new Config({ timeout: 300000 });
         
         // 其他客户端使用SDK默认配置
-        const defaultConfig = new Config({ timeout: 180000 });
+        const defaultConfig = new Config({ timeout: 300000 });
         
         const ttsClient = new TTSClient(defaultConfig, finalHeaders);
         // 视频生成使用火山方舟配置，不需要额外headers
