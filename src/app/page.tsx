@@ -2146,52 +2146,69 @@ export default function ChatAgentPage() {
     }
   };
 
-  // 上传图片到暂存区（不自动发送）
+  // 上传图片到暂存区（不自动发送，支持多选）
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) {
+    const files = e.target.files;
+    if (!files || files.length === 0) {
       console.log('没有选择文件');
       return;
     }
 
-    console.log('开始上传图片:', file.name, file.type, file.size);
-    const formData = new FormData();
-    formData.append('file', file);
+    console.log(`开始上传 ${files.length} 张图片`);
+    setIsLoading(true);
+
+    // 并行上传所有文件
+    const uploadPromises = Array.from(files).map(async (file) => {
+      console.log('上传图片:', file.name, file.type, file.size);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch('/api/upload-image', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error('上传失败:', errorData);
+          return null;
+        }
+
+        const data = await response.json();
+        console.log('上传成功，imageUrl:', data.imageUrl);
+        
+        // 生成缩略图
+        const thumbnail = await createThumbnail(file);
+        
+        return {
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          imageUrl: data.imageUrl,
+          thumbnail
+        };
+      } catch (error) {
+        console.error('上传图片失败:', file.name, error);
+        return null;
+      }
+    });
 
     try {
-      setIsLoading(true); // 显示加载状态
-      const response = await fetch('/api/upload-image', {
-        method: 'POST',
-        body: formData,
-      });
-
-      console.log('上传响应状态:', response.status);
+      const results = await Promise.all(uploadPromises);
+      const successfulImages = results.filter((img): img is { id: string; imageUrl: string; thumbnail: string } => img !== null);
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('上传失败:', errorData);
-        throw new Error(errorData.error || '上传失败');
+      if (successfulImages.length > 0) {
+        setPendingImages(prev => [...prev, ...successfulImages]);
+        console.log(`成功添加 ${successfulImages.length} 张图片到暂存区`);
       }
-
-      const data = await response.json();
-      console.log('上传成功，imageUrl:', data.imageUrl);
       
-      // 生成缩略图
-      const thumbnail = await createThumbnail(file);
-      
-      // 存入暂存区，不自动发送
-      setPendingImages(prev => [
-        ...prev,
-        { id: Date.now().toString(), imageUrl: data.imageUrl, thumbnail }
-      ]);
-      
-      setIsLoading(false);
-      console.log('图片已添加到暂存区，等待发送');
+      if (successfulImages.length < files.length) {
+        console.warn(`${files.length - successfulImages.length} 张图片上传失败`);
+      }
     } catch (error) {
-      setIsLoading(false);
-      console.error('上传图片失败:', error);
-      alert(`上传图片失败: ${error instanceof Error ? error.message : '请重试'}`);
+      console.error('批量上传出错:', error);
     }
+    
+    setIsLoading(false);
     
     // 清空input，允许再次选择同一文件
     e.target.value = '';
@@ -2811,6 +2828,7 @@ export default function ChatAgentPage() {
                 <input
                   type="file"
                   accept="image/*"
+                  multiple
                   onChange={handleImageUpload}
                   className="hidden"
                 />
