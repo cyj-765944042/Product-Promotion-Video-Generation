@@ -635,15 +635,14 @@ function VideoPlayer({
   const effectiveVideoUrl = localVideoPath || (videoUrl ? getAccessibleUrl(videoUrl) : '');
   const effectiveAudioUrl = audioUrl ? getAccessibleUrl(audioUrl) : '';
 
-  // 根据比例和尺寸确定aspect ratio类名
-  // 竖版视频限制最大高度：分段视频小，合成视频大
-  const maxHeightClass = size === 'final' 
-    ? 'max-h-[60vh]' // 合成视频：占窗口60%，不超过80%
-    : 'max-h-[220px]'; // 分段视频：较小的固定高度
-  
+  // 根据比例和尺寸确定样式
+  // 竖版视频：分段视频设置固定宽度，合成视频限制最大高度
   const aspectClass = ratio === '9:16' 
-    ? `aspect-[9/16] ${maxHeightClass}` 
-    : 'aspect-video max-w-full';
+    ? (size === 'final' 
+      ? 'aspect-[9/16] max-h-[50vh] w-auto' // 合成视频：保持比例，限制最大高度
+      : 'w-[160px] h-auto max-h-[280px]' // 分段视频：固定宽度，高度自适应
+    )
+    : 'aspect-video max-w-full'; // 横版视频：标准比例
 
   // 点击播放按钮
   const handlePlayClick = useCallback(() => {
@@ -2505,7 +2504,8 @@ export default function ChatAgentPage() {
                   .filter(seg => seg.videoUrl && seg.videoUrl.length > 0)
                   .map(segment => {
                     const segVideoRatio = (msgState.videoRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
-                    const segAspectClass = segVideoRatio === '9:16' ? 'aspect-[9/16] max-h-[350px]' : 'aspect-video';
+                    // 竖版视频：固定宽度，横版视频：标准比例
+                    const segAspectClass = segVideoRatio === '9:16' ? 'w-[160px] h-auto max-h-[280px]' : 'aspect-video';
                     return (
                     <div key={segment.id} className="bg-white rounded-xl shadow-md overflow-hidden">
                       <div className={`relative ${segAspectClass} bg-gray-900`}>
@@ -2566,7 +2566,8 @@ export default function ChatAgentPage() {
                   .sort((a, b) => (a.id || 0) - (b.id || 0))
                   .map((segment, index) => {
                     const segVideoRatio = (msgState.videoRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
-                    const segAspectClass = segVideoRatio === '9:16' ? 'aspect-[9/16] max-h-[350px]' : 'aspect-video';
+                    // 竖版视频：固定宽度，横版视频：标准比例
+                    const segAspectClass = segVideoRatio === '9:16' ? 'w-[160px] h-auto max-h-[280px]' : 'aspect-video';
                     return (
                     <div key={`segment-${segment.id || index}-${segment.videoUrl || segment.localVideoPath || 'no-video'}`} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
                       {/* 视频预览区 - 根据比例适配 */}
