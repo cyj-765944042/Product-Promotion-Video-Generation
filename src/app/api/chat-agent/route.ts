@@ -115,58 +115,94 @@ export async function POST(request: NextRequest) {
           }
         }
         
-        // 处理 tool_result 更新状态
-        if (agentMessage.type === "tool_result" && agentMessage.data) {
-          const toolData = agentMessage.data as Record<string, unknown>;
-          console.log(`[API] tool_result 收到: scripts=${toolData.scripts ? `${(toolData.scripts as Array<unknown>).length}段` : '无'}, segments=${toolData.segments ? `${(toolData.segments as Array<unknown>).length}个` : '无'}, stage=${toolData.currentStage || '无'}`);
-          if (toolData.productImageUrl) state.productImageUrl = toolData.productImageUrl as string;
-          if (toolData.productName) state.productName = toolData.productName as string;
-          if (toolData.features) state.features = toolData.features as string[];
-          if (toolData.scripts) {
-            state.scripts = toolData.scripts as Array<{ id: number; script: string; feature: string; prompt?: string }>;
-            console.log(`[API] tool_result 更新 state.scripts: ${state.scripts.length} 段文案`);
-          }
-          if (toolData.segments) {
-            state.segments = toolData.segments as Array<{
-              id: number;
-              script: string;
-              feature: string;
-              prompt?: string;
-              audioPath?: string;
-              audioUrl?: string;
-              videoPath?: string;
-              videoUrl?: string;
-              duration: number;
-            }>;
-            console.log(`[API] 更新 state.segments: ${state.segments.length} 个片段`);
-            if (state.segments.length > 0 && toolData.currentStage) {
-              state.currentStage = toolData.currentStage as ChatAgentState["currentStage"];
+        // 处理 tool_result 更新状态（注意：后端发送的是content.data，不是直接的data）
+        if (agentMessage.type === "tool_result") {
+          // 兼容两种格式：content.data 和直接的data
+          const contentData = agentMessage.content;
+          const contentRecord = contentData && typeof contentData === 'object' && !('productImageUrl' in contentData) 
+            ? (contentData as Record<string, unknown>) 
+            : null;
+          const toolData = (contentRecord?.data || agentMessage.data) as Record<string, unknown> | undefined;
+          if (toolData) {
+            console.log(`[API] tool_result 收到: scripts=${toolData.scripts ? `${(toolData.scripts as Array<unknown>).length}段` : '无'}, segments=${toolData.segments ? `${(toolData.segments as Array<unknown>).length}个` : '无'}, stage=${toolData.currentStage || '无'}`);
+            if (toolData.productImageUrl) state.productImageUrl = toolData.productImageUrl as string;
+            if (toolData.productName) state.productName = toolData.productName as string;
+            if (toolData.features) state.features = toolData.features as string[];
+            if (toolData.scripts) {
+              state.scripts = toolData.scripts as Array<{ id: number; script: string; feature: string; prompt?: string }>;
+              console.log(`[API] tool_result 更新 state.scripts: ${state.scripts.length} 段文案`);
             }
+            if (toolData.segments) {
+              state.segments = toolData.segments as Array<{
+                id: number;
+                script: string;
+                feature: string;
+                prompt?: string;
+                audioPath?: string;
+                audioUrl?: string;
+                videoPath?: string;
+                videoUrl?: string;
+                duration: number;
+              }>;
+              console.log(`[API] 更新 state.segments: ${state.segments.length} 个片段`);
+              // 详细日志：检查segments是否包含videoUrl
+              (toolData.segments as Array<{id?: number; videoUrl?: string}>).forEach((seg, i) => {
+                console.log(`[API] tool_result segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${seg.videoUrl?.substring(0, 50)}...`);
+              });
+              if (state.segments.length > 0 && toolData.currentStage) {
+                state.currentStage = toolData.currentStage as ChatAgentState["currentStage"];
+              }
+            }
+            if (toolData.finalVideoUrl) {
+              state.finalVideoUrl = toolData.finalVideoUrl as string;
+              state.currentStage = "done";
+            }
+            if (toolData.finalVideoPath) state.finalVideoPath = toolData.finalVideoPath as string;
+            if (toolData.finalDuration) state.finalDuration = toolData.finalDuration as number;
+            if (toolData.subtitleUrl) state.subtitleUrl = toolData.subtitleUrl as string;
+            if (toolData.currentStage) state.currentStage = toolData.currentStage as ChatAgentState["currentStage"];
           }
-          if (toolData.finalVideoUrl) {
-            state.finalVideoUrl = toolData.finalVideoUrl as string;
-            state.currentStage = "done";
-          }
-          if (toolData.finalVideoPath) state.finalVideoPath = toolData.finalVideoPath as string;
-          if (toolData.finalDuration) state.finalDuration = toolData.finalDuration as number;
-          if (toolData.subtitleUrl) state.subtitleUrl = toolData.subtitleUrl as string;
-          if (toolData.currentStage) state.currentStage = toolData.currentStage as ChatAgentState["currentStage"];
         }
         
-        // 处理 wait_feedback 更新状态
-        if (agentMessage.type === "wait_feedback" && agentMessage.data?.state) {
-          const stateData = agentMessage.data.state as ChatAgentState;
-          state.productImageUrl = stateData.productImageUrl;
-          state.productName = stateData.productName;
-          state.features = stateData.features;
-          state.scripts = stateData.scripts;
-          state.segments = stateData.segments;
-          state.currentStage = stateData.currentStage;
+        // 处理 wait_feedback 更新状态（注意：后端发送的是content.state，不是data.state）
+        if (agentMessage.type === "wait_feedback") {
+          // 兼容两种格式：content.state 和 data.state
+          const contentData = agentMessage.content;
+          const contentState = contentData && typeof contentData === 'object' && 'state' in contentData
+            ? (contentData.state as ChatAgentState)
+            : null;
+          const dataState = agentMessage.data && typeof agentMessage.data === 'object' && 'state' in agentMessage.data
+            ? (agentMessage.data.state as ChatAgentState)
+            : null;
+          const stateData = contentState || dataState;
+          if (stateData) {
+            console.log(`[API] wait_feedback 更新状态: segments=${stateData.segments?.length || 0}个, stage=${stateData.currentStage}`);
+            if (stateData.segments) {
+              state.segments = stateData.segments;
+              // 详细日志：检查segments是否包含videoUrl
+              stateData.segments.forEach((seg, i) => {
+                console.log(`[API] wait_feedback segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${seg.videoUrl?.substring(0, 50)}...`);
+              });
+            }
+            state.productImageUrl = stateData.productImageUrl;
+            state.productName = stateData.productName;
+            state.features = stateData.features;
+            state.scripts = stateData.scripts;
+            state.currentStage = stateData.currentStage;
+          }
         }
       }
       
       // 保存会话
       sessions.set(newSessionId, state);
+      
+      // 详细日志：检查最终state.segments是否包含videoUrl
+      console.log(`[API] 最终state_update: segments=${state.segments?.length || 0}个, stage=${state.currentStage}`);
+      if (state.segments && state.segments.length > 0) {
+        state.segments.forEach((seg, i) => {
+          console.log(`[API] 最终state_update segment[${i}]: id=${seg.id}, hasVideo=${!!seg.videoUrl}, videoUrl=${seg.videoUrl?.substring(0, 50)}...`);
+        });
+      }
       
       // 发送最终状态
       await writer.write(encoder.encode(`data: ${JSON.stringify({
