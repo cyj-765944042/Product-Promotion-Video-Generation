@@ -1857,14 +1857,11 @@ export default function ChatAgentPage() {
                       if (lastAssistantIdx === -1) return prev;
                       const targetMsg = prev[lastAssistantIdx];
                       const existingSegments = targetMsg.state?.segments || [];
+                      console.log(`[前端] segment_video setMessages: 索引=${lastAssistantIdx}, segments=${existingSegments.length}`);
                       const updatedSegments = existingSegments.map(seg => {
                         if (seg.id === videoSegIdNum) {
-                          return {
-                            ...seg,
-                            videoUrl: videoSegUrl,
-                            audioUrl: videoSegAudioUrl,
-                            duration: videoSegDuration,
-                          };
+                          console.log(`[前端] 更新segment ${seg.id} videoUrl=${videoSegUrl ? '有' : '无'}`);
+                          return { ...seg, videoUrl: videoSegUrl, audioUrl: videoSegAudioUrl, duration: videoSegDuration };
                         }
                         return seg;
                       });
@@ -1887,26 +1884,22 @@ export default function ChatAgentPage() {
                     setSessionState(prev => {
                       const existingSegments = prev.segments || [];
                       const updatedSegments = existingSegments.map(seg => {
-                        if (seg.id === videoSegId) {
-                          return {
-                            ...seg,
-                            videoUrl: videoSegUrl,
-                            audioUrl: videoSegAudioUrl,
-                            duration: videoSegDuration,
-                          };
+                        if (seg.id === videoSegIdNum) {  // 使用videoSegIdNum确保类型匹配
+                          return { ...seg, videoUrl: videoSegUrl, audioUrl: videoSegAudioUrl, duration: videoSegDuration };
                         }
                         return seg;
                       });
-                      if (!existingSegments.find(seg => seg.id === videoSegId)) {
+                      if (!existingSegments.find(seg => seg.id === videoSegIdNum)) {  // 使用videoSegIdNum
                         updatedSegments.push({
-                          id: videoSegId,
+                          id: videoSegIdNum,
                           videoUrl: videoSegUrl,
                           audioUrl: videoSegAudioUrl,
                           duration: videoSegDuration,
                           script: eventData.content?.script || '',
-                          prompt: '', // 视频生成时没有prompt，后续会由state_update补充
+                          prompt: '',
                         });
                       }
+                      console.log(`[前端] segment_video setSessionState: segments=${updatedSegments.length}, 有video=${updatedSegments.filter(s => s.videoUrl).length}`);
                       return { ...prev, segments: updatedSegments };
                     });
                   }
