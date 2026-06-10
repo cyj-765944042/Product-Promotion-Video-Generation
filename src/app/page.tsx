@@ -540,6 +540,8 @@ interface SessionState {
   progress?: ProgressState;
   // 视频比例：'16:9'横版 或 '9:16'竖版
   videoRatio?: string;
+  // 暂存的商品图片（未发送）
+  pendingImages?: Array<{ id: string; imageUrl: string; thumbnail?: string }>;
 }
 
 // 视频播放器组件（16:9固定比例，支持单独音频轨道，支持隐藏控制条）
@@ -976,6 +978,8 @@ export default function ChatAgentPage() {
   const [sessionState, setSessionState] = useState<SessionState>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  // 暂存的商品图片（未发送）
+  const [pendingImages, setPendingImages] = useState<Array<{ id: string; imageUrl: string; thumbnail?: string }>>([]);
   // isGenerating 改为从当前会话计算，不再使用全局状态
   // const [isGenerating, setIsGenerating] = useState(false);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
@@ -2142,7 +2146,7 @@ export default function ChatAgentPage() {
     }
   };
 
-  // 上传图片
+  // 上传图片到暂存区（不自动发送）
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) {
@@ -2172,9 +2176,17 @@ export default function ChatAgentPage() {
       const data = await response.json();
       console.log('上传成功，imageUrl:', data.imageUrl);
       
-      // 显示上传成功提示
+      // 生成缩略图
+      const thumbnail = await createThumbnail(file);
+      
+      // 存入暂存区，不自动发送
+      setPendingImages(prev => [
+        ...prev,
+        { id: Date.now().toString(), imageUrl: data.imageUrl, thumbnail }
+      ]);
+      
       setIsLoading(false);
-      sendMessage('请帮我分析这张商品图片，识别商品信息并提取卖点', data.imageUrl);
+      console.log('图片已添加到暂存区，等待发送');
     } catch (error) {
       setIsLoading(false);
       console.error('上传图片失败:', error);
@@ -2183,6 +2195,34 @@ export default function ChatAgentPage() {
     
     // 清空input，允许再次选择同一文件
     e.target.value = '';
+  };
+
+  // 创建图片缩略图
+  const createThumbnail = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        resolve(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // 删除暂存图片
+  const removePendingImage = (id: string) => {
+    setPendingImages(prev => prev.filter(img => img.id !== id));
+  };
+
+  // 发送暂存图片进行识别
+  const sendPendingImages = () => {
+    if (pendingImages.length === 0) return;
+    
+    // 取第一张图片作为主图（后续可支持多图）
+    const mainImage = pendingImages[0];
+    sendMessage('请帮我分析这张商品图片，识别商品信息并提取卖点', mainImage.imageUrl);
+    
+    // 清空暂存区
+    setPendingImages([]);
   };
 
   // 清除会话
@@ -2709,6 +2749,50 @@ export default function ChatAgentPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+          
+          {/* 商品图片暂存区 */}
+          {!isCollapsed && pendingImages.length > 0 && (
+            <div className="px-4 py-3 bg-[#F8F7F5] border-t border-[#E5E5E5]">
+              <div className="flex items-center gap-2 mb-2">
+                <ImageIcon className="w-4 h-4 text-[#7A7A7A]" />
+                <span className="text-sm text-[#666666]">商品图片</span>
+                <span className="text-xs text-[#999999]">({pendingImages.length}张)</span>
+              </div>
+              <div className="flex gap-2 items-center flex-wrap">
+                {pendingImages.map((img) => (
+                  <div key={img.id} className="relative group">
+                    <img 
+                      src={img.thumbnail || img.imageUrl} 
+                      alt="商品图片" 
+                      className="w-16 h-16 rounded-lg object-cover border border-[#E5E5E5]"
+                    />
+                    <button
+                      onClick={() => removePendingImage(img.id)}
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                <Button
+                  size="sm"
+                  className="h-8 px-3 bg-[#B999F3] hover:bg-[#D4C2F6] text-white text-xs"
+                  onClick={sendPendingImages}
+                  disabled={isLoading}
+                >
+                  开始识别
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 text-xs text-[#666666] border-[#E5E5E5]"
+                  onClick={() => setPendingImages([])}
+                >
+                  清空
+                </Button>
+              </div>
             </div>
           )}
           
