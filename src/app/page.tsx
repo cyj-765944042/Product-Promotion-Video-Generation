@@ -331,8 +331,8 @@ function SessionSidebar({
               <div className="text-sm font-medium truncate">{session.title}</div>
             </div>
             
-            {/* 第二行：右侧状态和时间 */}
-            <div className="flex justify-end items-center gap-2 mt-1">
+            {/* 第二行：左侧状态和时间 */}
+            <div className="flex justify-start items-center gap-2 mt-1">
               {session.isGenerating && (
                 <span className="text-xs text-[#B999F3] flex items-center gap-1">
                   <Loader2 className="w-3 h-3 animate-spin" />
