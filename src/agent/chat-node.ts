@@ -482,6 +482,10 @@ export async function* chatNodeStream(
         
         // 发送state_update事件，包含完整的segments（已有videoUrl）
         console.log(`[Agent] yield state_update事件: segments=${finalSegments.length}个, stage=video_generated, 包含videoUrl`);
+        // 输出完整的videoUrl确认不被截断
+        finalSegments.forEach((seg, i) => {
+          console.log(`[Agent] state_update segment[${i}]完整videoUrl: ${seg.videoUrl}`);
+        });
         yield {
           type: "state_update",
           content: {

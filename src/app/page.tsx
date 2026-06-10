@@ -1675,14 +1675,31 @@ export default function ChatAgentPage() {
 
                 case 'wait_feedback':
                   const feedbackState = eventData.data?.state || {};
-                  // 更新会话数据
+                  console.log('[前端] wait_feedback事件: feedbackState包含segments?', !!feedbackState.segments);
+                  if (feedbackState.segments) {
+                    console.log('[前端] wait_feedback segments数量:', feedbackState.segments.length);
+                    console.log('[前端] wait_feedback segments详情:', feedbackState.segments.map((s: { id: number; videoUrl?: string }) => ({ id: s.id, hasVideo: !!s.videoUrl })));
+                  }
+                  
+                  // 更新会话数据，需要合并segments保留videoUrl
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
-                    const updatedMessages = s.messages.map(m =>
-                      m.id === assistantMessage.id
-                        ? { ...m, state: { ...m.state, ...feedbackState }, isStreaming: false }
-                        : m
-                    );
+                    const updatedMessages = s.messages.map(m => {
+                      if (m.id !== assistantMessage.id) return m;
+                      const oldState = m.state || {};
+                      const oldSegments = oldState.segments || [];
+                      const newSegments = feedbackState.segments || [];
+                      // 合并segments，保留已有的videoUrl
+                      const mergedSegments = newSegments.map((newSeg: { id: number; videoUrl?: string; audioUrl?: string; duration?: number }) => {
+                        const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
+                        if (!newSeg.videoUrl && oldSeg?.videoUrl) {
+                          console.log(`[前端] wait_feedback合并: segment ${newSeg.id} 保留旧videoUrl`);
+                          return { ...newSeg, videoUrl: oldSeg.videoUrl, audioUrl: oldSeg.audioUrl, duration: oldSeg.duration };
+                        }
+                        return newSeg;
+                      });
+                      return { ...m, state: { ...oldState, ...feedbackState, segments: mergedSegments }, isStreaming: false };
+                    });
                     return { 
                       ...s, 
                       messages: updatedMessages, 
@@ -1693,13 +1710,37 @@ export default function ChatAgentPage() {
                   }));
                   if (isCurrentSession) {
                     setMessages(prev =>
-                      prev.map(m =>
-                        m.id === assistantMessage.id
-                          ? { ...m, state: { ...m.state, ...feedbackState }, isStreaming: false }
-                          : m
-                      )
+                      prev.map(m => {
+                        if (m.id !== assistantMessage.id) return m;
+                        const oldState = m.state || {};
+                        const oldSegments = oldState.segments || [];
+                        const newSegments = feedbackState.segments || [];
+                        // 合并segments，保留已有的videoUrl
+                        const mergedSegments = newSegments.map((newSeg: { id: number; videoUrl?: string; audioUrl?: string; duration?: number }) => {
+                          const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
+                          if (!newSeg.videoUrl && oldSeg?.videoUrl) {
+                            console.log(`[前端] wait_feedback setMessages合并: segment ${newSeg.id} 保留旧videoUrl`);
+                            return { ...newSeg, videoUrl: oldSeg.videoUrl, audioUrl: oldSeg.audioUrl, duration: oldSeg.duration };
+                          }
+                          return newSeg;
+                        });
+                        return { ...m, state: { ...oldState, ...feedbackState, segments: mergedSegments }, isStreaming: false };
+                      })
                     );
-                    setSessionState(prev => ({ ...prev, ...feedbackState }));
+                    setSessionState(prev => {
+                      const oldSegments = prev.segments || [];
+                      const newSegments = feedbackState.segments || [];
+                      // 合并segments，保留已有的videoUrl
+                      const mergedSegments = newSegments.map((newSeg: { id: number; videoUrl?: string; audioUrl?: string; duration?: number }) => {
+                        const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
+                        if (!newSeg.videoUrl && oldSeg?.videoUrl) {
+                          console.log(`[前端] wait_feedback setSessionState合并: segment ${newSeg.id} 保留旧videoUrl`);
+                          return { ...newSeg, videoUrl: oldSeg.videoUrl, audioUrl: oldSeg.audioUrl, duration: oldSeg.duration };
+                        }
+                        return newSeg;
+                      });
+                      return { ...prev, ...feedbackState, segments: mergedSegments };
+                    });
                     setIsLoading(false);
                     // 只更新目标会话的isGenerating状态为false
                     setSessions(prev => prev.map(s => 
