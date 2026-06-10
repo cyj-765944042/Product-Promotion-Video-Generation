@@ -1568,24 +1568,46 @@ export default function ChatAgentPage() {
                   const stateData = eventData.data || eventData.content as Record<string, unknown> || {};
                   
                   // 详细日志：检查segments数据
-                  const segments = stateData.segments as Array<{id?: number; videoUrl?: string; script?: string}> | undefined;
+                  const newSegments = stateData.segments as Array<{id?: number; videoUrl?: string; script?: string}> | undefined;
                   console.log('[前端] 收到state_update事件:', {
                     currentStage: stateData.currentStage,
-                    segmentsCount: segments?.length || 0,
-                    segmentsDetail: segments?.map(seg => ({id: seg.id, hasVideo: !!seg.videoUrl, videoUrl: seg.videoUrl?.substring(0, 30)}))
+                    segmentsCount: newSegments?.length || 0,
+                    segmentsDetail: newSegments?.map(seg => ({id: seg.id, hasVideo: !!seg.videoUrl, videoUrl: seg.videoUrl?.substring(0, 30)}))
                   });
-                  
-                  // 如果有segments且有videoUrl，直接使用新的segments
-                  if (segments && segments.length > 0 && segments.some(seg => seg.videoUrl)) {
-                    console.log('[前端] state_update包含有效videoUrl，更新segments');
-                  }
                   
                   // 更新会话数据（保存后端会话ID）
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
+                    
+                    // 找到目标消息
+                    const targetMsgIdx = s.messages.findIndex(m => m.id === assistantMessage.id);
+                    if (targetMsgIdx === -1) return s;
+                    const targetMsg = s.messages[targetMsgIdx];
+                    
+                    // 合并segments：保留已有的videoUrl
+                    const oldSegments = targetMsg.state?.segments || [];
+                    let mergedSegments = newSegments || oldSegments;
+                    
+                    if (newSegments && newSegments.length > 0) {
+                      // 合并新旧segments，保留已有的videoUrl
+                      mergedSegments = newSegments.map(newSeg => {
+                        const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
+                        // 如果新segment没有videoUrl但旧segment有，保留旧的videoUrl
+                        if (!newSeg.videoUrl && oldSeg?.videoUrl) {
+                          console.log(`[前端] state_update合并: segment ${newSeg.id}保留旧videoUrl`);
+                          return { ...newSeg, videoUrl: oldSeg.videoUrl, audioUrl: oldSeg.audioUrl, duration: oldSeg.duration };
+                        }
+                        return newSeg;
+                      });
+                      console.log('[前端] state_update合并后segments:', mergedSegments.map(seg => ({id: seg.id, hasVideo: !!seg.videoUrl})));
+                    }
+                    
+                    // 构建新的state，使用合并后的segments
+                    const mergedStateData = { ...stateData, segments: mergedSegments };
+                    
                     const updatedMessages = s.messages.map(m =>
                       m.id === assistantMessage.id
-                        ? { ...m, state: { ...m.state, ...stateData } }
+                        ? { ...m, state: { ...m.state, ...mergedStateData } }
                         : m
                     );
                     // 自动命名：如果productName首次出现且会话名称是默认的"新对话"，则自动更新为商品名称
@@ -1597,21 +1619,57 @@ export default function ChatAgentPage() {
                       ...s, 
                       title: newTitle,
                       messages: updatedMessages, 
-                      state: { ...s.state, ...stateData },
+                      state: { ...s.state, ...mergedStateData },
                       backendSessionId: newBackendSessionId,
                       updatedAt: new Date().toISOString() 
                     };
                   }));
                   if (isCurrentSession) {
                     setSessionId(newBackendSessionId);
-                    setMessages(prev =>
-                      prev.map(m =>
+                    setMessages(prev => {
+                      const targetMsgIdx = prev.findIndex(m => m.id === assistantMessage.id);
+                      if (targetMsgIdx === -1) return prev;
+                      const targetMsg = prev[targetMsgIdx];
+                      
+                      // 合并segments：保留已有的videoUrl
+                      const oldSegments = targetMsg.state?.segments || [];
+                      let mergedSegments = newSegments || oldSegments;
+                      
+                      if (newSegments && newSegments.length > 0) {
+                        mergedSegments = newSegments.map(newSeg => {
+                          const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
+                          if (!newSeg.videoUrl && oldSeg?.videoUrl) {
+                            console.log(`[前端] state_update合并: segment ${newSeg.id}保留旧videoUrl`);
+                            return { ...newSeg, videoUrl: oldSeg.videoUrl, audioUrl: oldSeg.audioUrl, duration: oldSeg.duration };
+                          }
+                          return newSeg;
+                        });
+                      }
+                      
+                      const mergedStateData = { ...stateData, segments: mergedSegments };
+                      return prev.map(m =>
                         m.id === assistantMessage.id
-                          ? { ...m, state: { ...m.state, ...stateData } }
+                          ? { ...m, state: { ...m.state, ...mergedStateData } }
                           : m
-                      )
-                    );
-                    setSessionState(prev => ({ ...prev, ...stateData }));
+                      );
+                    });
+                    // 合并sessionState中的segments
+                    setSessionState(prev => {
+                      const oldSegments = prev.segments || [];
+                      let mergedSegments = newSegments || oldSegments;
+                      
+                      if (newSegments && newSegments.length > 0) {
+                        mergedSegments = newSegments.map(newSeg => {
+                          const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
+                          if (!newSeg.videoUrl && oldSeg?.videoUrl) {
+                            return { ...newSeg, videoUrl: oldSeg.videoUrl, audioUrl: oldSeg.audioUrl, duration: oldSeg.duration };
+                          }
+                          return newSeg;
+                        });
+                      }
+                      
+                      return { ...prev, ...stateData, segments: mergedSegments };
+                    });
                   }
                   break;
 
