@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
   console.log("[Chat Agent API] 收到请求");
   
   const body = await request.json();
-  const { sessionId, message, imageUrl, productName, voiceLanguage, scripts, segments, videoRatio } = body;
+  const { sessionId, message, imageUrl, auxiliaryImages, productName, voiceLanguage, scripts, segments, videoRatio } = body;
   
   // 获取或创建会话
   let state: ChatAgentState = sessionId ? sessions.get(sessionId) || getDefaultState() : getDefaultState();
@@ -40,8 +40,22 @@ export async function POST(request: NextRequest) {
   
   // 如果有图片，添加图片信息到消息
   if (imageUrl) {
-    userMessage.content = `${message}\n\n商品图片链接：${imageUrl}`;
-    state.productImageUrl = imageUrl; // 预存储图片 URL
+    // 构建多图片消息
+    let imageMessage = `${message}\n\n【商品图片信息】`;
+    imageMessage += `\n主图片（重点参考）：${imageUrl}`;
+    
+    state.productImageUrl = imageUrl; // 存储主图片 URL
+    
+    // 如果有辅助图片，添加到消息和状态
+    if (auxiliaryImages && auxiliaryImages.length > 0) {
+      imageMessage += `\n辅助图片（补充参考）：`;
+      auxiliaryImages.forEach((img: string, index: number) => {
+        imageMessage += `\n  - 图片${index + 1}: ${img}`;
+      });
+      state.auxiliaryImages = auxiliaryImages; // 存储辅助图片 URL列表
+    }
+    
+    userMessage.content = imageMessage;
   }
   
   // 如果有商品名称，预存储

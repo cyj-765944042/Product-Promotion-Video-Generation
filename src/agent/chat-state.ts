@@ -5,8 +5,9 @@ export interface ChatAgentState {
   // 对话历史
   messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   
-  // 商品信息
-  productImageUrl?: string;
+  // 商品图片（支持多图片：主图片 + 辅助图片）
+  productImageUrl?: string;  // 主图片URL（用于视频生成的主要参考）
+  auxiliaryImages?: string[];  // 辅助图片URL列表（用于补充信息）
   productName?: string;
   category?: string;
   features: string[];

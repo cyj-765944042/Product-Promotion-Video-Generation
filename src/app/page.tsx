@@ -1346,8 +1346,8 @@ export default function ChatAgentPage() {
     setIsAtBottom(true);
   }, [messages, scrollToBottom]);
 
-  // 发送消息（支持后台执行）
-  const sendMessage = async (content: string, imageUrl?: string) => {
+  // 发送消息（支持后台执行，支持多图片）
+  const sendMessage = async (content: string, imageUrl?: string, auxiliaryImages?: string[]) => {
     if (!content.trim() && !imageUrl) return;
     if (!currentSessionId) return; // 确保有当前会话ID
 
@@ -1444,7 +1444,8 @@ export default function ChatAgentPage() {
         body: JSON.stringify({
           sessionId: targetBackendSessionId, // 使用目标会话的后端sessionId
           message: content,
-          imageUrl,
+          imageUrl, // 主图片URL
+          auxiliaryImages, // 辅助图片URL列表
           productName: targetProductName, // 使用目标会话的productName
           voiceLanguage: targetVoiceLanguage, // 使用目标会话的配音语言
           scripts: targetSessionState.scripts, // 发送scripts数据，避免会话状态丢失时无法生成视频
@@ -2230,13 +2231,18 @@ export default function ChatAgentPage() {
     setPendingImages(prev => prev.filter(img => img.id !== id));
   };
 
-  // 发送暂存图片进行识别
+  // 发送暂存图片进行识别（支持多图片：主图片 + 辅助图片）
   const sendPendingImages = () => {
     if (pendingImages.length === 0) return;
     
-    // 取第一张图片作为主图（后续可支持多图）
+    // 第一张图片作为主图片，其他图片作为辅助图片
     const mainImage = pendingImages[0];
-    sendMessage('请帮我分析这张商品图片，识别商品信息并提取卖点', mainImage.imageUrl);
+    const auxiliaryImageUrls = pendingImages.length > 1 
+      ? pendingImages.slice(1).map(img => img.imageUrl) 
+      : undefined;
+    
+    // 发送多图片进行商品识别
+    sendMessage('请帮我分析这些商品图片，识别商品信息并提取卖点。第一张图片是主图片，其他图片是辅助图片，请综合分析所有图片信息。', mainImage.imageUrl, auxiliaryImageUrls);
     
     // 清空暂存区
     setPendingImages([]);

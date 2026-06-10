@@ -135,15 +135,23 @@ export interface SessionState {
 }
 
 /**
- * 1. 上传图片并识别商品
+ * 1. 上传图片并识别商品（支持多图片：主图片 + 辅助图片）
  * 调用 /api/identify-product
+ * @param imageUrl 主图片URL（重点参考）
+ * @param auxiliaryImages 辅助图片URL列表（补充参考）
+ * @param _productName 商品名称（可选）
+ * @param customHeaders 自定义请求头
  */
 export async function uploadAndIdentifyProduct(
   imageUrl: string,
+  auxiliaryImages?: string[],
   _productName?: string,
   customHeaders?: Record<string, string>
 ): Promise<ToolResult> {
-  console.log('[Tool] 调用 /api/identify-product');
+  console.log('[Tool] 调用 /api/identify-product，主图片:', imageUrl);
+  if (auxiliaryImages && auxiliaryImages.length > 0) {
+    console.log('[Tool] 辅助图片:', auxiliaryImages.join(', '));
+  }
   
   try {
     // 如果 imageUrl 是远程 URL，需要先下载再上传
@@ -180,7 +188,30 @@ export async function uploadAndIdentifyProduct(
       }
       
       const imageFile = new File([new Uint8Array(imageBuffer)], 'product.jpg', { type: 'image/jpeg' });
-      formData.append('image', imageFile);
+      formData.append('image', imageFile); // 主图片
+      formData.append('isMainImage', 'true'); // 标记为主图片
+      
+      // 下载并上传辅助图片
+      if (auxiliaryImages && auxiliaryImages.length > 0) {
+        for (let i = 0; i < auxiliaryImages.length; i++) {
+          const auxUrl = auxiliaryImages[i];
+          if (auxUrl.startsWith('http')) {
+            try {
+              const auxResponse = await axios.get(auxUrl, {
+                responseType: 'arraybuffer',
+                headers: customHeaders,
+                timeout: 15000
+              });
+              const auxBuffer = Buffer.from(auxResponse.data);
+              const auxFile = new File([new Uint8Array(auxBuffer)], `auxiliary_${i}.jpg`, { type: 'image/jpeg' });
+              formData.append('auxiliaryImages', auxFile); // 辅助图片
+              console.log(`[Tool] 辅助图片${i + 1}已上传: ${auxUrl}`);
+            } catch (auxError) {
+              console.warn(`[Tool] 辅助图片${i + 1}下载失败，跳过: ${auxUrl}`);
+            }
+          }
+        }
+      }
     } else {
       // 本地路径，读取文件
       const fs = await import('fs');

@@ -88,8 +88,9 @@ const SYSTEM_PROMPT = `你是专业的商家带货视频智能助手【货小影
 </tool_call>
 
 ## 可用工具
-1. uploadAndIdentifyProduct - 上传图片并识别商品
-   输入: { imageUrl: string, productName?: string }
+1. uploadAndIdentifyProduct - 上传图片并识别商品（支持多图片）
+   输入: { imageUrl: string, auxiliaryImages?: string[], productName?: string }
+   说明: imageUrl是主图片（重点参考），auxiliaryImages是辅助图片列表（补充参考）
    输出: { productName, features, productImageUrl } - 必须显示
    
 2. generateScripts - 生成带货文案
@@ -170,6 +171,7 @@ async function executeTool(
     case "uploadAndIdentifyProduct":
       return await uploadAndIdentifyProduct(
         input.imageUrl as string,
+        input.auxiliaryImages as string[] | undefined, // 辅助图片列表
         input.productName as string | undefined,
         customHeaders
       );
