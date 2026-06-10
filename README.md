@@ -1,363 +1,197 @@
-# projects
+# 货小影 (HuoXiaoYing)
 
-这是一个基于 [Next.js 16](https://nextjs.org) + [shadcn/ui](https://ui.shadcn.com) 的全栈应用项目，由扣子编程 CLI 创建。
+AI商家带货视频生成工具，面向电商商家、带货主播，提供一键生成带货短视频的能力。
+
+## 功能特性
+
+- **智能商品识别**：上传商品图片，自动识别商品名称和核心卖点
+- **多图片支持**：支持同时上传多张图片（主图+辅图），综合分析商品信息
+- **AI文案生成**：基于商品特点自动生成带货文案和画面描述
+- **视频比例选择**：支持横版(16:9)和竖版(9:16)两种视频比例
+- **语言选择**：支持普通话和粤语两种配音语言
+- **分段视频生成**：每个文案分段生成独立视频片段
+- **智能合成**：自动将所有片段合成为完整带货视频
+- **实时预览**：支持分段视频和最终视频在线预览
+- **一键下载**：生成完成后可直接下载视频文件
+
+## 工作流程
+
+```
+用户上传图片 → 商品识别 → 自动生成文案 → 用户确认/修改文案
+→ 生成分段视频 → 用户预览/调整 → 合成最终视频 → 下载
+```
+
+### 阶段说明
+
+| 阶段 | 说明 | 用户操作 |
+|-----|------|---------|
+| 商品识别 | 分析图片，提取商品信息 | 上传图片 |
+| 文案生成 | 生成带货文案和画面描述 | 等待/修改 |
+| 视频生成 | 为每个分段生成视频+配音 | 预览/重新生成 |
+| 视频合成 | 合成最终视频+字幕+BGM | 确认合成 |
+| 完成 | 输出成品视频 | 下载 |
 
 ## 快速开始
+
+### 环境配置
+
+在 `.env.local` 文件中配置以下环境变量：
+
+```bash
+# 火山引擎 API 配置
+ARK_API_KEY=your_api_key          # 大模型 API 密钥
+ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+VIDEO_MODEL_EP=ep-xxx             # 视频生成模型 endpoint
+
+# 对象存储配置
+S3_ACCESS_KEY=your_access_key
+S3_SECRET_KEY=your_secret_key
+S3_BUCKET=your_bucket_name
+S3_REGION=cn-beijing
+S3_ENDPOINT=https://tos-cn-beijing.volces.com
+```
 
 ### 启动开发服务器
 
 ```bash
-coze dev
+pnpm install
+pnpm dev
 ```
 
-启动后，在浏览器中打开 [http://localhost:5000](http://localhost:5000) 查看应用。
-
-开发服务器支持热更新，修改代码后页面会自动刷新。
+启动后访问 [http://localhost:5000](http://localhost:5000)
 
 ### 构建生产版本
 
 ```bash
-coze build
-```
-
-### 启动生产服务器
-
-```bash
-coze start
+pnpm build
+pnpm start
 ```
 
 ## 项目结构
 
 ```
 src/
-├── app/                      # Next.js App Router 目录
-│   ├── layout.tsx           # 根布局组件
-│   ├── page.tsx             # 首页
-│   ├── globals.css          # 全局样式（包含 shadcn 主题变量）
-│   └── [route]/             # 其他路由页面
-├── components/              # React 组件目录
-│   └── ui/                  # shadcn/ui 基础组件（优先使用）
-│       ├── button.tsx
-│       ├── card.tsx
-│       └── ...
-├── lib/                     # 工具函数库
-│   └── utils.ts            # cn() 等工具函数
-└── hooks/                   # 自定义 React Hooks（可选）
-
-server/
-├── index.ts                 # 自定义服务器入口
-├── tsconfig.json           # Server TypeScript 配置
-└── dist/                    # 编译输出目录（自动生成）
+├── app/
+│   ├── page.tsx              # 主页面（对话式Agent UI）
+│   ├── layout.tsx            # 根布局
+│   ├── globals.css           # 全局样式
+│   └── api/
+│       ├── chat-agent/       # 对话式 Agent API (SSE流式)
+│       ├── generate-video/   # 视频生成 API
+│       ├── generate-tts/     # 语音合成 API
+│       └── upload-image/     # 图片上传 API
+├── agent/
+│   ├── chat-node.ts          # Agent 对话节点逻辑
+│   ├── chat-state.ts         # Agent 状态定义
+│   ├── tools.ts              # Agent 工具函数
+│   ├── graph.ts              # LangGraph 工作流图
+│   ├── state.ts              # LangGraph 状态定义
+│   └── nodes/                # LangGraph 节点函数
+├── components/ui/            # shadcn/ui 组件库
+├── lib/
+│   ├── utils.ts              # 工具函数
+│   └── storage.ts            # 对象存储工具
+└── hooks/                    # 自定义 Hooks
 ```
 
-## 核心开发规范
+## 技术架构
 
-### 1. 组件开发
+### Agent 架构
 
-**优先使用 shadcn/ui 基础组件**
+项目采用**问答式 Agent**架构，基于 LangGraph 工作流：
 
-本项目已预装完整的 shadcn/ui 组件库，位于 `src/components/ui/` 目录。开发时应优先使用这些组件作为基础：
+- **LLM调度**：使用 `doubao-seed-1-8-251228` 模型进行对话调度
+- **多模态识别**：商品图片识别使用多模态大模型
+- **工具调用**：支持图片上传、文案生成、视频生成、视频合成等工具
+- **SSE流式输出**：实时推送进度和结果
 
-```tsx
-// ✅ 推荐：使用 shadcn 基础组件
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+### 核心工具
 
-export default function MyComponent() {
-  return (
-    <Card>
-      <CardHeader>标题</CardHeader>
-      <CardContent>
-        <Input placeholder="输入内容" />
-        <Button>提交</Button>
-      </CardContent>
-    </Card>
-  );
-}
-```
+| 工具 | 功能 |
+|-----|------|
+| `uploadAndIdentifyProduct` | 上传图片并识别商品信息 |
+| `generateScripts` | 生成带货文案和画面Prompt |
+| `generateVideoSegments` | 生成视频片段（TTS+视频生成） |
+| `composeFinalVideo` | 合成最终视频（BGM+字幕） |
+| `regenerateSegment` | 重新生成单个视频片段 |
+| `modifyScript` | 修改文案内容 |
 
-**可用的 shadcn 组件清单**
+### 依赖服务
 
-- 表单：`button`, `input`, `textarea`, `select`, `checkbox`, `radio-group`, `switch`, `slider`
-- 布局：`card`, `separator`, `tabs`, `accordion`, `collapsible`, `scroll-area`
-- 反馈：`alert`, `alert-dialog`, `dialog`, `toast`, `sonner`, `progress`
-- 导航：`dropdown-menu`, `menubar`, `navigation-menu`, `context-menu`
-- 数据展示：`table`, `avatar`, `badge`, `hover-card`, `tooltip`, `popover`
-- 其他：`calendar`, `command`, `carousel`, `resizable`, `sidebar`
+| 服务 | 用途 | 模型/配置 |
+|-----|------|---------|
+| 火山引擎 LLM | 对话调度 | `doubao-seed-1-8-251228` |
+| 火山引擎 多模态 | 商品识别 | 多模态模型 |
+| 火山引擎 TTS | 语音合成 | `zh_female_shuangkuaisisi_moon_bigtts` |
+| 火山引擎 视频生成 | 视频生成 | `ep-xxx` |
+| 火山引擎 对象存储 | 文件存储 | S3兼容存储 |
 
-详见 `src/components/ui/` 目录下的具体组件实现。
+## 开发规范
 
-### 2. 路由开发
+### 包管理
 
-Next.js 使用文件系统路由，在 `src/app/` 目录下创建文件夹即可添加路由：
+**必须使用 pnpm** 作为包管理器：
 
 ```bash
-# 创建新路由 /about
-src/app/about/page.tsx
-
-# 创建动态路由 /posts/[id]
-src/app/posts/[id]/page.tsx
-
-# 创建路由组（不影响 URL）
-src/app/(marketing)/about/page.tsx
-
-# 创建 API 路由
-src/app/api/users/route.ts
-```
-
-**页面组件示例**
-
-```tsx
-// src/app/about/page.tsx
-import { Button } from '@/components/ui/button';
-
-export const metadata = {
-  title: '关于我们',
-  description: '关于页面描述',
-};
-
-export default function AboutPage() {
-  return (
-    <div>
-      <h1>关于我们</h1>
-      <Button>了解更多</Button>
-    </div>
-  );
-}
-```
-
-**动态路由示例**
-
-```tsx
-// src/app/posts/[id]/page.tsx
-export default async function PostPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-
-  return <div>文章 ID: {id}</div>;
-}
-```
-
-**API 路由示例**
-
-```tsx
-// src/app/api/users/route.ts
-import { NextResponse } from 'next/server';
-
-export async function GET() {
-  return NextResponse.json({ users: [] });
-}
-
-export async function POST(request: Request) {
-  const body = await request.json();
-  return NextResponse.json({ success: true });
-}
-```
-
-### 3. 依赖管理
-
-**必须使用 pnpm 管理依赖**
-
-```bash
-# ✅ 安装依赖
+# ✅ 正确
 pnpm install
-
-# ✅ 添加新依赖
 pnpm add package-name
 
-# ✅ 添加开发依赖
-pnpm add -D package-name
-
-# ❌ 禁止使用 npm 或 yarn
-# npm install  # 错误！
-# yarn add     # 错误！
+# ❌ 禁止
+npm install
+yarn add
 ```
 
-项目已配置 `preinstall` 脚本，使用其他包管理器会报错。
+### UI 组件
 
-### 4. 样式开发
-
-**使用 Tailwind CSS v4**
-
-本项目使用 Tailwind CSS v4 进行样式开发，并已配置 shadcn 主题变量。
+优先使用 `src/components/ui/` 中的 shadcn/ui 组件：
 
 ```tsx
-// 使用 Tailwind 类名
-<div className="flex items-center gap-4 p-4 rounded-lg bg-background">
-  <Button className="bg-primary text-primary-foreground">
-    主要按钮
-  </Button>
-</div>
-
-// 使用 cn() 工具函数合并类名
-import { cn } from '@/lib/utils';
-
-<div className={cn(
-  "base-class",
-  condition && "conditional-class",
-  className
-)}>
-  内容
-</div>
-```
-
-**主题变量**
-
-主题变量定义在 `src/app/globals.css` 中，支持亮色/暗色模式：
-
-- `--background`, `--foreground`
-- `--primary`, `--primary-foreground`
-- `--secondary`, `--secondary-foreground`
-- `--muted`, `--muted-foreground`
-- `--accent`, `--accent-foreground`
-- `--destructive`, `--destructive-foreground`
-- `--border`, `--input`, `--ring`
-
-### 5. 表单开发
-
-推荐使用 `react-hook-form` + `zod` 进行表单开发：
-
-```tsx
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-
-const formSchema = z.object({
-  username: z.string().min(2, '用户名至少 2 个字符'),
-  email: z.string().email('请输入有效的邮箱'),
-});
-
-export default function MyForm() {
-  const form = useForm({
-    resolver: zodResolver(formSchema),
-    defaultValues: { username: '', email: '' },
-  });
-
-  const onSubmit = (data: z.infer<typeof formSchema>) => {
-    console.log(data);
-  };
-
-  return (
-    <form onSubmit={form.handleSubmit(onSubmit)}>
-      <Input {...form.register('username')} />
-      <Input {...form.register('email')} />
-      <Button type="submit">提交</Button>
-    </form>
-  );
-}
+import { Card, CardContent } from '@/components/ui/card';
 ```
 
-### 6. 数据获取
+### 样式开发
 
-**服务端组件（推荐）**
+使用 Tailwind CSS v4：
 
 ```tsx
-// src/app/posts/page.tsx
-async function getPosts() {
-  const res = await fetch('https://api.example.com/posts', {
-    cache: 'no-store', // 或 'force-cache'
-  });
-  return res.json();
-}
-
-export default async function PostsPage() {
-  const posts = await getPosts();
-
-  return (
-    <div>
-      {posts.map(post => (
-        <div key={post.id}>{post.title}</div>
-      ))}
-    </div>
-  );
-}
+<div className="flex items-center gap-4 p-4 rounded-lg">
+  <Button className="bg-primary text-white">提交</Button>
+</div>
 ```
 
-**客户端组件**
+### TypeScript 规范
 
-```tsx
-'use client';
-
-import { useEffect, useState } from 'react';
-
-export default function ClientComponent() {
-  const [data, setData] = useState(null);
-
-  useEffect(() => {
-    fetch('/api/data')
-      .then(res => res.json())
-      .then(setData);
-  }, []);
-
-  return <div>{JSON.stringify(data)}</div>;
-}
-```
-
-## 常见开发场景
-
-### 添加新页面
-
-1. 在 `src/app/` 下创建文件夹和 `page.tsx`
-2. 使用 shadcn 组件构建 UI
-3. 根据需要添加 `layout.tsx` 和 `loading.tsx`
-
-### 创建业务组件
-
-1. 在 `src/components/` 下创建组件文件（非 UI 组件）
-2. 优先组合使用 `src/components/ui/` 中的基础组件
-3. 使用 TypeScript 定义 Props 类型
-
-### 添加全局状态
-
-推荐使用 React Context 或 Zustand：
-
-```tsx
-// src/lib/store.ts
-import { create } from 'zustand';
-
-interface Store {
-  count: number;
-  increment: () => void;
-}
-
-export const useStore = create<Store>((set) => ({
-  count: 0,
-  increment: () => set((state) => ({ count: state.count + 1 })),
-}));
-```
-
-### 集成数据库
-
-推荐使用 Prisma 或 Drizzle ORM，在 `src/lib/db.ts` 中配置。
+- 严格模式开发，禁止隐式 `any`
+- 所有函数参数和返回值必须标注类型
+- 使用 `@/` 路径别名导入模块
 
 ## 技术栈
 
-- **框架**: Next.js 16.1.1 (App Router)
-- **UI 组件**: shadcn/ui (基于 Radix UI)
-- **样式**: Tailwind CSS v4
-- **表单**: React Hook Form + Zod
-- **图标**: Lucide React
-- **字体**: Geist Sans & Geist Mono
-- **包管理器**: pnpm 9+
-- **TypeScript**: 5.x
+| 类别 | 技术 |
+|-----|------|
+| 框架 | Next.js 16 (App Router) |
+| 核心 | React 19 |
+| 语言 | TypeScript 5 |
+| UI组件 | shadcn/ui (Radix UI) |
+| 样式 | Tailwind CSS v4 |
+| 图标 | Lucide React |
+| 工作流 | LangGraph |
+| 包管理 | pnpm |
 
 ## 参考文档
 
 - [Next.js 官方文档](https://nextjs.org/docs)
 - [shadcn/ui 组件文档](https://ui.shadcn.com)
 - [Tailwind CSS 文档](https://tailwindcss.com/docs)
-- [React Hook Form](https://react-hook-form.com)
+- [LangGraph 文档](https://langchain-ai.github.io/langgraph/)
+- [火山引擎 API 文档](https://www.volcengine.com/docs)
 
 ## 重要提示
 
-1. **必须使用 pnpm** 作为包管理器
-2. **优先使用 shadcn/ui 组件** 而不是从零开发基础组件
-3. **遵循 Next.js App Router 规范**，正确区分服务端/客户端组件
-4. **使用 TypeScript** 进行类型安全开发
-5. **使用 `@/` 路径别名** 导入模块（已配置）
+1. **必须配置正确的API密钥** 才能使用视频生成功能
+2. **必须使用 pnpm** 作为包管理器
+3. **优先使用 shadcn/ui 组件** 构建UI
+4. **遵循 Next.js App Router 规范** 开发
+5. **视频生成超时时间** 已设置为5分钟，支持较长的生成过程
