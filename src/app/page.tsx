@@ -2371,14 +2371,29 @@ export default function ChatAgentPage() {
           <div className="bg-white rounded-xl p-3 shadow-sm">
             <VideoPlayer videoUrl={msgState.finalVideoUrl} localVideoPath={msgState.localVideoPath} ratio={videoRatio} size="final" />
             <div className="mt-2 flex gap-2">
-              <a
-                href={videoSrc}
-                download
+              <button
+                onClick={async () => {
+                  try {
+                    const response = await fetch(videoSrc);
+                    const blob = await response.blob();
+                    const blobUrl = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = blobUrl;
+                    link.download = `货小影_${new Date().toISOString().slice(0,10)}.mp4`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    window.URL.revokeObjectURL(blobUrl);
+                  } catch (error) {
+                    console.error('下载失败:', error);
+                    window.open(videoSrc, '_blank');
+                  }
+                }}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#B999F3] text-white rounded-lg text-sm hover:bg-[#D4C2F6] transition-colors"
               >
                 <Download className="w-4 h-4" />
                 下载视频
-              </a>
+              </button>
               <Button variant="outline" size="sm" onClick={clearSession}>
                 开始新创作
               </Button>
