@@ -2782,18 +2782,50 @@ export default function ChatAgentPage() {
                 <ImageIcon className="w-4 h-4 text-[#7A7A7A]" />
                 <span className="text-sm text-[#666666]">商品图片</span>
                 <span className="text-xs text-[#999999]">({pendingImages.length}张)</span>
+                {pendingImages.length > 1 && (
+                  <span className="text-xs text-[#B999F3]">· 第一张为主图</span>
+                )}
               </div>
               <div className="flex gap-2 items-center flex-wrap">
-                {pendingImages.map((img) => (
-                  <div key={img.id} className="relative group">
+                {pendingImages.map((img, index) => (
+                  <div 
+                    key={img.id} 
+                    className="relative group cursor-pointer"
+                    onClick={() => {
+                      // 点击设置为主图（移动到第一位）
+                      if (index > 0) {
+                        const newImages = [...pendingImages];
+                        const clickedImg = newImages.splice(index, 1)[0];
+                        newImages.unshift(clickedImg);
+                        setPendingImages(newImages);
+                      }
+                    }}
+                    title={index === 0 ? '主图（重点参考）' : `辅图${index}（点击设为主图）`}
+                  >
                     <img 
                       src={img.thumbnail || img.imageUrl} 
-                      alt="商品图片" 
-                      className="w-16 h-16 rounded-lg object-cover border border-[#E5E5E5]"
+                      alt={index === 0 ? '主图' : `辅图${index}`} 
+                      className={`w-16 h-16 rounded-lg object-cover ${
+                        index === 0 
+                          ? 'border-2 border-[#B999F3] ring-2 ring-[#D4C2F6]/30' 
+                          : 'border border-[#E5E5E5]'
+                      }`}
                     />
+                    {/* 主图/辅图标识 */}
+                    <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-xs font-medium ${
+                      index === 0 
+                        ? 'bg-[#B999F3] text-white' 
+                        : 'bg-[#F1F3F5] text-[#666666]'
+                    }`}>
+                      {index === 0 ? '主图' : `辅${index}`}
+                    </div>
+                    {/* 删除按钮 */}
                     <button
-                      onClick={() => removePendingImage(img.id)}
-                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removePendingImage(img.id);
+                      }}
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-sm"
                     >
                       ×
                     </button>
