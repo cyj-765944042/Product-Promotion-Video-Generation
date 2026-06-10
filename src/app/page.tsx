@@ -1853,7 +1853,14 @@ export default function ChatAgentPage() {
                   }));
                   if (isCurrentSession) {
                     setMessages(prev => {
-                      const lastAssistantIdx = prev.findIndex(m => m.role === 'assistant');
+                      // 从后往前找到最后一条assistant消息（与setSessions保持一致）
+                      let lastAssistantIdx = -1;
+                      for (let i = prev.length - 1; i >= 0; i--) {
+                        if (prev[i].role === 'assistant') {
+                          lastAssistantIdx = i;
+                          break;
+                        }
+                      }
                       if (lastAssistantIdx === -1) return prev;
                       const targetMsg = prev[lastAssistantIdx];
                       const existingSegments = targetMsg.state?.segments || [];
