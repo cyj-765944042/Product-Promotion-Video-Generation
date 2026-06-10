@@ -617,12 +617,14 @@ function VideoPlayer({
   audioUrl,
   showControls = true,
   ratio = '16:9',
+  size = 'segment', // 默认分段视频尺寸
 }: {
   videoUrl?: string;
   localVideoPath?: string;
   audioUrl?: string;
   showControls?: boolean;
   ratio?: '16:9' | '9:16';
+  size?: 'segment' | 'final'; // 分段视频小，合成视频大
 }) {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -633,8 +635,15 @@ function VideoPlayer({
   const effectiveVideoUrl = localVideoPath || (videoUrl ? getAccessibleUrl(videoUrl) : '');
   const effectiveAudioUrl = audioUrl ? getAccessibleUrl(audioUrl) : '';
 
-  // 根据比例确定aspect ratio类名，竖版视频限制最大高度
-  const aspectClass = ratio === '9:16' ? 'aspect-[9/16] max-h-[350px]' : 'aspect-video';
+  // 根据比例和尺寸确定aspect ratio类名
+  // 竖版视频限制最大高度：分段视频小，合成视频大
+  const maxHeightClass = size === 'final' 
+    ? 'max-h-[60vh]' // 合成视频：占窗口60%，不超过80%
+    : 'max-h-[220px]'; // 分段视频：较小的固定高度
+  
+  const aspectClass = ratio === '9:16' 
+    ? `aspect-[9/16] ${maxHeightClass}` 
+    : 'aspect-video max-w-full';
 
   // 点击播放按钮
   const handlePlayClick = useCallback(() => {
@@ -2360,7 +2369,7 @@ export default function ChatAgentPage() {
         <div className="space-y-3">
           <p className="text-sm">{filterSystemCommands(message.content)}</p>
           <div className="bg-white rounded-xl p-3 shadow-sm">
-            <VideoPlayer videoUrl={msgState.finalVideoUrl} localVideoPath={msgState.localVideoPath} ratio={videoRatio} />
+            <VideoPlayer videoUrl={msgState.finalVideoUrl} localVideoPath={msgState.localVideoPath} ratio={videoRatio} size="final" />
             <div className="mt-2 flex gap-2">
               <a
                 href={videoSrc}
@@ -2437,7 +2446,7 @@ export default function ChatAgentPage() {
                     return (
                     <div key={segment.id} className="bg-white rounded-xl shadow-md overflow-hidden">
                       <div className={`relative ${segAspectClass} bg-gray-900`}>
-                        <VideoPlayer videoUrl={segment.videoUrl} ratio={segVideoRatio} />
+                        <VideoPlayer videoUrl={segment.videoUrl} ratio={segVideoRatio} size="segment" />
                       </div>
                       <div className="p-3">
                         <p className="text-xs text-[#666666] line-clamp-2">{segment.script}</p>
@@ -2505,6 +2514,7 @@ export default function ChatAgentPage() {
                           audioUrl={segment.audioUrl}
                           showControls={true}
                           ratio={segVideoRatio}
+                          size="segment"
                         />
                       </div>
                       {/* 文案与操作区 */}
