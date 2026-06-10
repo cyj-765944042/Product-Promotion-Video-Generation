@@ -368,6 +368,9 @@ export async function POST(request: NextRequest) {
   const segmentsJson = formData.get('segments') as string;
   let imageUrl = formData.get('imageUrl') as string | null;
   const productImageFile = formData.get('productImage') as File | null;
+  const ratio = (formData.get('ratio') as string) || '16:9'; // 默认16:9横版，可选9:16竖版
+  
+  console.log(`视频比例设置: ${ratio}`);
 
   // Upload product image BEFORE creating the stream (if needed)
   if (!imageUrl && productImageFile && productImageFile.size > 0) {
@@ -653,10 +656,10 @@ export async function POST(request: NextRequest) {
           // API requires integer duration, so round to nearest integer
           const videoDuration = Math.max(5, Math.round(audioInfo.duration));
           
-          console.log(`开始生成第 ${i + 1} 段视频（${videoDuration}秒）...`);
+          console.log(`开始生成第 ${i + 1} 段视频（${videoDuration}秒，${ratio}比例）...`);
           
-          // Generate cache key for this segment
-          const cacheKey = getVideoTaskCacheKey(i, promptText, videoDuration);
+          // Generate cache key for this segment (include ratio to differentiate)
+          const cacheKey = getVideoTaskCacheKey(i, promptText, videoDuration) + `_${ratio}`;
           
           // Use task caching to avoid duplicate generation
           const videoResponse = await generateVideoWithTaskCache(
@@ -665,7 +668,7 @@ export async function POST(request: NextRequest) {
             {
               model: videoModel,
               duration: videoDuration,
-              ratio: '16:9',
+              ratio: ratio, // 使用用户选择的视频比例
               resolution: '720p',
               generateAudio: false, // Don't generate audio, we'll add our own
               watermark: false, // Disable AI watermark

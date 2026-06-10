@@ -538,6 +538,8 @@ interface SessionState {
   finalDuration?: number;
   currentStage?: 'idle' | 'identifying' | 'product_identified' | 'script_generated' | 'video_generating' | 'video_generated' | 'composing' | 'done';
   progress?: ProgressState;
+  // 视频比例：'16:9'横版 或 '9:16'竖版
+  videoRatio?: string;
 }
 
 // 视频播放器组件（16:9固定比例，支持单独音频轨道，支持隐藏控制条）
@@ -1443,6 +1445,7 @@ export default function ChatAgentPage() {
           voiceLanguage: targetVoiceLanguage, // 使用目标会话的配音语言
           scripts: targetSessionState.scripts, // 发送scripts数据，避免会话状态丢失时无法生成视频
           segments: targetSessionState.segments, // 发送segments数据
+          videoRatio: targetSessionState.videoRatio || '16:9', // 发送视频比例参数
         }),
         signal: abortController.signal, // 添加AbortController signal
       });
@@ -2417,6 +2420,34 @@ export default function ChatAgentPage() {
           {/* 底部统一操作按钮 */}
           {!isDone && (
             <div className="mt-4 p-3 bg-white rounded-lg shadow-sm border border-[#E5E5E5]">
+              {/* 视频比例选择 - 只在生成分段视频阶段显示 */}
+              {!hasVideoSegments && msgState.currentStage === 'script_generated' && !isGenerating && (
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="text-sm text-[#666666]">视频比例：</span>
+                  <div className="flex gap-2">
+                    <button
+                      className={`px-3 py-1 text-sm rounded-md border transition-colors ${
+                        sessionState.videoRatio === '16:9'
+                          ? 'bg-[#ECE6F7] border-[#B999F3] text-[#B999F3]'
+                          : 'bg-white border-[#E5E5E5] text-[#666666] hover:border-[#D4C2F6]'
+                      }`}
+                      onClick={() => setSessionState(prev => ({ ...prev, videoRatio: '16:9' }))}
+                    >
+                      横版 16:9
+                    </button>
+                    <button
+                      className={`px-3 py-1 text-sm rounded-md border transition-colors ${
+                        sessionState.videoRatio === '9:16'
+                          ? 'bg-[#ECE6F7] border-[#B999F3] text-[#B999F3]'
+                          : 'bg-white border-[#E5E5E5] text-[#666666] hover:border-[#D4C2F6]'
+                      }`}
+                      onClick={() => setSessionState(prev => ({ ...prev, videoRatio: '9:16' }))}
+                    >
+                      竖版 9:16
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-sm text-[#666666]">
                   {isGenerating ? '正在生成中，请稍候...' : 

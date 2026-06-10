@@ -41,6 +41,9 @@ export interface ChatAgentState {
   // 配音语言
   voiceLanguage?: string;
   
+  // 视频比例：'16:9'横版 或 '9:16'竖版
+  videoRatio?: string;
+  
   // 当前阶段（更细化的阶段划分）
   currentStage: "idle" | "identifying" | "product_identified" | "script_generated" | "video_generated" | "composing" | "done";
   

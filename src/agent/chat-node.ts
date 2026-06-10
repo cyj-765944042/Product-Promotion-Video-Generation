@@ -398,7 +398,8 @@ export async function* chatNodeStream(
         scriptsToUse,
         state.productImageUrl || currentState.productImageUrl || "",
         state.productName || currentState.productName || "",
-        customHeaders
+        customHeaders,
+        state.videoRatio || currentState.videoRatio // 传递视频比例参数
       );
       
       let toolResult: ToolResult | null = null;

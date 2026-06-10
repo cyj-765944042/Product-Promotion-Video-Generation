@@ -373,15 +373,18 @@ export async function* generateVideoSegmentsStream(
   scripts: Array<{ id: number; script: string; prompt?: string }>,
   productImageUrl: string,
   productName: string,
-  customHeaders?: Record<string, string>
+  customHeaders?: Record<string, string>,
+  ratio?: string // 视频比例：'16:9'横版 或 '9:16'竖版
 ): AsyncGenerator<{ type: 'segment_video' | 'result'; content?: unknown; data?: unknown }> {
+  const videoRatio = ratio || '16:9'; // 默认16:9横版
   console.log('[Tool] 调用 /api/generate-video，每段使用对应Prompt');
-  console.log(`[Tool] scripts数量=${scripts.length}`);
+  console.log(`[Tool] scripts数量=${scripts.length}, 视频比例=${videoRatio}`);
   
   try {
     const formData = new FormData();
     formData.append('productName', productName);
     formData.append('imageUrl', productImageUrl); // API 期望的参数名
+    formData.append('ratio', videoRatio); // 传递视频比例
     
     // 将文案转为 JSON（包含每段的prompt），API 期望的参数名是 segments
     const segmentsForRequest = scripts.map(s => ({

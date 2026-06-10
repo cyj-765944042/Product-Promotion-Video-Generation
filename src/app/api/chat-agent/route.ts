@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
   console.log("[Chat Agent API] 收到请求");
   
   const body = await request.json();
-  const { sessionId, message, imageUrl, productName, voiceLanguage, scripts, segments } = body;
+  const { sessionId, message, imageUrl, productName, voiceLanguage, scripts, segments, videoRatio } = body;
   
   // 获取或创建会话
   let state: ChatAgentState = sessionId ? sessions.get(sessionId) || getDefaultState() : getDefaultState();
@@ -52,6 +52,12 @@ export async function POST(request: NextRequest) {
   // 如果有配音语言，预存储
   if (voiceLanguage) {
     state.voiceLanguage = voiceLanguage;
+  }
+  
+  // 如果有视频比例，预存储
+  if (videoRatio) {
+    state.videoRatio = videoRatio;
+    console.log(`[API] 视频比例设置为: ${videoRatio}`);
   }
   
   state.messages = [...state.messages, userMessage];
