@@ -357,7 +357,7 @@ function SessionSidebar({
                     e.stopPropagation();
                     setOpenLangDropdownId(openLangDropdownId === session.id ? null : session.id);
                   }}
-                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-[#FFF0E6] text-[#7E22CE] hover:bg-[#FFE4D0] transition-colors"
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-[#F97316] text-white hover:bg-[#EA580C] shadow-sm transition-colors"
                   title="选择配音语言"
                 >
                   <Globe className="w-3.5 h-3.5" />
@@ -402,7 +402,7 @@ function SessionSidebar({
                     e.stopPropagation();
                     setOpenRatioDropdownId(openRatioDropdownId === session.id ? null : session.id);
                   }}
-                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-[#FFF0E6] text-[#7E22CE] hover:bg-[#FFE4D0] transition-colors"
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-[#F97316] text-white hover:bg-[#EA580C] shadow-sm transition-colors"
                   title="选择视频比例"
                 >
                   <RectangleHorizontal className="w-3.5 h-3.5" />
