@@ -415,35 +415,73 @@ export async function* chatNodeStream(
       }
       
       if (toolResult.success) {
+        // 直接使用toolResult中的segments（已包含videoUrl）
+        const rawSegments = (toolResult.data?.segments as Array<{
+          id?: number;
+          script?: string;
+          feature?: string;
+          prompt?: string;
+          audioUrl?: string;
+          videoUrl?: string;
+          localVideoPath?: string;
+          duration?: number;
+        }>) || [];
+        
+        // 转换为符合ChatAgentState.segments类型的格式
+        const finalSegments: Array<{
+          id: number;
+          script: string;
+          feature: string;
+          prompt?: string;
+          audioPath?: string;
+          audioUrl?: string;
+          videoPath?: string;
+          videoUrl?: string;
+          localVideoPath?: string;
+          duration: number;
+        }> = rawSegments.map((seg) => ({
+          id: seg.id || 0,
+          script: seg.script || '',
+          feature: seg.feature || seg.script?.substring(0, 30) || '',
+          prompt: seg.prompt,
+          audioUrl: seg.audioUrl,
+          videoUrl: seg.videoUrl,
+          localVideoPath: seg.localVideoPath,
+          duration: seg.duration || 4
+        }));
+        
+        console.log(`[Agent] 最终segments数量: ${finalSegments.length}`);
+        finalSegments.forEach((seg, i) => {
+          console.log(`[Agent] segment ${i+1}: id=${seg.id}, videoUrl=${seg.videoUrl?.substring(0, 50)}..., hasVideo=${!!seg.videoUrl}`);
+        });
+        
         currentState = {
           ...currentState,
-          segments: (toolResult.data?.segments || segmentsFromStream) as Array<{
-            id: number;
-            script: string;
-            feature: string;
-            prompt?: string;
-            audioPath?: string;
-            audioUrl?: string;
-            videoPath?: string;
-            videoUrl?: string;
-            localVideoPath?: string;
-            duration: number;
-          }>,
+          segments: finalSegments,
           currentStage: "video_generated"
         };
         
+        // 发送state_update事件，包含完整的segments（已有videoUrl）
+        console.log(`[Agent] yield state_update事件: segments=${finalSegments.length}个, stage=video_generated, 包含videoUrl`);
         yield {
           type: "state_update",
-          content: currentState as unknown as Record<string, unknown>
+          content: {
+            segments: finalSegments,
+            currentStage: "video_generated",
+            productName: currentState.productName,
+            features: currentState.features
+          }
         };
         
+        // 发送tool_result事件
         yield {
           type: "tool_result",
           content: {
             tool: "generateVideoSegments",
             success: true,
+            message: `分段视频生成完成，共 ${finalSegments.length} 个`,
             data: {
-              segments: toolResult.data?.segments || segmentsFromStream,
+              segments: finalSegments,
               currentStage: "video_generated"
             }
           }
@@ -454,7 +492,11 @@ export async function* chatNodeStream(
           type: "wait_feedback",
           content: {
             message: "分段视频已生成完成，请确认后合成完整视频。",
-            state: currentState
+            state: {
+              segments: finalSegments,
+              currentStage: "video_generated",
+              productName: currentState.productName
+            }
           }
         };
         
