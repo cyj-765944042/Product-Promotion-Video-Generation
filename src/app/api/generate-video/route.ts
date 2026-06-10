@@ -916,7 +916,7 @@ export async function POST(request: NextRequest) {
             
             const accessibleUrl = await storage.generatePresignedUrl({
               key: uploadedKey,
-              expireTime: 3600,
+              expireTime: 86400, // 24小时有效期
             });
             
             accessibleVideoUrls.push(accessibleUrl);
@@ -1080,10 +1080,10 @@ export async function POST(request: NextRequest) {
             timeout: 60000, // 60秒超时
           });
           
-          // 使用key生成可访问的签名URL
+          // 使用key生成可访问的签名URL（24小时有效期）
           signedVideoUrl = await storage.generatePresignedUrl({
             key: storageKey,
-            expireTime: 3600, // 1小时有效期
+            expireTime: 86400, // 24小时有效期
           });
           
           if (signedVideoUrl) {
