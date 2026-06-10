@@ -624,8 +624,8 @@ function VideoPlayer({
   const effectiveVideoUrl = localVideoPath || (videoUrl ? getAccessibleUrl(videoUrl) : '');
   const effectiveAudioUrl = audioUrl ? getAccessibleUrl(audioUrl) : '';
 
-  // 根据比例确定aspect ratio类名
-  const aspectClass = ratio === '9:16' ? 'aspect-[9/16]' : 'aspect-video';
+  // 根据比例确定aspect ratio类名，竖版视频限制最大高度
+  const aspectClass = ratio === '9:16' ? 'aspect-[9/16] max-h-[350px]' : 'aspect-video';
 
   // 点击播放按钮
   const handlePlayClick = useCallback(() => {
@@ -2424,7 +2424,7 @@ export default function ChatAgentPage() {
                   .filter(seg => seg.videoUrl && seg.videoUrl.length > 0)
                   .map(segment => {
                     const segVideoRatio = (msgState.videoRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
-                    const segAspectClass = segVideoRatio === '9:16' ? 'aspect-[9/16]' : 'aspect-video';
+                    const segAspectClass = segVideoRatio === '9:16' ? 'aspect-[9/16] max-h-[350px]' : 'aspect-video';
                     return (
                     <div key={segment.id} className="bg-white rounded-xl shadow-md overflow-hidden">
                       <div className={`relative ${segAspectClass} bg-gray-900`}>
@@ -2485,7 +2485,7 @@ export default function ChatAgentPage() {
                   .sort((a, b) => (a.id || 0) - (b.id || 0))
                   .map((segment, index) => {
                     const segVideoRatio = (msgState.videoRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
-                    const segAspectClass = segVideoRatio === '9:16' ? 'aspect-[9/16]' : 'aspect-video';
+                    const segAspectClass = segVideoRatio === '9:16' ? 'aspect-[9/16] max-h-[350px]' : 'aspect-video';
                     return (
                     <div key={`segment-${segment.id || index}-${segment.videoUrl || segment.localVideoPath || 'no-video'}`} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
                       {/* 视频预览区 - 根据比例适配 */}
