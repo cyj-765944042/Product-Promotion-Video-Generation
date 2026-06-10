@@ -28,6 +28,7 @@ import {
   Pencil,
   MessageSquare,
   Globe,
+  RectangleHorizontal,
 } from 'lucide-react';
 
 // 用户头像本地存储key
@@ -239,6 +240,7 @@ function SessionSidebar({
   onDeleteSession,
   onRenameSession,
   onUpdateSessionVoiceLanguage,
+  onUpdateSessionVideoRatio,
 }: {
   sessions: Session[];
   currentSessionId: string | null;
@@ -247,10 +249,12 @@ function SessionSidebar({
   onDeleteSession: (id: string) => void;
   onRenameSession: (id: string, newTitle: string) => void;
   onUpdateSessionVoiceLanguage: (sessionId: string, lang: string) => void;
+  onUpdateSessionVideoRatio: (sessionId: string, ratio: string) => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [openLangDropdownId, setOpenLangDropdownId] = useState<string | null>(null);
+  const [openRatioDropdownId, setOpenRatioDropdownId] = useState<string | null>(null);
 
   // 分组会话：今天、最近
   const groupSessions = () => {
@@ -300,47 +304,52 @@ function SessionSidebar({
 
     return (
       <div
-        className={`group relative px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-200
+        className={`group relative px-3 py-4 rounded-lg cursor-pointer transition-all duration-200 min-h-[80px]
           ${isSelected 
             ? 'bg-[#ECE6F7] text-[#333333] border border-[#D4C2F6]' 
             : 'hover:bg-[#F1F3F5] text-[#666666]'
           }`}
         onClick={() => !isEditing && onSelectSession(session.id)}
       >
-        <div className="flex items-center justify-between">
-          {isEditing ? (
-            <input
-              type="text"
-              value={editingTitle}
-              onChange={(e) => setEditingTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSaveEdit();
-                if (e.key === 'Escape') handleCancelEdit();
-              }}
-              className="w-full bg-white text-[#333333] px-2 py-1 rounded text-sm outline-none border border-[#D4C2F6]"
-              autoFocus
-              onClick={(e) => e.stopPropagation()}
-            />
-          ) : (
-            <div className="flex items-center justify-between w-full">
-              {/* 左侧：标题和状态 */}
+        {isEditing ? (
+          <input
+            type="text"
+            value={editingTitle}
+            onChange={(e) => setEditingTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSaveEdit();
+              if (e.key === 'Escape') handleCancelEdit();
+            }}
+            className="w-full bg-white text-[#333333] px-2 py-1 rounded text-sm outline-none border border-[#D4C2F6]"
+            autoFocus
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <div className="flex flex-col justify-between h-full">
+            {/* 第一行：左上方会话名称，右上方状态/时间 */}
+            <div className="flex items-start justify-between">
+              {/* 左上方：会话名称 */}
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium truncate">{session.title}</div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  {session.isGenerating && (
-                    <span className="text-xs text-[#B999F3] flex items-center gap-1">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      生成中
-                    </span>
-                  )}
-                  <span className="text-xs text-[#999999]">
-                    {new Date(session.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
               </div>
-              
-              {/* 右侧：配音语言标签（图标+下拉） */}
-              <div className="relative ml-2">
+              {/* 右上方：状态和时间 */}
+              <div className="flex items-center gap-2 ml-2">
+                {session.isGenerating && (
+                  <span className="text-xs text-[#B999F3] flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    生成中
+                  </span>
+                )}
+                <span className="text-xs text-[#999999]">
+                  {new Date(session.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            </div>
+            
+            {/* 第二行：右下方语言选项和视频比例选项堆叠 */}
+            <div className="flex justify-end gap-1 mt-2">
+              {/* 语言选项 */}
+              <div className="relative">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -380,35 +389,77 @@ function SessionSidebar({
                   </div>
                 )}
               </div>
+              
+              {/* 视频比例选项 */}
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenRatioDropdownId(openRatioDropdownId === session.id ? null : session.id);
+                  }}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-[#F9F9F9] text-[#7E22CE] hover:bg-[#F5F0FF] transition-colors"
+                  title="选择视频比例"
+                >
+                  <RectangleHorizontal className="w-3.5 h-3.5" />
+                  <span>{session.state?.videoRatio === '9:16' ? '竖版' : '横版'}</span>
+                </button>
+                
+                {/* 下拉选择 */}
+                {openRatioDropdownId === session.id && (
+                  <div 
+                    className="absolute right-0 top-full mt-1 bg-white rounded-md shadow-lg border border-[#E5E5E5] z-50 min-w-[80px]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={() => {
+                        onUpdateSessionVideoRatio(session.id, '16:9');
+                        setOpenRatioDropdownId(null);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-t-md ${session.state?.videoRatio === '16:9' || !session.state?.videoRatio ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
+                    >
+                      横版 16:9
+                    </button>
+                    <button
+                      onClick={() => {
+                        onUpdateSessionVideoRatio(session.id, '9:16');
+                        setOpenRatioDropdownId(null);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-b-md ${session.state?.videoRatio === '9:16' ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
+                    >
+                      竖版 9:16
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* hover操作图标 */}
-          {!isEditing && (
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleStartEdit(session);
-                }}
-                className="p-1 hover:bg-[#F1F3F5] rounded text-[#7A7A7A] hover:text-[#333333]"
-                title="重命名"
-              >
-                <Pencil className="w-3 h-3" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteSession(session.id);
-                }}
-                className="p-1 hover:bg-red-500/20 rounded text-[#7A7A7A] hover:text-red-500"
-                title="删除"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-            </div>
-          )}
-        </div>
+        {/* hover操作图标 */}
+        {!isEditing && (
+          <div className="absolute right-2 top-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleStartEdit(session);
+              }}
+              className="p-1 hover:bg-[#F1F3F5] rounded text-[#7A7A7A] hover:text-[#333333]"
+              title="重命名"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeleteSession(session.id);
+              }}
+              className="p-1 hover:bg-red-500/20 rounded text-[#7A7A7A] hover:text-red-500"
+              title="删除"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -1015,6 +1066,13 @@ export default function ChatAgentPage() {
   const updateSessionVoiceLanguage = useCallback((sessionId: string, lang: string) => {
     setSessions(prev => prev.map(s => 
       s.id === sessionId ? { ...s, voiceLanguage: lang } : s
+    ));
+  }, []);
+
+  // 更新指定会话的视频比例
+  const updateSessionVideoRatio = useCallback((sessionId: string, ratio: string) => {
+    setSessions(prev => prev.map(s => 
+      s.id === sessionId ? { ...s, state: { ...s.state, videoRatio: ratio } } : s
     ));
   }, []);
 
@@ -2729,6 +2787,7 @@ export default function ChatAgentPage() {
             onDeleteSession={handleDeleteSession}
             onRenameSession={handleRenameSession}
             onUpdateSessionVoiceLanguage={updateSessionVoiceLanguage}
+            onUpdateSessionVideoRatio={updateSessionVideoRatio}
           />
         )}
         
