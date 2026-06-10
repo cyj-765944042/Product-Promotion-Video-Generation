@@ -1771,9 +1771,9 @@ export default function ChatAgentPage() {
                       return seg;
                     });
                     // 如果该segment不存在，添加一个新的
-                    if (!existingSegments.find(seg => seg.id === videoSegId)) {
+                    if (!existingSegments.find(seg => seg.id === videoSegIdNum)) {
                       updatedSegments.push({
-                        id: videoSegId,
+                        id: videoSegIdNum,
                         videoUrl: videoSegUrl,
                         audioUrl: videoSegAudioUrl,
                         duration: videoSegDuration,

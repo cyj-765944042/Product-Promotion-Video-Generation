@@ -407,12 +407,15 @@ export async function* chatNodeStream(
       // 遍历stream，实时yield segment事件
       for await (const event of streamGenerator) {
         if (event.type === 'segment_video') {
-          const segment = event.content as { segmentId: number; videoUrl: string; duration?: number; script?: string };
-          console.log(`[Agent] yield segment_video事件: id=${segment.segmentId}`);
+          // tools.ts yield的segment对象使用id字段，不是segmentId
+          const segment = event.content as { id: number; segmentId?: number; videoUrl: string; duration?: number; script?: string };
+          const actualSegmentId = segment.id || segment.segmentId;
+          console.log(`[Agent] yield segment_video事件: id=${actualSegmentId}, videoUrl=${segment.videoUrl?.substring(0, 50)}...`);
           yield {
             type: "segment_video",
             content: {
-              segmentId: segment.segmentId,
+              segmentId: actualSegmentId,  // 前端期望segmentId字段
+              id: actualSegmentId,         // 同时提供id字段以兼容
               videoUrl: segment.videoUrl,
               duration: segment.duration,
               script: segment.script
