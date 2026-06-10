@@ -497,6 +497,7 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   imageUrl?: string;
+  auxiliaryImages?: string[]; // 辅助图片URL列表（多图片上传时）
   isStreaming?: boolean;
   state?: Partial<SessionState>;
 }
@@ -1386,9 +1387,12 @@ export default function ChatAgentPage() {
     const userMessage: ChatMessage = {
       id: `user_${Date.now()}`,
       role: 'user',
-      content: imageUrl ? '[已上传商品图片]' : content,
+      content: imageUrl && auxiliaryImages?.length 
+        ? `[已上传${auxiliaryImages.length + 1}张商品图片]` 
+        : (imageUrl ? '[已上传商品图片]' : content),
       timestamp: new Date().toISOString(),
       imageUrl: imageUrl,
+      auxiliaryImages: auxiliaryImages,
     };
     
     // 只有当前会话是发起请求的会话时，才更新显示的消息列表
@@ -2609,12 +2613,32 @@ export default function ChatAgentPage() {
         <div key={message.id} className="flex justify-end items-start gap-2 mb-3">
           {/* 消息气泡 */}
           <div className="max-w-[72%] bg-[#B999F3] text-white rounded-2xl rounded-tr-md px-4 py-2.5 shadow-sm">
-            {message.imageUrl && (
-              <img 
-                src={message.imageUrl} 
-                alt="商品图片" 
-                className="max-w-full rounded-lg mb-2 max-h-[200px] object-contain"
-              />
+            {/* 多图片显示：主图片 + 辅助图片 */}
+            {(message.imageUrl || message.auxiliaryImages?.length) && (
+              <div className="flex gap-2 mb-2 flex-wrap">
+                {/* 主图片 */}
+                {message.imageUrl && (
+                  <div className="relative">
+                    <img 
+                      src={message.imageUrl} 
+                      alt="主图片" 
+                      className="w-24 h-24 rounded-lg object-cover border-2 border-white/80"
+                    />
+                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-white text-[#B999F3] text-xs px-1.5 py-0.5 rounded font-medium">主图</span>
+                  </div>
+                )}
+                {/* 辅助图片 */}
+                {message.auxiliaryImages?.map((auxUrl, idx) => (
+                  <div key={idx} className="relative">
+                    <img 
+                      src={auxUrl} 
+                      alt={`辅助图片${idx + 1}`} 
+                      className="w-24 h-24 rounded-lg object-cover border border-white/50"
+                    />
+                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-white/80 text-[#B999F3] text-xs px-1.5 py-0.5 rounded">辅{idx + 1}</span>
+                  </div>
+                ))}
+              </div>
             )}
             <p className="text-sm">{message.content}</p>
             <p className="text-xs text-[#D4C2F6] mt-1 text-right">
