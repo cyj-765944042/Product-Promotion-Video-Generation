@@ -535,6 +535,15 @@ function SessionSidebar({
   );
 }
 
+// 过滤系统命令 - 移除 [xxx] 格式的脚本文字
+function filterSystemCommands(content: string): string {
+  // 移除 [GENERATE_SEGMENTS]、[COMPOSE_VIDEO] 等系统命令
+  return content
+    .replace(/\[[A-Z_]+\]\s*/g, '') // 移除大写字母下划线格式的命令
+    .replace(/\[[\u4e00-\u9fa5]+\]\s*/g, '') // 移除中文格式的命令（如 [开始生成]、[合成视频]）
+    .trim();
+}
+
 // 客户端时间组件 - 避免 hydration 问题
 function ClientTime({ timestamp }: { timestamp: string }) {
   const [time, setTime] = useState<string>('');
@@ -2349,7 +2358,7 @@ export default function ChatAgentPage() {
       const videoRatio = (msgState.videoRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
       return (
         <div className="space-y-3">
-          <p className="text-sm">{message.content}</p>
+          <p className="text-sm">{filterSystemCommands(message.content)}</p>
           <div className="bg-white rounded-xl p-3 shadow-sm">
             <VideoPlayer videoUrl={msgState.finalVideoUrl} localVideoPath={msgState.localVideoPath} ratio={videoRatio} />
             <div className="mt-2 flex gap-2">
@@ -2391,7 +2400,7 @@ export default function ChatAgentPage() {
       if (isVideoGenerating && !hasVideoSegments) {
         return (
           <div className="space-y-3">
-            <p className="text-sm">{message.content}</p>
+            <p className="text-sm">{filterSystemCommands(message.content)}</p>
             
             {/* 商品信息卡片 */}
             {msgState.productName && (
@@ -2444,7 +2453,7 @@ export default function ChatAgentPage() {
       // 正常渲染：有视频片段或文案时
       return (
         <div className="space-y-3">
-          <p className="text-sm">{message.content}</p>
+          <p className="text-sm">{filterSystemCommands(message.content)}</p>
           
           {/* 商品信息卡片 */}
           {msgState.productName && (
@@ -2611,7 +2620,7 @@ export default function ChatAgentPage() {
     if (msgState.productName && !msgState.scripts) {
       return (
         <div className="space-y-3">
-          <p className="text-sm">{message.content}</p>
+          <p className="text-sm">{filterSystemCommands(message.content)}</p>
           <Card className="bg-white shadow-sm max-w-[600px]">
             <CardContent className="p-3">
               <div className="flex items-center gap-2 mb-2">
@@ -2639,7 +2648,7 @@ export default function ChatAgentPage() {
     }
 
     // 默认文本
-    return <p className="text-sm whitespace-pre-wrap">{message.content}</p>;
+    return <p className="text-sm whitespace-pre-wrap">{filterSystemCommands(message.content)}</p>;
   };
 
   // 渲染单条消息
@@ -2691,7 +2700,7 @@ export default function ChatAgentPage() {
                 ))}
               </div>
             )}
-            <p className="text-sm">{message.content}</p>
+            <p className="text-sm">{filterSystemCommands(message.content)}</p>
             <p className="text-xs text-[#D4C2F6] mt-1 text-right">
               <ClientTime timestamp={message.timestamp} />
             </p>
