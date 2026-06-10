@@ -2549,34 +2549,7 @@ export default function ChatAgentPage() {
           {/* 底部统一操作按钮 */}
           {!isDone && (
             <div className="mt-4 p-3 bg-white rounded-lg shadow-sm border border-[#E5E5E5]">
-              {/* 视频比例选择 - 只在生成分段视频阶段显示 */}
-              {!hasVideoSegments && msgState.currentStage === 'script_generated' && !isGenerating && (
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="text-sm text-[#666666]">视频比例：</span>
-                  <div className="flex gap-2">
-                    <button
-                      className={`px-3 py-1 text-sm rounded-md border transition-colors ${
-                        sessionState.videoRatio === '16:9'
-                          ? 'bg-[#ECE6F7] border-[#B999F3] text-[#B999F3]'
-                          : 'bg-white border-[#E5E5E5] text-[#666666] hover:border-[#D4C2F6]'
-                      }`}
-                      onClick={() => setSessionState(prev => ({ ...prev, videoRatio: '16:9' }))}
-                    >
-                      横版 16:9
-                    </button>
-                    <button
-                      className={`px-3 py-1 text-sm rounded-md border transition-colors ${
-                        sessionState.videoRatio === '9:16'
-                          ? 'bg-[#ECE6F7] border-[#B999F3] text-[#B999F3]'
-                          : 'bg-white border-[#E5E5E5] text-[#666666] hover:border-[#D4C2F6]'
-                      }`}
-                      onClick={() => setSessionState(prev => ({ ...prev, videoRatio: '9:16' }))}
-                    >
-                      竖版 9:16
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* 视频比例已在会话页夹中选定，此处不再重复选择 */}
               <div className="flex items-center justify-between">
                 <span className="text-sm text-[#666666]">
                   {isGenerating ? '正在生成中，请稍候...' : 
