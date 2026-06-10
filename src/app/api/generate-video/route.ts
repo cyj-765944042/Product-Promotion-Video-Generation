@@ -164,22 +164,45 @@ async function mergeVideoAudioFFmpeg(
 }
 
 // Add subtitle to segment video using FFmpeg (hard subtitle)
+// 根据视频比例调整字幕大小
 async function addSubtitleToSegmentVideo(
   videoPath: string,
   outputPath: string,
   subtitleText: string,
-  duration: number
+  duration: number,
+  ratio: string = '16:9'
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    // 根据视频比例调整字幕参数
+    // 16:9横版视频：字体较大，底部居中
+    // 9:16竖版视频：字体更大，底部居中
+    let playResX: number, playResY: number, fontSize: number, marginV: number;
+    
+    if (ratio === '9:16') {
+      // 竖版视频（1080x1920）
+      playResX = 1080;
+      playResY = 1920;
+      fontSize = 56;  // 竖版字体更大
+      marginV = 60;   // 底部边距更大
+    } else {
+      // 横版视频（1920x1080）
+      playResX = 1920;
+      playResY = 1080;
+      fontSize = 48;  // 横版字体适中
+      marginV = 50;   // 底部边距适中
+    }
+    
+    console.log(`[字幕] 视频比例=${ratio}, 分辨率=${playResX}x${playResY}, 字体大小=${fontSize}, 底部边距=${marginV}`);
+    
     // Create ASS subtitle format with styling
     const assContent = `[Script Info]
 ScriptType: v4.00+
-PlayResX: 1280
-PlayResY: 720
+PlayResX: ${playResX}
+PlayResY: ${playResY}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,SimHei,24,&HFFFFFF,&HFFFFFF,&H000000,&H000000,0,0,0,0,100,100,0,0,1,1,0,2,20,20,40,1
+Style: Default,SimHei,${fontSize},&HFFFFFF,&HFFFFFF,&H000000,&H000000,0,0,0,0,100,100,0,0,1,2,0,2,30,30,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -797,8 +820,8 @@ export async function POST(request: NextRequest) {
               const subtitleFileName = `subtitle_${segmentId}_${Date.now()}.mp4`;
               const subtitleFilePath = `/tmp/${subtitleFileName}`;
               
-              console.log(`FFmpeg添加字幕: ${subtitleFilePath}`);
-              await addSubtitleToSegmentVideo(mergedFilePath, subtitleFilePath, info.script || '', actualVideoDuration);
+              console.log(`FFmpeg添加字幕: ${subtitleFilePath}, 视频比例: ${ratio}`);
+              await addSubtitleToSegmentVideo(mergedFilePath, subtitleFilePath, info.script || '', actualVideoDuration, ratio);
               
               // Upload video with subtitle to object storage
               console.log('上传带字幕的视频...');
