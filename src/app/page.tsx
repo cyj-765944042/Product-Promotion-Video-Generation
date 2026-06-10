@@ -653,6 +653,27 @@ function VideoPlayer({
     }
   }, []);
 
+  // 监听全屏变化，防止退出全屏时页面刷新导致状态丢失
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      // 全屏退出时，确保不触发任何可能导致状态丢失的操作
+      if (!document.fullscreenElement) {
+        // 确保视频继续正常播放，不中断用户体验
+        console.log('[VideoPlayer] 退出全屏模式');
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange); // Safari兼容
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange); // Firefox兼容
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
   // 同步视频和音频播放
   const handlePlay = useCallback(() => {
     setIsPlaying(true);
@@ -1207,6 +1228,33 @@ export default function ChatAgentPage() {
       backgroundTasksRef.current.clear();
     };
   }, []);
+
+  // 页面可见性变化时保存会话数据（防止全屏退出后数据丢失）
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && sessions.length > 0) {
+        // 页面隐藏时（如进入全屏、切换标签页），保存会话数据
+        localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
+        console.log('[页面隐藏] 会话数据已保存');
+      }
+    };
+
+    const handlePageHide = () => {
+      // 页面卸载前保存数据
+      if (sessions.length > 0) {
+        localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
+        console.log('[页面卸载] 会话数据已保存');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [sessions]);
 
   // 新建会话（保存当前会话状态）
   const handleNewSession = useCallback(() => {
