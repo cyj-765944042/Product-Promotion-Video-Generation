@@ -2159,6 +2159,12 @@ export default function ChatAgentPage() {
       // 判断是否已完成
       const isDone = msgState.currentStage === 'done';
       
+      // 测试日志：输出hasVideoSegments和segments状态
+      console.log('[渲染测试] hasVideoSegments =', hasVideoSegments);
+      console.log('[渲染测试] segments数量 =', msgState.segments?.length);
+      console.log('[渲染测试] segments详情 =', msgState.segments?.map(s => ({ id: s.id, hasVideo: !!s.videoUrl, videoUrlLength: s.videoUrl?.length || 0 })));
+      console.log('[渲染测试] currentStage =', msgState.currentStage);
+      
       // 如果正在生成视频，显示进度提示而不是文案
       if (isVideoGenerating && !hasVideoSegments) {
         return (
