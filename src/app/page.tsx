@@ -307,8 +307,8 @@ function SessionSidebar({
       <div
         className={`group relative px-3 py-4 rounded-lg cursor-pointer transition-all duration-200 min-h-[80px]
           ${isSelected 
-            ? 'bg-[#ECE6F7] text-[#333333] border border-[#D4C2F6]' 
-            : 'hover:bg-[#F1F3F5] text-[#666666]'
+            ? 'bg-[#D4C2F6] text-white border border-[#B999F3]' 
+            : 'bg-[#ECE6F7] text-[#666666] hover:bg-[#F1F3F5]'
           }`}
         onClick={() => !isEditing && onSelectSession(session.id)}
       >
