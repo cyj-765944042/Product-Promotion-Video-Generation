@@ -2624,7 +2624,7 @@ export default function ChatAgentPage() {
                       alt="主图片" 
                       className="w-24 h-24 rounded-lg object-cover border-2 border-white/80"
                     />
-                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-white text-[#B999F3] text-xs px-1.5 py-0.5 rounded font-medium">主图</span>
+                    <span className="absolute top-1 right-1 bg-[#B999F3] text-white text-[10px] px-1 rounded shadow-sm">主</span>
                   </div>
                 )}
                 {/* 辅助图片 */}
@@ -2635,7 +2635,7 @@ export default function ChatAgentPage() {
                       alt={`辅助图片${idx + 1}`} 
                       className="w-24 h-24 rounded-lg object-cover border border-white/50"
                     />
-                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-white/80 text-[#B999F3] text-xs px-1.5 py-0.5 rounded">辅{idx + 1}</span>
+                    <span className="absolute top-1 right-1 bg-[#666666]/70 text-white text-[10px] px-1 rounded shadow-sm">{idx + 1}</span>
                   </div>
                 ))}
               </div>
@@ -2835,13 +2835,13 @@ export default function ChatAgentPage() {
                           : 'border border-[#E5E5E5]'
                       }`}
                     />
-                    {/* 主图/辅图标识 */}
-                    <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-xs font-medium ${
+                    {/* 主图/辅图标识 - 右上角小角标 */}
+                    <div className={`absolute top-0.5 right-0.5 px-1 rounded text-[10px] font-medium shadow-sm ${
                       index === 0 
                         ? 'bg-[#B999F3] text-white' 
-                        : 'bg-[#F1F3F5] text-[#666666]'
+                        : 'bg-[#666666]/70 text-white'
                     }`}>
-                      {index === 0 ? '主图' : `辅${index}`}
+                      {index === 0 ? '主' : `${index}`}
                     </div>
                     {/* 删除按钮 */}
                     <button
