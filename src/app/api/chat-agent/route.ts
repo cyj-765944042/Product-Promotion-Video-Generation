@@ -115,14 +115,22 @@ export async function POST(request: NextRequest) {
           }
         }
         
-        // 处理 tool_result 更新状态（注意：后端发送的是content.data，不是直接的data）
+        // 处理 tool_result 更新状态
+        // 注意：有两种发送格式：
+        // 1. 视频生成特殊处理：{ type: "tool_result", content: { success, message, data: {...} } }
+        // 2. 一般工具调用：{ type: "tool_result", content: message, data: { success, message, data: {...} } }
         if (agentMessage.type === "tool_result") {
-          // 兼容两种格式：content.data 和直接的data
-          const contentData = agentMessage.content;
-          const contentRecord = contentData && typeof contentData === 'object' && !('productImageUrl' in contentData) 
-            ? (contentData as Record<string, unknown>) 
+          // 兼容两种格式：从content或data中提取toolData
+          const contentObj = agentMessage.content && typeof agentMessage.content === 'object' 
+            ? (agentMessage.content as Record<string, unknown>) 
             : null;
-          const toolData = (contentRecord?.data || agentMessage.data) as Record<string, unknown> | undefined;
+          const dataObj = agentMessage.data as Record<string, unknown> | undefined;
+          
+          // 格式1：content包含完整对象，直接取content.data
+          // 格式2：content是字符串，取data.data
+          const outerData = contentObj || dataObj;
+          const toolData = (outerData?.data || outerData) as Record<string, unknown> | undefined;
+          
           if (toolData) {
             console.log(`[API] tool_result 收到: scripts=${toolData.scripts ? `${(toolData.scripts as Array<unknown>).length}段` : '无'}, segments=${toolData.segments ? `${(toolData.segments as Array<unknown>).length}个` : '无'}, stage=${toolData.currentStage || '无'}`);
             if (toolData.productImageUrl) state.productImageUrl = toolData.productImageUrl as string;

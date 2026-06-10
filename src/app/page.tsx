@@ -1526,39 +1526,63 @@ export default function ChatAgentPage() {
                   break;
 
                 case 'tool_result':
-                  const toolData = eventData.data || {};
+                  // 兼容两种格式：
+                  // 1. 视频生成特殊处理：content包含完整对象，segments在content.data中
+                  // 2. 一般工具调用：data包含数据，或content.data包含数据
+                  const trContentObj = eventData.content && typeof eventData.content === 'object' 
+                    ? (eventData.content as Record<string, unknown>) 
+                    : null;
+                  const trDataObj = eventData.data as Record<string, unknown> | undefined;
+                  
+                  // 从content.data或data中获取toolData
+                  const trOuterData = trContentObj || trDataObj;
+                  const trToolData = (trOuterData?.data || trOuterData) as Record<string, unknown> || {};
+                  
+                  console.log('[前端] tool_result事件:', {
+                    hasContentObj: !!trContentObj,
+                    hasDataObj: !!trDataObj,
+                    toolDataSegments: trToolData.segments ? (trToolData.segments as Array<unknown>).length : 0,
+                    toolDataStage: trToolData.currentStage
+                  });
+                  
                   // 更新会话数据
                   setSessions(prev => prev.map(s => {
                     if (s.id !== sessionClientId) return s;
+                    const trMessageContent = typeof eventData.content === 'string' 
+                      ? eventData.content 
+                      : (trContentObj?.message as string || '');
                     const updatedMessages = s.messages.map(m =>
                       m.id === assistantMessage.id
                         ? {
                             ...m,
-                            content: m.content ? `${m.content}\n${eventData.content}` : eventData.content,
-                            state: { ...m.state, ...toolData },
+                            content: m.content ? `${m.content}\n${trMessageContent}` : trMessageContent,
+                            state: { ...m.state, ...trToolData },
                           }
                         : m
                     );
                     // 自动命名：如果productName首次出现且会话名称是默认的"新对话"，则自动更新为商品名称
                     let newTitle = s.title;
-                    if (toolData.productName && (s.title === '新对话' || s.title.startsWith('新对话'))) {
-                      newTitle = toolData.productName;
+                    if (trToolData.productName && (s.title === '新对话' || s.title.startsWith('新对话'))) {
+                      newTitle = trToolData.productName as string;
                     }
-                    return { ...s, title: newTitle, messages: updatedMessages, state: { ...s.state, ...toolData }, updatedAt: new Date().toISOString() };
+                    return { ...s, title: newTitle, messages: updatedMessages, state: { ...s.state, ...trToolData }, updatedAt: new Date().toISOString() };
                   }));
                   if (isCurrentSession) {
+                    const trMessageContent2 = typeof eventData.content === 'string' 
+                      ? eventData.content 
+                      : (trContentObj?.message as string || '');
                     setMessages(prev =>
                       prev.map(m =>
                         m.id === assistantMessage.id
                           ? {
                               ...m,
-                              content: m.content ? `${m.content}\n${eventData.content}` : eventData.content,
-                              state: { ...m.state, ...toolData },
+                              content: m.content ? `${m.content}\n${trMessageContent2}` : trMessageContent2,
+                              state: { ...m.state, ...trToolData },
                             }
                           : m
                       )
                     );
-                    setSessionState(prev => ({ ...prev, ...toolData }));
+                    setSessionState(prev => ({ ...prev, ...trToolData }));
                   }
                   break;
 
@@ -1674,11 +1698,27 @@ export default function ChatAgentPage() {
                   break;
 
                 case 'wait_feedback':
-                  const feedbackState = eventData.data?.state || {};
-                  console.log('[前端] wait_feedback事件: feedbackState包含segments?', !!feedbackState.segments);
+                  // 兼容两种格式：
+                  // 1. 视频生成特殊处理：content包含state
+                  // 2. 一般工具调用：data.state包含state
+                  const wfContentObj = eventData.content && typeof eventData.content === 'object' 
+                    ? (eventData.content as Record<string, unknown>) 
+                    : null;
+                  const wfDataObj = eventData.data as Record<string, unknown> | undefined;
+                  
+                  // 从content.state或data.state中获取feedbackState
+                  const feedbackState = (wfContentObj?.state || wfDataObj?.state) as Partial<SessionState> || {};
+                  
+                  console.log('[前端] wait_feedback事件:', {
+                    hasContentObj: !!wfContentObj,
+                    hasDataObj: !!wfDataObj,
+                    feedbackStateSegments: feedbackState.segments?.length || 0,
+                    feedbackStateStage: feedbackState.currentStage
+                  });
+                  
                   if (feedbackState.segments) {
                     console.log('[前端] wait_feedback segments数量:', feedbackState.segments.length);
-                    console.log('[前端] wait_feedback segments详情:', feedbackState.segments.map((s: { id: number; videoUrl?: string }) => ({ id: s.id, hasVideo: !!s.videoUrl })));
+                    console.log('[前端] wait_feedback segments详情:', feedbackState.segments.map(s => ({ id: s.id, hasVideo: !!s.videoUrl })));
                   }
                   
                   // 更新会话数据，需要合并segments保留videoUrl
@@ -1688,9 +1728,9 @@ export default function ChatAgentPage() {
                       if (m.id !== assistantMessage.id) return m;
                       const oldState = m.state || {};
                       const oldSegments = oldState.segments || [];
-                      const newSegments = feedbackState.segments || [];
+                      const wfNewSegments = feedbackState.segments || [];
                       // 合并segments，保留已有的videoUrl
-                      const mergedSegments = newSegments.map((newSeg: { id: number; videoUrl?: string; audioUrl?: string; duration?: number }) => {
+                      const mergedSegments: SessionState['segments'] = wfNewSegments.map(newSeg => {
                         const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
                         if (!newSeg.videoUrl && oldSeg?.videoUrl) {
                           console.log(`[前端] wait_feedback合并: segment ${newSeg.id} 保留旧videoUrl`);
@@ -1714,9 +1754,9 @@ export default function ChatAgentPage() {
                         if (m.id !== assistantMessage.id) return m;
                         const oldState = m.state || {};
                         const oldSegments = oldState.segments || [];
-                        const newSegments = feedbackState.segments || [];
+                        const wfSetMsgNewSegments = feedbackState.segments || [];
                         // 合并segments，保留已有的videoUrl
-                        const mergedSegments = newSegments.map((newSeg: { id: number; videoUrl?: string; audioUrl?: string; duration?: number }) => {
+                        const mergedSegments: SessionState['segments'] = wfSetMsgNewSegments.map(newSeg => {
                           const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
                           if (!newSeg.videoUrl && oldSeg?.videoUrl) {
                             console.log(`[前端] wait_feedback setMessages合并: segment ${newSeg.id} 保留旧videoUrl`);
@@ -1729,9 +1769,9 @@ export default function ChatAgentPage() {
                     );
                     setSessionState(prev => {
                       const oldSegments = prev.segments || [];
-                      const newSegments = feedbackState.segments || [];
+                      const wfSetStateNewSegments = feedbackState.segments || [];
                       // 合并segments，保留已有的videoUrl
-                      const mergedSegments = newSegments.map((newSeg: { id: number; videoUrl?: string; audioUrl?: string; duration?: number }) => {
+                      const mergedSegments: SessionState['segments'] = wfSetStateNewSegments.map(newSeg => {
                         const oldSeg = oldSegments.find(seg => seg.id === newSeg.id);
                         if (!newSeg.videoUrl && oldSeg?.videoUrl) {
                           console.log(`[前端] wait_feedback setSessionState合并: segment ${newSeg.id} 保留旧videoUrl`);
