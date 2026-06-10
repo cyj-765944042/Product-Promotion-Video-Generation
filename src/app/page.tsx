@@ -1800,7 +1800,7 @@ export default function ChatAgentPage() {
                       const targetMsg = prev[lastAssistantIdx];
                       const existingSegments = targetMsg.state?.segments || [];
                       const updatedSegments = existingSegments.map(seg => {
-                        if (seg.id === videoSegId) {
+                        if (seg.id === videoSegIdNum) {
                           return {
                             ...seg,
                             videoUrl: videoSegUrl,
@@ -1810,9 +1810,9 @@ export default function ChatAgentPage() {
                         }
                         return seg;
                       });
-                      if (!existingSegments.find(seg => seg.id === videoSegId)) {
+                      if (!existingSegments.find(seg => seg.id === videoSegIdNum)) {
                         updatedSegments.push({
-                          id: videoSegId,
+                          id: videoSegIdNum,
                           videoUrl: videoSegUrl,
                           audioUrl: videoSegAudioUrl,
                           duration: videoSegDuration,
