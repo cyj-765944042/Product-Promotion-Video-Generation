@@ -291,10 +291,26 @@ export async function* chatNodeStream(
   }
   
   // 检查用户消息是否包含意图标签，直接调用对应工具
-  const lastUserMessage = conversationHistory.filter(m => m.role === "user").pop();
+  const userMessages = conversationHistory.filter(m => m.role === "user");
+  const lastUserMessage = userMessages[userMessages.length - 1];
+  
+  // 提取消息内容为字符串
+  let lastUserMessageContent = '';
   if (lastUserMessage) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const content: any = lastUserMessage.content;
+    if (typeof content === 'string') {
+      lastUserMessageContent = content;
+    } else if (Array.isArray(content)) {
+      lastUserMessageContent = content
+        .map((c: any) => typeof c === 'string' ? c : c.text || '')
+        .join('');
+    }
+  }
+  
+  if (lastUserMessage && lastUserMessageContent) {
     // 检查合成视频意图
-    if (lastUserMessage.content.includes("[COMPOSE_VIDEO]") && state.segments && state.segments.length > 0) {
+    if (lastUserMessageContent.includes("[COMPOSE_VIDEO]") && state.segments && state.segments.length > 0) {
       console.log("[Agent] 检测到[COMPOSE_VIDEO]意图，直接调用composeFinalVideo");
       yield { type: "progress", content: "正在合成完整视频..." };
       
@@ -340,8 +356,8 @@ export async function* chatNodeStream(
     }
     
     // 检查生成分段视频意图
-    console.log(`[Agent] 检查[GENERATE_SEGMENTS]意图: hasTag=${lastUserMessage.content.includes("[GENERATE_SEGMENTS]")}, scripts=${state.scripts ? state.scripts.length : 'undefined'}, stage=${state.currentStage}`);
-    if (lastUserMessage.content.includes("[GENERATE_SEGMENTS]")) {
+    console.log(`[Agent] 检查[GENERATE_SEGMENTS]意图: hasTag=${lastUserMessageContent.includes("[GENERATE_SEGMENTS]")}, scripts=${state.scripts ? state.scripts.length : 'undefined'}, stage=${state.currentStage}`);
+    if (lastUserMessageContent.includes("[GENERATE_SEGMENTS]")) {
       // 确保scripts存在，如果没有则从currentState获取或报错
       const scriptsToUse = state.scripts || currentState.scripts;
       if (!scriptsToUse || scriptsToUse.length === 0) {
