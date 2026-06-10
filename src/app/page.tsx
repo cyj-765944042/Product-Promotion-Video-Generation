@@ -329,18 +329,18 @@ function SessionSidebar({
           <div className="flex flex-col h-full min-h-[80px]">
             {/* 第一行：左上方会话名称 */}
             <div className="flex items-center">
-              <div className="text-sm font-medium truncate">{session.title}</div>
+              <div className="text-sm font-medium truncate text-[#333333]">{session.title}</div>
             </div>
             
             {/* 第二行：左侧状态和时间 */}
             <div className="flex justify-start items-center gap-2 mt-1">
               {session.isGenerating && (
-                <span className="text-xs text-[#B999F3] flex items-center gap-1">
+                <span className="text-xs text-[#757575] flex items-center gap-1">
                   <Loader2 className="w-3 h-3 animate-spin" />
                   生成中
                 </span>
               )}
-              <span className="text-xs text-[#999999]">
+              <span className="text-xs text-[#757575]">
                 {new Date(session.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
@@ -357,7 +357,7 @@ function SessionSidebar({
                     e.stopPropagation();
                     setOpenLangDropdownId(openLangDropdownId === session.id ? null : session.id);
                   }}
-                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-[#F97316] text-white hover:bg-[#EA580C] shadow-sm transition-colors"
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-[#FF8A80] text-white hover:bg-[#FF7060] shadow-sm transition-colors"
                   title="选择配音语言"
                 >
                   <Globe className="w-3.5 h-3.5" />
@@ -402,7 +402,7 @@ function SessionSidebar({
                     e.stopPropagation();
                     setOpenRatioDropdownId(openRatioDropdownId === session.id ? null : session.id);
                   }}
-                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-[#F97316] text-white hover:bg-[#EA580C] shadow-sm transition-colors"
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-[#FF8A80] text-white hover:bg-[#FF7060] shadow-sm transition-colors"
                   title="选择视频比例"
                 >
                   <RectangleHorizontal className="w-3.5 h-3.5" />
