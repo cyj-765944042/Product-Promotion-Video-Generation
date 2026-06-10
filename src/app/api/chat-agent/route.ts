@@ -20,17 +20,23 @@ export async function POST(request: NextRequest) {
   // 使用更唯一的ID生成方式（时间戳 + 随机数）
   const newSessionId = sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   
-  // 如果前端传递了scripts/segments数据，但state中没有，则使用前端数据作为备用
-  if (scripts && scripts.length > 0 && (!state.scripts || state.scripts.length === 0)) {
-    state.scripts = scripts;
-    console.log(`[API] 从前端恢复scripts: ${scripts.length} 段文案`);
-  }
-  if (segments && segments.length > 0 && (!state.segments || state.segments.length === 0)) {
-    state.segments = segments;
-    console.log(`[API] 从前端恢复segments: ${segments.length} 个视频片段`);
+  // 如果用户上传新图片，不恢复旧的生成数据（让流程重新开始）
+  // 只有在没有上传图片时，才恢复前端传来的scripts/segments数据
+  const isNewImageUpload = !!imageUrl;
+  
+  if (!isNewImageUpload) {
+    // 如果前端传递了scripts/segments数据，但state中没有，则使用前端数据作为备用
+    if (scripts && scripts.length > 0 && (!state.scripts || state.scripts.length === 0)) {
+      state.scripts = scripts;
+      console.log(`[API] 从前端恢复scripts: ${scripts.length} 段文案`);
+    }
+    if (segments && segments.length > 0 && (!state.segments || state.segments.length === 0)) {
+      state.segments = segments;
+      console.log(`[API] 从前端恢复segments: ${segments.length} 个视频片段`);
+    }
   }
   
-  console.log(`[API] 会话恢复: sessionId=${sessionId}, newSessionId=${newSessionId}, scripts=${state.scripts ? state.scripts.length : '无'}, stage=${state.currentStage}`);
+  console.log(`[API] 会话恢复: sessionId=${sessionId}, newSessionId=${newSessionId}, isNewImageUpload=${isNewImageUpload}, scripts=${state.scripts ? state.scripts.length : '无'}, stage=${state.currentStage}`);
   
   // 添加用户消息到历史
   const userMessage: { role: "user"; content: string } = {
@@ -40,6 +46,19 @@ export async function POST(request: NextRequest) {
   
   // 如果有图片，添加图片信息到消息
   if (imageUrl) {
+    // 用户上传了新的商品图片，需要清除之前的生成状态，重新开始流程
+    console.log(`[API] 用户上传新图片，清除之前的生成状态（scripts、segments、finalVideoUrl等）`);
+    state.scripts = []; // 清除文案
+    state.segments = []; // 清除视频片段
+    state.finalVideoUrl = undefined; // 清除最终视频URL
+    state.finalVideoPath = undefined;
+    state.localVideoPath = undefined;
+    state.finalDuration = undefined;
+    state.subtitleUrl = undefined;
+    state.features = []; // 清除卖点
+    state.productName = undefined; // 清除商品名称（等待重新识别）
+    state.currentStage = "idle"; // 重置阶段为初始状态
+    
     // 构建多图片消息
     let imageMessage = `${message}\n\n【商品图片信息】`;
     imageMessage += `\n主图片（重点参考）：${imageUrl}`;
