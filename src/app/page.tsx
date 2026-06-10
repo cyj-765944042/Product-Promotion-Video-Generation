@@ -429,7 +429,7 @@ function SessionSidebar({
       </div>
 
       {/* 新建对话按钮 */}
-      <div className="px-4 pb-4">
+      <div className="px-4 pb-4 pt-4 mt-2">
         <button
           onClick={onNewSession}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg
