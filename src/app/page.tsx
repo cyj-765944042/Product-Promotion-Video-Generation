@@ -325,29 +325,30 @@ function SessionSidebar({
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <div className="flex flex-col justify-between h-full">
-            {/* 第一行：左上方会话名称，右上方状态/时间 */}
-            <div className="flex items-start justify-between">
-              {/* 左上方：会话名称 */}
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium truncate">{session.title}</div>
-              </div>
-              {/* 右上方：状态和时间 */}
-              <div className="flex items-center gap-2 ml-2">
-                {session.isGenerating && (
-                  <span className="text-xs text-[#B999F3] flex items-center gap-1">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    生成中
-                  </span>
-                )}
-                <span className="text-xs text-[#999999]">
-                  {new Date(session.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
+          <div className="flex flex-col h-full min-h-[80px]">
+            {/* 第一行：左上方会话名称 */}
+            <div className="flex items-center">
+              <div className="text-sm font-medium truncate">{session.title}</div>
             </div>
             
-            {/* 第二行：右下方语言选项和视频比例选项堆叠 */}
-            <div className="flex justify-end gap-1 mt-2">
+            {/* 第二行：右侧状态和时间 */}
+            <div className="flex justify-end items-center gap-2 mt-1">
+              {session.isGenerating && (
+                <span className="text-xs text-[#B999F3] flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  生成中
+                </span>
+              )}
+              <span className="text-xs text-[#999999]">
+                {new Date(session.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+            
+            {/* 中间空白区域 */}
+            <div className="flex-1" />
+            
+            {/* 第三行：右下方语言选项 */}
+            <div className="flex justify-end">
               {/* 语言选项 */}
               <div className="relative">
                 <button
@@ -389,7 +390,10 @@ function SessionSidebar({
                   </div>
                 )}
               </div>
-              
+            </div>
+            
+            {/* 第四行：右下方视频比例选项 */}
+            <div className="flex justify-end mt-1">
               {/* 视频比例选项 */}
               <div className="relative">
                 <button
