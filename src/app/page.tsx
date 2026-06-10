@@ -62,6 +62,7 @@ interface Session {
   isGenerating?: boolean; // 是否正在生成中（后台任务运行）
   backendSessionId?: string; // 后端会话ID（用于恢复后端状态）
   voiceLanguage?: string; // 配音语言（每个会话独立）
+  videoRatio?: '16:9' | '9:16'; // 视频比例（每个会话独立，默认16:9）
 }
 
 // 滚动到底部悬浮按钮组件
@@ -249,7 +250,7 @@ function SessionSidebar({
   onDeleteSession: (id: string) => void;
   onRenameSession: (id: string, newTitle: string) => void;
   onUpdateSessionVoiceLanguage: (sessionId: string, lang: string) => void;
-  onUpdateSessionVideoRatio: (sessionId: string, ratio: string) => void;
+  onUpdateSessionVideoRatio: (sessionId: string, ratio: '16:9' | '9:16') => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -405,7 +406,7 @@ function SessionSidebar({
                   title="选择视频比例"
                 >
                   <RectangleHorizontal className="w-3.5 h-3.5" />
-                  <span>{session.state?.videoRatio === '9:16' ? '竖版' : '横版'}</span>
+                  <span>{session.videoRatio === '9:16' ? '竖版' : '横版'}</span>
                 </button>
                 
                 {/* 下拉选择 */}
@@ -419,7 +420,7 @@ function SessionSidebar({
                         onUpdateSessionVideoRatio(session.id, '16:9');
                         setOpenRatioDropdownId(null);
                       }}
-                      className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-t-md ${session.state?.videoRatio === '16:9' || !session.state?.videoRatio ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-t-md ${session.videoRatio === '16:9' || !session.videoRatio ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
                     >
                       横版 16:9
                     </button>
@@ -428,7 +429,7 @@ function SessionSidebar({
                         onUpdateSessionVideoRatio(session.id, '9:16');
                         setOpenRatioDropdownId(null);
                       }}
-                      className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-b-md ${session.state?.videoRatio === '9:16' ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F5F0FF] rounded-b-md ${session.videoRatio === '9:16' ? 'text-[#7E22CE] font-medium' : 'text-[#666666]'}`}
                     >
                       竖版 9:16
                     </button>
@@ -1074,9 +1075,9 @@ export default function ChatAgentPage() {
   }, []);
 
   // 更新指定会话的视频比例
-  const updateSessionVideoRatio = useCallback((sessionId: string, ratio: string) => {
+  const updateSessionVideoRatio = useCallback((sessionId: string, ratio: '16:9' | '9:16') => {
     setSessions(prev => prev.map(s => 
-      s.id === sessionId ? { ...s, state: { ...s.state, videoRatio: ratio } } : s
+      s.id === sessionId ? { ...s, videoRatio: ratio } : s
     ));
   }, []);
 
@@ -1223,6 +1224,7 @@ export default function ChatAgentPage() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       voiceLanguage: 'mandarin', // 默认配音语言
+      videoRatio: '16:9', // 默认视频比例（横版）
     };
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newId);
@@ -1431,6 +1433,7 @@ export default function ChatAgentPage() {
     const targetProductName = targetSession.state.productName;
     const targetSessionState = targetSession.state;
     const targetVoiceLanguage = targetSession.voiceLanguage || 'mandarin'; // 使用目标会话的配音语言
+    const targetVideoRatio = targetSession.videoRatio || '16:9'; // 使用目标会话的视频比例
 
     // 创建AbortController用于取消请求
     const abortController = new AbortController();
@@ -1516,7 +1519,7 @@ export default function ChatAgentPage() {
           voiceLanguage: targetVoiceLanguage, // 使用目标会话的配音语言
           scripts: targetSessionState.scripts, // 发送scripts数据，避免会话状态丢失时无法生成视频
           segments: targetSessionState.segments, // 发送segments数据
-          videoRatio: targetSessionState.videoRatio || '16:9', // 发送视频比例参数
+          videoRatio: targetVideoRatio, // 发送视频比例参数（从会话对象获取）
         }),
         signal: abortController.signal, // 添加AbortController signal
       });
