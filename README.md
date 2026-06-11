@@ -31,6 +31,69 @@ AI商家带货视频生成工具，面向电商商家、带货主播，提供一
 | 视频合成 | 合成最终视频+字幕+BGM | 确认合成 |
 | 完成 | 输出成品视频 | 下载 |
 
+## 密钥安全
+
+### 推送到 GitHub 前的安全检查
+
+项目已在 `.gitignore` 中配置排除以下敏感文件，**不会被推送到 GitHub**：
+
+```
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Secrets and keys
+*.pem
+*.key
+secrets/
+```
+
+### 推送前验证命令
+
+```bash
+# 查看将要推送的文件列表
+git status
+
+# 确认 .env 文件不在列表中
+git ls-files | grep .env
+# 应返回空结果
+```
+
+### 创建示例配置文件
+
+建议创建 `.env.example` 文件供其他开发者参考（不含真实密钥）：
+
+```bash
+# .env.example（可提交到 GitHub）
+ARK_API_KEY=your_api_key_here
+ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+VIDEO_MODEL_EP=your_video_model_endpoint_here
+
+S3_ACCESS_KEY=your_access_key_here
+S3_SECRET_KEY=your_secret_key_here
+S3_BUCKET=your_bucket_name_here
+S3_REGION=cn-beijing
+S3_ENDPOINT=https://tos-cn-beijing.volces.com
+```
+
+### 重要提示
+
+1. **禁止在代码中硬编码密钥**
+   ```typescript
+   // ✅ 正确 - 通过环境变量读取
+   const apiKey = process.env.ARK_API_KEY;
+
+   // ❌ 错误 - 禁止硬编码
+   const apiKey = "ark-xxx-xxx";
+   ```
+
+2. **GitHub Secrets**：如需在 CI/CD 中使用密钥，请在 GitHub 仓库设置中添加 Repository secrets
+
+3. **密钥更换**：如密钥已泄露，请立即更换并更新 `.env.local`
+
 ## 快速开始
 
 ### 环境配置
